@@ -3,6 +3,7 @@ import {
   PRESETS, Skeleton, SkeletonScales, scaleSkeleton, Gait,
 } from './genome';
 import { solvePose, walkSpeed, Intent, slashWeight } from './pose';
+import { hatchGenome } from './hatch';
 import { Camera } from './render';
 import { PixelView } from './view';
 import { group, slider, button, toggle, select, color } from './ui';
@@ -168,6 +169,39 @@ canvas.addEventListener('wheel', e => {
   cam.ppm = Math.min(140, Math.max(24, cam.ppm * (e.deltaY < 0 ? 1.06 : 0.94)));
   camZoomSet(cam.ppm);
 }, { passive: false });
+
+// --- hatch: describe a creature, get a creature ---------------------------
+const hatchBtn = document.getElementById('hatchbtn') as HTMLButtonElement;
+const hatchDesc = document.getElementById('hatchdesc') as HTMLInputElement;
+const hatchStatus = document.getElementById('hatchstatus')!;
+async function doHatch() {
+  const desc = hatchDesc.value.trim();
+  if (!desc) return;
+  hatchBtn.disabled = true;
+  hatchStatus.className = '';
+  hatchStatus.textContent = 'hatching…';
+  try {
+    const g = await hatchGenome(desc, undefined, undefined, chars => {
+      hatchStatus.textContent = `hatching… ${chars} chars of genome`;
+    });
+    adoptGenome(g);
+    const save = await fetch('/api/genome', { method: 'POST', body: JSON.stringify(g) });
+    const info = (await save.json()) as { ok: boolean; file?: string };
+    hatchStatus.className = 'ok';
+    hatchStatus.textContent = info.ok
+      ? `✓ ${g.name} — saved to the arena pool`
+      : `✓ ${g.name} — live here (pool save failed)`;
+  } catch (e) {
+    hatchStatus.className = 'err';
+    const msg = e instanceof Error ? e.message : String(e);
+    hatchStatus.textContent = msg.includes('fetch')
+      ? '✗ cannot reach ollama — run `ollama serve` and retry'
+      : '✗ ' + msg.slice(0, 90);
+  }
+  hatchBtn.disabled = false;
+}
+hatchBtn.addEventListener('click', doHatch);
+hatchDesc.addEventListener('keydown', e => { if (e.key === 'Enter') doHatch(); });
 
 refreshGenomeView();
 

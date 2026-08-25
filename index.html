@@ -80,6 +80,22 @@
     }
     #view { cursor: grab; touch-action: none; }
     #view:active { cursor: grabbing; }
+    #header { display: flex; align-items: flex-start; justify-content: space-between; }
+    #play {
+      background: var(--accent); color: #0b0c10; text-decoration: none;
+      font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+      padding: 6px 14px; border-radius: 4px;
+    }
+    #play:hover { filter: brightness(1.15); }
+    #hatchrow { display: flex; gap: 6px; }
+    #hatchrow input[type=text] {
+      flex: 1; background: #0b0c10; color: var(--ink); border: 1px solid #2c2f3a;
+      font: inherit; font-size: 11px; padding: 4px 8px; border-radius: 3px;
+    }
+    #hatchrow input[type=text]:focus { outline: none; border-color: var(--accent); }
+    #hatchstatus { color: var(--dim); font-size: 11px; min-height: 16px; margin-top: 4px; }
+    #hatchstatus.ok { color: var(--accent); }
+    #hatchstatus.err { color: #d5573b; }
     .act {
       background: none; border: 1px solid var(--accent); color: var(--accent);
       font: inherit; font-size: 11px; padding: 3px 14px; cursor: pointer;
@@ -98,8 +114,22 @@
     </div>
   </div>
   <div id="panel">
-    <h1>RIG</h1>
-    <div class="sub">one creature, moving, changeable while it moves</div>
+    <div id="header">
+      <div>
+        <h1>RIG</h1>
+        <div class="sub">one creature, moving, changeable while it moves</div>
+      </div>
+      <a id="play" href="/grid.html">play &nbsp;▶</a>
+    </div>
+    <div class="group">
+      <h2>hatch — describe a creature</h2>
+      <div id="hatchrow">
+        <input id="hatchdesc" type="text" placeholder="a tiny frantic bat-winged gremlin"
+               spellcheck="false" />
+        <button id="hatchbtn" class="act">hatch</button>
+      </div>
+      <div id="hatchstatus"></div>
+    </div>
     <div class="group">
       <h2>genome — the whole creature</h2>
       <textarea id="genome" spellcheck="false"></textarea>
