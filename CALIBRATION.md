@@ -143,6 +143,27 @@ This file is the only thing that accumulates. Add, don't rewrite.
 - Wall culling must derive from viewport size (`W/2/ppm`, with pitch
   correction on z) — fixed cull distances vanish walls when the player zooms out.
 
+### Pace (feedback-driven, 2026-08-25)
+- Original walk speeds read as sluggish in play (Jody). Base gait raised to
+  cadence 1.05 / stride 1.45 (~1.5 m/s), and the arena has a global `pace`
+  multiplier (default 1.5, slider 0.6–2.5) that scales ground speed, cycle
+  rate, AND slash speed together — scaling only speed makes feet slide.
+
+### Text-to-creature (verified 2026-08-25)
+- `npm run hatch -- "<description>"` — llama3.2:3b via local Ollama emits a
+  genome (format: 'json'), hard clamps validate every number, structural rules
+  repair the skeleton (≥1 hip leg; prone needs chest legs and loses arms),
+  CLIP scores the walking result. Hatched genomes land in genomes/ and
+  auto-join the arena enemy pool via the glob.
+- First hatches: structurally valid walking creatures every time; weak on
+  interpretation (sizes ignored — "tiny" isn't; palettes off-theme). 3B is
+  enough for the pipeline, not for taste. Paths up: 8B model, size words →
+  explicit seg-length guidance in the prompt, or hatch-N-keep-best composed
+  with the CLIP judge.
+- Prompt structure that worked: schema rules + three real example genomes
+  (biped, winged, quadruped) + the description. The examples matter more than
+  the rules.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
