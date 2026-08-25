@@ -266,6 +266,24 @@ This file is the only thing that accumulates. Add, don't rewrite.
   flat/shaded, board tone, scale 1-3x) with a reset-look button. Melee
   can hit point-blank (pure front-arc dot test fails at zero distance).
 
+### Sound & juice (2026-08-25)
+- Audio is fully synthesised (WebAudio, zero samples) in src/clash/audio.ts.
+  Per the design doc, the fuse is a gameplay system: every candle hums, pitch
+  180→600Hz as it shortens, waveform per owner (square/saw/tri/sine), gain
+  flutters up in the last third. AudioContext must be created on first
+  keypress (autoplay policy) — ensureAudio() on keydown.
+- The sim emits a typed event stream (g.events, cleared each tick, pure
+  output — determinism untouched). Presentation consumes it: sound, hit-stop
+  (4 frames on strike connect, 8 on death — acc zeroed so no catch-up
+  burst), screenshake (explosions scale with tile count, decay 0.82/frame).
+- Bite telegraph: 24 ticks (0.4s) of rear-up with a ! marker before the
+  lunge lands — 16 ticks was too fast for a human to react. Windup uses the
+  beast's own attack-light strike anim. Cooldown 50, lunge range 1.2x contact.
+- Ground shadows: a 3px solid dark rect under every figure. Cheapest
+  grounding win in the whole renderer.
+- Round flow: 2s frozen countdown (3-2-1-GO toasts + ticks) each round;
+  first to 3 wins takes the match (toast + fanfare, 6s, then full reset).
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
