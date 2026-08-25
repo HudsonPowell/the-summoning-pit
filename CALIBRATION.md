@@ -337,6 +337,24 @@ nearest-capsule, so parts fuse at the joints and their inks cross-fade.
 - Arena persists a single `blend` in its look settings (shape fuse fixed at
   0.5 so silhouettes stay readable at 22px).
 
+### Limb depth — two real bugs, found by Jody's eye (2026-08-25)
+Both caught by `farm/render_test.ts`, which now runs as part of `npm test`.
+1. **Depth came from the capsule AXIS, not its surface.** A capsule's surface
+   bulges toward the camera by up to a full radius — precisely the scale at
+   which limbs overlap — so crossing limbs sorted essentially by luck. Fixed:
+   `z = axisZ + sqrt(r² - d²)/ppm`. The near CAP is tested separately, because
+   a limb aimed at the camera projects to a point where the segment-closest
+   test degrades and the cap is what you actually see.
+   **Radii are in pixels, depths in metres — divide the bulge by ppm.**
+2. **The blended path picked the winner by smallest signed distance**, i.e.
+   whichever capsule the pixel was DEEPEST INSIDE, not whichever was in front.
+   A fat far limb painted over a thin near one. Fixed: the smooth-min still
+   uses the true `minS`, but ownership (depth/ink/radius) goes to the greatest
+   surface z among capsules actually covering the pixel, with an
+   only-in-the-fuse-margin fallback (`insideHit` flag).
+Sorting artefacts on limbs are almost always one of these two; check the axis
+-vs-surface question first.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the

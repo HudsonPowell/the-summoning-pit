@@ -38,6 +38,28 @@ interface Proj {
 
 const SHADE_LEVELS = 4;
 
+/**
+ * Where the capsule's SURFACE is along this pixel's view ray, in metres.
+ *
+ * The axis depth alone is wrong by up to a full radius — exactly the scale at
+ * which limbs overlap — so a crossing arm sorts against a torso by luck. The
+ * surface bulges toward the camera by sqrt(r² - d²), and for a limb aimed at
+ * the camera the near cap is what we actually see, so that endpoint is tested
+ * too (its 2-D projection is a point, where the segment-closest test degrades).
+ */
+function surfaceZ(p: Proj, px: number, py: number, t: number, dist: number, ppm: number): number {
+  let z = p.az + (p.bz - p.az) * t + Math.sqrt(Math.max(0, p.r * p.r - dist * dist)) / ppm;
+  const nearIsA = p.az > p.bz;
+  const ex = (nearIsA ? p.ax : p.bx) - px;
+  const ey = (nearIsA ? p.ay : p.by) - py;
+  const de2 = ex * ex + ey * ey;
+  if (de2 < p.r * p.r) {
+    const capZ = (nearIsA ? p.az : p.bz) + Math.sqrt(p.r * p.r - de2) / ppm;
+    if (capZ > z) z = capZ;
+  }
+  return z;
+}
+
 export class PixelRenderer {
   readonly W: number;
   readonly H: number;
@@ -54,6 +76,7 @@ export class PixelRenderer {
   private winG: Float32Array;
   private winB: Float32Array;
   private sumW: Float32Array;
+  private insideHit: Uint8Array;
 
   constructor(W: number, H: number) {
     this.W = W;
@@ -71,6 +94,7 @@ export class PixelRenderer {
     this.winG = new Float32Array(n);
     this.winB = new Float32Array(n);
     this.sumW = new Float32Array(n);
+    this.insideHit = new Uint8Array(n);
   }
 
   /**
@@ -94,6 +118,7 @@ export class PixelRenderer {
 
     this.minS.fill(1e9);
     this.sumW.fill(0);
+    this.insideHit.fill(0);
     this.colR.fill(0);
     this.colG.fill(0);
     this.colB.fill(0);
@@ -112,19 +137,27 @@ export class PixelRenderer {
             const rx = px + 0.5 - p.ax, ry = py + 0.5 - p.ay;
             const t = segLen2 > 1e-9 ? clamp((rx * dx + ry * dy) / segLen2, 0, 1) : 0;
             const ex = rx - t * dx, ey = ry - t * dy;
-            const s = Math.hypot(ex, ey) - p.r; // signed: <0 inside
+            const dist = Math.hypot(ex, ey);
+            const s = dist - p.r; // signed: <0 inside
             if (s > margin) continue;
             const i = py * W + px;
-            const z = p.az + (p.bz - p.az) * t;
+            const z = surfaceZ(p, px + 0.5, py + 0.5, t, Math.min(dist, p.r), cam.ppm);
             if (!accumulate) {
-              // nearest surface wins the depth, radius and base ink
-              if (s < this.minS[i] || (s === this.minS[i] && z > this.depth[i])) {
-                this.minS[i] = s;
+              if (s < this.minS[i]) this.minS[i] = s; // smooth-min needs the true min
+              // ...but the pixel BELONGS to whatever is in front of it. Picking
+              // by smallest s instead sorts by "deepest inside", which lets a
+              // fat far limb paint over a thin near one.
+              const inside = s < 0;
+              const better = inside
+                ? this.insideHit[i] === 0 || z > this.depth[i]
+                : this.insideHit[i] === 0 && z > this.depth[i];
+              if (better) {
                 this.depth[i] = z;
                 this.bestR[i] = p.r;
                 this.winR[i] = p.color[0];
                 this.winG[i] = p.color[1];
                 this.winB[i] = p.color[2];
+                if (inside) this.insideHit[i] = 1;
               }
             } else {
               if (Math.abs(z - this.depth[i]) > depthGate) continue;
@@ -248,11 +281,11 @@ export class PixelRenderer {
       for (let py = y0; py <= y1; py++) {
         for (let px = x0; px <= x1; px++) {
           const rx = px + 0.5 - p.ax, ry = py + 0.5 - p.ay;
-          let t = segLen2 > 1e-9 ? clamp((rx * dx + ry * dy) / segLen2, 0, 1) : 0;
+          const t = segLen2 > 1e-9 ? clamp((rx * dx + ry * dy) / segLen2, 0, 1) : 0;
           const ex = rx - t * dx, ey = ry - t * dy;
           const dist = Math.hypot(ex, ey);
           if (dist > p.r) continue;
-          const z = p.az + (p.bz - p.az) * t;
+          const z = surfaceZ(p, px + 0.5, py + 0.5, t, dist, cam.ppm);
           const i = py * W + px;
           if (z > this.depth[i]) {
             this.depth[i] = z;

@@ -17,7 +17,7 @@ struct U {
   rayO: vec4f,
   rayDx: vec4f,
   rayDy: vec4f,
-  world: vec4f, // ccx, ccz, scroll, 0
+  world: vec4f, // ccx, ccz, scroll, ppm
   zr:   vec4f,  // minZ, maxZ, flags (1=flat, 2=nofloor), 0
   blend: vec4f, // softness k (px), depth gate, colour mix, shape fuse
 };
@@ -32,6 +32,24 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
   return vec4f(p[i], 0.0, 1.0);
 }
 
+// The capsule SURFACE along this pixel's ray (metres), not its axis: the
+// bulge is up to a full radius, which is the scale limbs overlap at. The near
+// cap is tested too, for limbs aimed at the camera.
+fn surfaceZ(c: Cap, p: vec2f, t: f32, dist: f32) -> f32 {
+  let ppm = u.world.w;
+  var z = c.a.z + (c.b.z - c.a.z) * t + sqrt(max(0.0, c.a.w * c.a.w - dist * dist)) / ppm;
+  var nearXY = c.b.xy;
+  var nearZ = c.b.z;
+  if (c.a.z > c.b.z) { nearXY = c.a.xy; nearZ = c.a.z; }
+  let e = nearXY - p;
+  let de2 = dot(e, e);
+  if (de2 < c.a.w * c.a.w) {
+    let capZ = nearZ + sqrt(c.a.w * c.a.w - de2) / ppm;
+    if (capZ > z) { z = capZ; }
+  }
+  return z;
+}
+
 fn bestHit(p: vec2f) -> vec3f { // (z, q, index) — z stays -1e9 on miss
   var best = vec3f(-1e9, 0.0, -1.0);
   let n = u32(u.res.z);
@@ -44,7 +62,7 @@ fn bestHit(p: vec2f) -> vec3f { // (z, q, index) — z stays -1e9 on miss
     if (l2 > 1e-9) { t = clamp(dot(ap, ab) / l2, 0.0, 1.0); }
     let d = length(ap - t * ab);
     if (d <= c.a.w) {
-      let z = c.a.z + (c.b.z - c.a.z) * t;
+      let z = surfaceZ(c, p, t, d);
       if (z > best.x) { best = vec3f(z, d / c.a.w, f32(i)); }
     }
   }
@@ -60,6 +78,7 @@ fn softHit(p: vec2f, k: f32, gate: f32, mixAmt: f32, shapeAmt: f32) -> vec4f {
   var bestZ = -1e9;
   var bestR = 1.0;
   var winCol = vec3f(0.0);
+  var insideHit = false;
   let n = u32(u.res.z);
   let margin = k * 6.0;
   for (var i = 0u; i < n; i++) {
@@ -69,14 +88,20 @@ fn softHit(p: vec2f, k: f32, gate: f32, mixAmt: f32, shapeAmt: f32) -> vec4f {
     let l2 = dot(ab, ab);
     var t = 0.0;
     if (l2 > 1e-9) { t = clamp(dot(ap, ab) / l2, 0.0, 1.0); }
-    let s = length(ap - t * ab) - c.a.w;
+    let dist = length(ap - t * ab);
+    let s = dist - c.a.w;
     if (s > margin) { continue; }
-    let z = c.a.z + (c.b.z - c.a.z) * t;
-    if (s < minS || (s == minS && z > bestZ)) {
-      minS = s;
+    minS = min(minS, s);
+    let z = surfaceZ(c, p, t, min(dist, c.a.w));
+    let inside = s < 0.0;
+    var better = false;
+    if (inside) { better = !insideHit || z > bestZ; }
+    else { better = !insideHit && z > bestZ; }
+    if (better) {
       bestZ = z;
       bestR = c.a.w;
       winCol = c.color.rgb;
+      if (inside) { insideHit = true; }
     }
   }
   if (minS > margin) { return vec4f(1.0, 0.0, 0.0, -1e9); }
@@ -89,9 +114,10 @@ fn softHit(p: vec2f, k: f32, gate: f32, mixAmt: f32, shapeAmt: f32) -> vec4f {
     let l2 = dot(ab, ab);
     var t = 0.0;
     if (l2 > 1e-9) { t = clamp(dot(ap, ab) / l2, 0.0, 1.0); }
-    let s = length(ap - t * ab) - c.a.w;
+    let dist2 = length(ap - t * ab);
+    let s = dist2 - c.a.w;
     if (s > margin) { continue; }
-    let z = c.a.z + (c.b.z - c.a.z) * t;
+    let z = surfaceZ(c, p, t, min(dist2, c.a.w));
     if (abs(z - bestZ) > gate) { continue; }
     let w = exp(-(s - minS) / k);
     sumW += w;
@@ -283,7 +309,7 @@ export class GpuRenderer {
     u.set([o00.x, o00.y, o00.z, 0], 8);
     u.set([oDx.x, oDx.y, oDx.z, 0], 12);
     u.set([oDy.x, oDy.y, oDy.z, 0], 16);
-    u.set([ccx, ccz, scroll, 0], 20);
+    u.set([ccx, ccz, scroll, cam.ppm], 20);
     const flags = (cam.flat ? 1 : 0) | (cam.floor === false ? 2 : 0);
     u.set([minZ, maxZ, flags, 0], 24);
     u.set([cam.blend ?? 0, cam.blendDepth ?? 0.35, cam.blendMix ?? 1, cam.blendShape ?? 1], 28);
