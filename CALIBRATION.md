@@ -164,6 +164,20 @@ This file is the only thing that accumulates. Add, don't rewrite.
   (biped, winged, quadruped) + the description. The examples matter more than
   the rules.
 
+### In-studio hatch (verified 2026-08-25)
+- The studio's hatch box calls Ollama directly from the browser (Ollama's
+  default CORS allows any localhost origin), then POSTs the validated genome
+  to the dev server's /api/genome endpoint (vite middleware), which writes it
+  into genomes/ — where the arena glob makes it an enemy.
+- **Stream Ollama responses, always.** A `stream: false` generate call holds a
+  silent connection ~20s and some environments cull it (empty body, confusing
+  parse error downstream). Streaming NDJSON also gives live progress for free.
+- Vite only loads vite.config.ts present at startup — creating the config
+  while the server runs does nothing; restart the dev server.
+- Size vocabulary added to the hatch prompt (tiny legs 0.1-0.18 … huge
+  0.55-0.7, thickness by bulk); shared pipeline lives in src/hatch.ts,
+  CLI wrapper + CLIP reviewer in farm/hatch.ts.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
