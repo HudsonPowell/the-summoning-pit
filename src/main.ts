@@ -57,6 +57,8 @@ const paletteSetters: [keyof Genome['palette'], (v: string) => void][] = [];
 const stillSetters: [keyof StillSpec, (v: number) => void][] = [];
 const strikeSetters: [Exclude<keyof StrikeSpec, 'posts'>, (v: number) => void][] = [];
 let blastSetters: { core: (v: string) => void; edge: (v: string) => void } | null = null;
+let blastDelaySet: (v: number) => void = () => {};
+let blastRadiusSet: (v: number) => void = () => {};
 
 function currentBehavior(): Behavior {
   return character.behaviors[activeBehavior] ?? character.behaviors.walk;
@@ -85,6 +87,8 @@ function adoptCharacter(c: Character) {
   kindSelect.value = c.kind;
   blastSetters?.core(c.blast.core);
   blastSetters?.edge(c.blast.edge);
+  blastDelaySet(c.blast.delay);
+  blastRadiusSet(c.blast.radius);
   if (!c.behaviors[activeBehavior]) activeBehavior = 'walk';
   renderChips();
   refreshEditors();
@@ -141,6 +145,15 @@ const gBlast = document.getElementById('gBlast')!;
   blastSetters = { core, edge };
   select(gBlast, 'pattern', ['flame', 'rune', 'vine'], character.blast.pattern, v => {
     character.blast.pattern = v as Character['blast']['pattern'];
+    refreshFile();
+  });
+  // the two gameplay numbers the CLASH grammar allows an attack to have
+  blastDelaySet = slider(gBlast, 'delay (s)', 1, 4, 0.1, character.blast.delay, v => {
+    character.blast.delay = v;
+    refreshFile();
+  });
+  blastRadiusSet = slider(gBlast, 'radius', 1, 5, 1, character.blast.radius, v => {
+    character.blast.radius = v;
     refreshFile();
   });
   toggle(gBlast, 'preview blast', showBlast, v => { showBlast = v; });

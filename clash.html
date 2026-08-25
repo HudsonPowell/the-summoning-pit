@@ -23,9 +23,8 @@
     #status b.p1 { color: var(--p1); } #status b.p2 { color: var(--p2); }
     #keys { margin-left: auto; font-size: 11px; }
     #keys b { color: var(--ink); font-weight: 500; }
-    /* 512x352 native, integer-scaled x2 — never fractional */
+    /* 512x352 native, integer-scaled only — never fractional */
     #view { width: 1024px; height: 704px; image-rendering: pixelated; display: block; background: #050508; }
-    @media (max-width: 1080px), (max-height: 800px) { #view { width: 512px; height: 352px; } }
     #toast {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       pointer-events: none; opacity: 0; color: var(--ink);
@@ -34,8 +33,19 @@
       transition: opacity 0.5s ease;
     }
     #toast.show { opacity: 1; transition: opacity 0.1s ease; }
-    #footer { display: flex; gap: 16px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 11px; }
+    #footer { display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 11px; align-items: center; flex-wrap: wrap; }
     #footer a { color: var(--p1); text-decoration: none; margin-left: auto; }
+    #footer label { display: flex; gap: 5px; align-items: center; color: var(--dim); }
+    #footer select {
+      background: #0b0c10; color: var(--ink); border: 1px solid var(--line);
+      font: inherit; font-size: 11px; padding: 1px 4px; border-radius: 3px; max-width: 130px;
+    }
+    #footer input[type=range] { width: 80px; accent-color: var(--p1); }
+    #footer button {
+      background: none; border: 1px solid var(--line); color: var(--dim);
+      font: inherit; font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px;
+    }
+    #footer button:hover { color: var(--p1); border-color: var(--p1); }
   </style>
 </head>
 <body>
@@ -43,13 +53,29 @@
     <div id="topbar">
       <span class="title">CLASH</span>
       <span id="status"></span>
-      <span id="keys"><b>P1</b> wasd + f &nbsp; <b>P2</b> arrows + enter</span>
+      <span id="keys"><b>P1</b> wasd · f place · g strike &nbsp; <b>P2</b> arrows · enter · shift</span>
     </div>
     <canvas id="view" width="512" height="352"></canvas>
     <div id="toast"></div>
     <div id="footer">
-      <span>arena · one class · first to laugh wins</span>
-      <a href="/">studio</a>
+      <label>p1 <select id="hero1"></select></label>
+      <label>p2 <select id="hero2"></select></label>
+      <label>figures
+        <select id="figstyle">
+          <option value="flat">flat</option>
+          <option value="shaded">shaded</option>
+        </select>
+      </label>
+      <label>board <input id="tone" type="range" min="0.6" max="1.5" step="0.05" value="1" /></label>
+      <label>scale
+        <select id="scale">
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+          <option value="3">3×</option>
+        </select>
+      </label>
+      <button id="resetlook">reset look</button>
+      <a href="/">forge</a>
     </div>
   </div>
   <script type="module" src="/src/clash/main.ts"></script>

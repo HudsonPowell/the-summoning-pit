@@ -58,10 +58,16 @@ export interface WeaponSpec {
   parts: WeaponPart[];
 }
 
+/**
+ * The character's PLACED attack — the CLASH verb. delay and radius are the
+ * two gameplay numbers the grammar allows; the rest is its look.
+ */
 export interface BlastSpec {
   core: string;
   edge: string;
   pattern: 'flame' | 'rune' | 'vine';
+  delay: number;  // seconds of fuse
+  radius: number; // cross reach in tiles
 }
 
 // --- the character --------------------------------------------------------
@@ -142,7 +148,7 @@ export function makeCharacter(genome: Genome, kind: 'hero' | 'beast' = 'beast'):
     genome,
     behaviors: defaultBehaviors(genome.gait),
     weapon: migrateWeapon(genome.weapon),
-    blast: { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame' },
+    blast: { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame', delay: 2.5, radius: 2 },
   };
 }
 
@@ -152,7 +158,9 @@ export function migrateCharacter(raw: any): Character {
     const c = raw as Character;
     c.genome = migrateGenome(c.genome);
     c.weapon = migrateWeapon(c.weapon);
-    c.blast ??= { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame' };
+    c.blast ??= { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame', delay: 2.5, radius: 2 };
+    c.blast.delay ??= 2.5;
+    c.blast.radius ??= 2;
     // fill any missing behaviour slots without clobbering authored ones
     const defaults = defaultBehaviors(c.genome.gait);
     for (const [k, v] of Object.entries(defaults)) c.behaviors[k] ??= v;
