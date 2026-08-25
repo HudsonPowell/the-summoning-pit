@@ -248,6 +248,24 @@ This file is the only thing that accumulates. Add, don't rewrite.
 - Bestiary thumbnails are the real rig walking at 64px — there are no
   preview images anywhere in the app.
 
+### Arena gameplay experiment (2026-08-25)
+- **Two attacks per character, cleanly split**: the BLAST is the placed
+  cross (the CLASH verb — its delay and radius are authored per character in
+  the forge, its core/edge/pattern colour the candle and flames per owner);
+  the STRIKE is melee (g / shift), driven by the character's attack-light
+  spec, 26 ticks, hit at tick 14, range 1.2 tiles, front arc + point-blank.
+- HP model while beasts exist: players 3hp, 1s invuln on any hit; flames
+  1 damage; beast contact 1 damage. Face-tanking a beast is lethal by
+  design — bomb them or hit-and-run.
+- Beasts: kind=beast characters spawn min(1+round, 6) at odd-odd tiles ≥7
+  tiles from spawns, wander with seeded repath, chase within 4 tiles, 2hp.
+  All beast state lives in the int sim; genomes only matter to the renderer.
+- Hero select reloads the page — a clean deterministic restart beats
+  hot-swapping sim config mid-round.
+- Arena look persists in localStorage (clash-cfg: heroes, figure style
+  flat/shaded, board tone, scale 1-3x) with a reset-look button. Melee
+  can hit point-blank (pure front-arc dot test fails at zero distance).
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
