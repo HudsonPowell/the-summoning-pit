@@ -89,6 +89,27 @@ This file is the only thing that accumulates. Add, don't rewrite.
 - Chase radius 3.2 m, axis-dominant pursuit (lane-honest), melee trigger < 1.0 m.
   Chase mood: angry = 1 stacked on the bred gait. Hurt suspends chasing.
 
+### Death & rounds (verified 2026-08-25)
+- Death is a `collapse` driver (0..1 over 0.45 s): pelvis height ×(1−0.72c),
+  slump +1.0c, lean +0.3c, head +0.8c. The legs fold because IK folds them —
+  no death animation exists. Fade from 0.8 s, despawn at 1.6 s.
+- HP: player 5, enemies 3. hurtT doubles as the invulnerability window.
+- Round n spawns min(1+n, 5) enemies from the genome pool, ≥4 m from the
+  player; 8% of open tiles regrow soft cover between rounds.
+
+### Breeding, continued
+- Body proportions now evolve too (mutation rate ×0.6 vs gait). Seeded
+  multipliers per target give evolution a head start on silhouette.
+- skittish converged hard (0.851): creeping low, arm feeling ahead. Palette +
+  contrast pair in farm/evolve.ts TARGETS.
+- **CLIP cannot judge size.** "huge lumbering brute" scored ~0.002 — relative
+  scale is invisible in a lone image. The brute silhouette came entirely from
+  the body seed. Size-flavoured targets need seeded bodies or side-by-side
+  comparison judging.
+- Enemies must not share the player's palette — bred-tired was invisible
+  standing right behind the player until recoloured. Distinct palette per
+  bred genome is part of the genome, set at breed time.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
