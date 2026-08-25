@@ -172,36 +172,45 @@ canvas.addEventListener('wheel', e => {
 
 // --- hatch: describe a creature, get a creature ---------------------------
 const hatchBtn = document.getElementById('hatchbtn') as HTMLButtonElement;
+const rerollBtn = document.getElementById('rerollbtn') as HTMLButtonElement;
 const hatchDesc = document.getElementById('hatchdesc') as HTMLInputElement;
 const hatchStatus = document.getElementById('hatchstatus')!;
-async function doHatch() {
-  const desc = hatchDesc.value.trim();
+let lastHatchDesc = '';
+async function doHatch(desc: string, temperature: number) {
   if (!desc) return;
   hatchBtn.disabled = true;
+  rerollBtn.disabled = true;
   hatchStatus.className = '';
   hatchStatus.textContent = 'hatching…';
   try {
     const g = await hatchGenome(desc, undefined, undefined, chars => {
       hatchStatus.textContent = `hatching… ${chars} chars of genome`;
-    });
+    }, temperature);
     adoptGenome(g);
+    lastHatchDesc = desc;
+    rerollBtn.hidden = false;
     const save = await fetch('/api/genome', { method: 'POST', body: JSON.stringify(g) });
     const info = (await save.json()) as { ok: boolean; file?: string };
     hatchStatus.className = 'ok';
     hatchStatus.textContent = info.ok
-      ? `✓ ${g.name} — saved to the arena pool`
+      ? `✓ ${g.name} — saved to the arena pool (reroll replaces it)`
       : `✓ ${g.name} — live here (pool save failed)`;
   } catch (e) {
     hatchStatus.className = 'err';
     const msg = e instanceof Error ? e.message : String(e);
     hatchStatus.textContent = msg.includes('fetch')
       ? '✗ cannot reach ollama — run `ollama serve` and retry'
-      : '✗ ' + msg.slice(0, 90);
+      : '✗ ' + msg.slice(0, 90) + ' — try reroll';
+    if (lastHatchDesc || hatchDesc.value.trim()) rerollBtn.hidden = false;
   }
   hatchBtn.disabled = false;
+  rerollBtn.disabled = false;
 }
-hatchBtn.addEventListener('click', doHatch);
-hatchDesc.addEventListener('keydown', e => { if (e.key === 'Enter') doHatch(); });
+hatchBtn.addEventListener('click', () => doHatch(hatchDesc.value.trim(), 0.7));
+// same words, new dice — a touch hotter for variety
+rerollBtn.addEventListener('click', () =>
+  doHatch(hatchDesc.value.trim() || lastHatchDesc, 0.9));
+hatchDesc.addEventListener('keydown', e => { if (e.key === 'Enter') doHatch(hatchDesc.value.trim(), 0.7); });
 
 refreshGenomeView();
 

@@ -1,0 +1,86 @@
+{
+  "name": "hatched-huge bird beast",
+  "skeleton": {
+    "prone": false,
+    "spine": 0.7,
+    "neck": 0.24,
+    "headR": 0.145,
+    "hipW": 0.36,
+    "chestW": 0.45,
+    "torsoR": 0.17,
+    "chains": [
+      {
+        "role": "leg",
+        "attach": "hip",
+        "seg": [
+          0.5,
+          0.5
+        ],
+        "r": 0.08,
+        "spread": 0.22
+      },
+      {
+        "role": "arm",
+        "attach": "chest",
+        "seg": [
+          0.4,
+          0.38
+        ],
+        "r": 0.065,
+        "spread": 0.25
+      },
+      {
+        "role": "wing",
+        "attach": "chest",
+        "seg": [
+          0.55,
+          0.53
+        ],
+        "r": 0.04,
+        "spread": 0.2
+      },
+      {
+        "role": "tail",
+        "attach": "hip",
+        "seg": [
+          0.46,
+          0.4,
+          0.34
+        ],
+        "r": 0.04,
+        "spread": 0
+      }
+    ]
+  },
+  "gait": {
+    "cadence": 1.2,
+    "stride": 1.2,
+    "stance": 0.75,
+    "lift": 0.12,
+    "bounce": 0.025,
+    "sway": 0.015,
+    "lean": 0.1,
+    "slump": 0,
+    "crouch": 0.03,
+    "pelvisTwist": 0.08,
+    "shoulderTwist": 0.11,
+    "armSwing": 0.45,
+    "elbowBase": 0.4,
+    "elbowAmp": 0.6,
+    "elbowLag": 0.16666666666666666,
+    "headPitch": 0.06,
+    "flapAmp": 0.7,
+    "tailWave": 0.55
+  },
+  "palette": {
+    "torso": "#3498db",
+    "limbs": "#2f4f4f",
+    "head": "#f7f7f7",
+    "accent": "#34a85a"
+  },
+  "weapon": {
+    "length": 0.65,
+    "r": 0.05,
+    "color": "#34a85a"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "name": "hatched-a-four-armed-spider-hag",
+  "skeleton": {
+    "prone": false,
+    "spine": 0.36,
+    "neck": 0.09,
+    "headR": 0.115,
+    "hipW": 0.22,
+    "chestW": 0.36,
+    "torsoR": 0.1,
+    "chains": [
+      {
+        "role": "arm",
+        "attach": "chest",
+        "seg": [
+          0.3,
+          0.28
+        ],
+        "r": 0.05,
+        "spread": 0.18
+      },
+      {
+        "role": "arm",
+        "attach": "chest",
+        "seg": [
+          0.3,
+          0.28
+        ],
+        "r": 0.05,
+        "spread": 0.18
+      },
+      {
+        "role": "arm",
+        "attach": "chest",
+        "seg": [
+          0.3,
+          0.28
+        ],
+        "r": 0.05,
+        "spread": 0.18
+      },
+      {
+        "role": "arm",
+        "attach": "chest",
+        "seg": [
+          0.3,
+          0.28
+        ],
+        "r": 0.05,
+        "spread": 0.18
+      },
+      {
+        "role": "leg",
+        "attach": "hip",
+        "seg": [
+          0.35,
+          0.35
+        ],
+        "r": 0.05,
+        "spread": 0.11
+      }
+    ]
+  },
+  "gait": {
+    "cadence": 0.9,
+    "stride": 0.5,
+    "stance": 0.6,
+    "lift": 0.08,
+    "bounce": 0.03,
+    "sway": 0.02,
+    "lean": 0.06,
+    "slump": 0,
+    "crouch": 0.03,
+    "pelvisTwist": 0.1,
+    "shoulderTwist": 0.14,
+    "armSwing": 0.42,
+    "elbowBase": 0.35,
+    "elbowAmp": 0.5,
+    "elbowLag": 0.16666666666666666,
+    "headPitch": 0,
+    "flapAmp": 0.5,
+    "tailWave": 0.35
+  },
+  "palette": {
+    "torso": "#d5573b",
+    "limbs": "#3aa7a0",
+    "head": "#e8c39a",
+    "accent": "#c14b4b"
+  },
+  "weapon": {
+    "length": 0.62,
+    "r": 0.032,
+    "color": "#cfd6e4"
+  }
+}

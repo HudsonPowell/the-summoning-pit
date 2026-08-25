@@ -22,8 +22,13 @@ You design creatures for a game as JSON "genomes". Skeleton rules:
   Quadrupeds (prone: true) need BOTH a hip leg chain and a chest leg chain,
   and should have NO arm chains.
 - SIZE MATTERS. Leg seg lengths set the height: tiny creature legs 0.1-0.18
-  each, small 0.2-0.3, human-sized 0.4-0.5, huge/towering 0.55-0.7. Match
-  thickness r to bulk: wiry 0.02-0.04, average 0.05, massive 0.08-0.12.
+  each, small/dwarf/stocky 0.2-0.3, human-sized 0.4-0.5, huge/towering
+  0.55-0.7. Match thickness r to bulk: wiry 0.02-0.04, average 0.05,
+  massive/heavy-set 0.08-0.12. Stocky = short legs + wide hipW/chestW + big r.
+- Use exactly ONE arm chain and ONE hip leg chain unless the description
+  explicitly asks for extra limbs (four arms, six legs, etc.).
+- If the description mentions a held weapon (axe, club, sword, spear, hammer),
+  you MUST include the "weapon" object.
 - gait numbers: cadence 0.2-2.2 (steps tempo; small quick things high, heavy
   things low), stride 0.2-2.4 (metres per cycle, roughly leg length x 1.5),
   lean/slump = forward hunch, armSwing 0-1, headPitch = head droop,
@@ -49,6 +54,7 @@ export async function askOllama(
   model = HATCH_MODEL,
   url = OLLAMA_URL,
   onProgress?: (chars: number) => void,
+  temperature = 0.7,
 ): Promise<string> {
   // streamed, not buffered: a silent 20s connection gets culled by some
   // environments, and streaming gives live progress for free
@@ -59,7 +65,7 @@ export async function askOllama(
       model,
       stream: true,
       format: 'json',
-      options: { temperature: 0.7, num_predict: 1400 },
+      options: { temperature, num_predict: 1400 },
       prompt: buildPrompt(desc),
     }),
   });
@@ -115,7 +121,29 @@ export function validateGenome(raw: any, desc: string): Genome {
         )
     : [];
 
+  // unless the words ask for extra limbs, one chain per role is the law —
+  // a 3B model ignores prose rules often enough that this must be code
+  const wantsExtra = /\b(three|four|six|eight|many|multiple|extra|\d+)[- ]?(arm|leg|wing|tail|limb|head)/i.test(desc);
+  if (!wantsExtra) {
+    const seen = new Set<string>();
+    chains = chains.filter(c => {
+      const key = c.role === 'leg' ? `leg@${c.attach}` : c.role;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   const prone = !!sk.prone;
+  // upright creatures don't grow legs from their chest — that's model error,
+  // unless there are no hip legs at all (then it's a mislabel: move them down)
+  if (!prone) {
+    const hasHipLegs = chains.some(c => c.role === 'leg' && c.attach === 'hip');
+    chains = chains.flatMap(c => {
+      if (c.role !== 'leg' || c.attach !== 'chest') return [c];
+      return hasHipLegs ? [] : [{ ...c, attach: 'hip' as const }];
+    });
+  }
   if (!chains.some(c => c.role === 'leg' && c.attach === 'hip'))
     chains.push({ role: 'leg', attach: 'hip', seg: [0.35, 0.35], r: 0.05, spread: 0.11 });
   if (prone && !chains.some(c => c.role === 'leg' && c.attach === 'chest'))
@@ -165,18 +193,33 @@ export function validateGenome(raw: any, desc: string): Genome {
     accent: hexOk(p.accent, base.palette.accent),
   };
 
-  const name =
-    typeof raw?.name === 'string' && raw.name.length > 0 && raw.name.length < 40
-      ? raw.name
-      : desc.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24);
+  // name from the DESCRIPTION, not the model: rerolling the same words then
+  // overwrites the dud in genomes/ instead of spamming the pool
+  const name = 'hatched-' + desc.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32);
 
-  const genome: Genome = { name: `hatched-${name}`, skeleton, gait, palette };
-  if (raw?.weapon && !prone && chains.some(c => c.role === 'arm')) {
+  const genome: Genome = { name, skeleton, gait, palette };
+  const canHold = !prone && chains.some(c => c.role === 'arm');
+  if (raw?.weapon && canHold) {
     genome.weapon = {
       length: clampN(raw.weapon.length, 0.15, 0.9, 0.5),
       r: clampN(raw.weapon.r, 0.02, 0.09, 0.035),
       color: hexOk(raw.weapon.color, '#cfd6e4'),
     };
+  }
+  // weapon backstop: if the words name a weapon, the creature gets one even
+  // when the model forgets — forged from the vocabulary, not the vibes
+  if (!genome.weapon && canHold) {
+    const FORGE: [RegExp, { length: number; r: number; color: string }][] = [
+      [/axe|hatchet/i, { length: 0.42, r: 0.055, color: '#9aa1ab' }],
+      [/club|cudgel/i, { length: 0.5, r: 0.07, color: '#6b4a2f' }],
+      [/sword|blade|sabre|saber/i, { length: 0.6, r: 0.032, color: '#cfd6e4' }],
+      [/spear|pike|lance/i, { length: 0.85, r: 0.024, color: '#a08a63' }],
+      [/hammer|maul|mace/i, { length: 0.4, r: 0.065, color: '#7a7f8a' }],
+      [/staff|stave|wand/i, { length: 0.75, r: 0.026, color: '#8a6d3f' }],
+    ];
+    for (const [re, w] of FORGE) {
+      if (re.test(desc)) { genome.weapon = { ...w }; break; }
+    }
   }
   return genome;
 }
@@ -186,7 +229,8 @@ export async function hatchGenome(
   model = HATCH_MODEL,
   url = OLLAMA_URL,
   onProgress?: (chars: number) => void,
+  temperature = 0.7,
 ): Promise<Genome> {
-  const text = await askOllama(desc, model, url, onProgress);
+  const text = await askOllama(desc, model, url, onProgress, temperature);
   return validateGenome(JSON.parse(text), desc);
 }
