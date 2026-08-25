@@ -312,6 +312,31 @@ everywhere, per the design doc. All verified by `npm test`.
   worth a second look: the bell's 5-subpixel shove was a wall correctly
   stopping it, confirmed by clearing the lane (then 2.03 tiles).
 
+### Soft-field blending (2026-08-25)
+The bone field can resolve with an exponential smooth-min instead of hard
+nearest-capsule, so parts fuse at the joints and their inks cross-fade.
+- Two sweeps: the first finds per-pixel nearest surface (signed distance s,
+  depth, radius, ink); the second accumulates `w = exp(-(s - minS)/k)` from
+  every capsule within `k*6` px and inside the depth gate. Then
+  **`smin = minS - k·ln(ΣW)`** and **`q = 1 + smin/r`** — the same q the hard
+  path uses, so shading/quantisation is untouched. At k → 0 it collapses
+  exactly onto the old field, so blend 0 is bit-identical to before.
+- Four controls (forge → render): **blend** (softness k, px), **blend depth**
+  (max view-z gap a part may bleed across, m), **colour mix** (0 keeps the
+  nearest ink, 1 full weighted mix), **shape fuse** (0 keeps the hard
+  silhouette while colours still blend, 1 fully fused).
+- **Fusing inflates the surface** — that's inherent to smooth-min. `shape
+  fuse` exists precisely to dial it back: `smin = minS + (sminFull - minS)·amt`.
+  At k=4 with shape fuse 1 the figure reads melty; shape fuse 0 keeps the
+  silhouette tight with the colour bleed intact. Useful zone is k 1.5–2.5.
+- Sweet spot found by eye: k 2.0, depth 0.35, mix 1, shape 0.5.
+- GPU shader mirrors the same maths (two loops per pixel, `softHit`); WGSL
+  module-scope `var<private>` must be declared BEFORE the function using it.
+- `npx tsx farm/blend_test.ts` renders the parameter grid (k across, shape
+  fuse / depth bleed down) — quickest way to re-judge the look.
+- Arena persists a single `blend` in its look settings (shape fuse fixed at
+  0.5 so silhouettes stay readable at 22px).
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
