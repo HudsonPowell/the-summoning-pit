@@ -206,12 +206,15 @@ export class ClashDraw {
     const collapse = p.alive ? 0 : Math.min(1, p.deadT / 27);
     const caps = solvePose(this.genomes[pi], mood, f.phase, p.moving ? 1 : 0, g.tick / 60, undefined, collapse);
 
-    // facing: profile for horizontal (mirrored for left), back/front for vertical
+    // facing: the creature walks along its local +x; rotY maps +x to view
+    // (cos yaw, 0, -sin yaw), and larger view-z is nearer the camera. So:
+    // right = slight 3/4 profile; up (away) = +1.35 rear 3/4; down (toward)
+    // = -1.35 front 3/4; left = the right profile mirrored by canvas flip.
     let yaw = 0.45;
     let flip = false;
-    if (p.fx < 0) flip = true;
-    if (p.fy < 0) yaw = -1.1;
-    if (p.fy > 0) yaw = 2.4;
+    if (p.fy < 0) yaw = 1.35;
+    else if (p.fy > 0) yaw = -1.35;
+    else if (p.fx < 0) flip = true;
 
     const cam: Camera = { yaw, pitch: 0.28, ppm: PPM, cy: 0.8, flat: true, floor: false };
     this.figRenderer.render(this.figBuf, caps, cam, 0);
