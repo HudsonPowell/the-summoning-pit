@@ -105,6 +105,10 @@ export interface PlayerState {
   strikeT: number;
   struck: boolean;
   placeCd: number; // oil cooldown
+  // presentation only — the body turns to your INTENT and leans on the wall
+  // it is pressed against, while movement stays strictly four-way
+  ix: number; iy: number;
+  pressX: number; pressY: number;
   speed: number;
   radius: number;
   maxCandles: number;
@@ -147,8 +151,6 @@ export interface GameCfg {
   players: PlayerCfg[];
   beastDefs: BeastDef[];
   beastBase: number;
-  /** 8-way movement. The design doc's grammar is 4-way; this is the dial. */
-  diagonal: boolean;
 }
 
 export interface Game {
@@ -230,6 +232,8 @@ function spawnPlayers(g: Game): void {
     p.strikeT = -1;
     p.struck = false;
     p.placeCd = 0;
+    p.ix = p.fx; p.iy = p.fy;
+    p.pressX = 0; p.pressY = 0;
     p.speed = BASE_SPEED;
     p.radius = cfg ? cfg.radius : 2;
     p.maxCandles = 1;
@@ -278,6 +282,7 @@ export function createGame(numPlayers: number, seed: number, cfg?: Partial<GameC
     players: Array.from({ length: numPlayers }, () => ({
       x: 0, y: 0, fx: 1, fy: 0, alive: true, deadT: -1,
       hp: PLAYER_HP, hurtT: 0, strikeT: -1, struck: false, placeCd: 0,
+      ix: 1, iy: 0, pressX: 0, pressY: 0,
       speed: BASE_SPEED, radius: 2, maxCandles: 1,
       wins: 0, moving: false, axis: 0 as const,
     })),
@@ -296,7 +301,6 @@ export function createGame(numPlayers: number, seed: number, cfg?: Partial<GameC
       players: cfg?.players ?? [],
       beastDefs: cfg?.beastDefs ?? [],
       beastBase: cfg?.beastBase ?? 2,
-      diagonal: cfg?.diagonal ?? true,
     },
     events: [],
   };
@@ -766,32 +770,24 @@ export function step(g: Game, inputs: Input[]): void {
     }
 
     p.moving = false;
-    if (g.cfg.diagonal && inp.dx !== 0 && inp.dy !== 0) {
-      // both axes in the same tick, each collision-checked on its own so you
-      // slide along a wall instead of sticking. Per-axis step is scaled by
-      // ~1/sqrt(2) (181/256, integer) so a diagonal isn't a speed exploit.
-      const ds = Math.max(1, (p.speed * 181) >> 8);
-      const movedX = moveAxis(g, p, ds, inp.dx, 0);
-      const movedY = moveAxis(g, p, ds, 0, inp.dy);
-      p.moving = movedX || movedY;
-      p.fx = inp.dx;
-      p.fy = inp.dy;
-      p.axis = movedX ? 0 : 1;
-    } else {
-      const want: [number, number][] = [];
-      if (inp.dx !== 0) want.push([inp.dx, 0]);
-      if (inp.dy !== 0) want.push([0, inp.dy]);
-      if (want.length === 2 && p.axis === 1) want.reverse();
-      // facing answers the key even when the way is blocked — turning on the
-      // spot is most of what "in control" feels like
-      if (want.length) { p.fx = want[0][0]; p.fy = want[0][1]; }
-      for (const [dx, dy] of want) {
-        if (moveAxis(g, p, p.speed, dx, dy)) {
-          p.moving = true;
-          p.fx = dx; p.fy = dy;
-          p.axis = dx !== 0 ? 0 : 1;
-          break;
-        }
+    // what the hands are asking for, whether or not the maze allows it
+    if (inp.dx !== 0 || inp.dy !== 0) { p.ix = inp.dx; p.iy = inp.dy; }
+    // an axis we are pushing into and cannot have is a wall we are leaning on
+    p.pressX = inp.dx !== 0 && !fits(g, p.x + inp.dx * p.speed, p.y, p.x, p.y) ? inp.dx : 0;
+    p.pressY = inp.dy !== 0 && !fits(g, p.x, p.y + inp.dy * p.speed, p.x, p.y) ? inp.dy : 0;
+
+    // movement itself stays strictly four-way: one axis per tick, grid-honest
+    const want: [number, number][] = [];
+    if (inp.dx !== 0) want.push([inp.dx, 0]);
+    if (inp.dy !== 0) want.push([0, inp.dy]);
+    if (want.length === 2 && p.axis === 1) want.reverse();
+    if (want.length) { p.fx = want[0][0]; p.fy = want[0][1]; }
+    for (const [dx, dy] of want) {
+      if (moveAxis(g, p, p.speed, dx, dy)) {
+        p.moving = true;
+        p.fx = dx; p.fy = dy;
+        p.axis = dx !== 0 ? 0 : 1;
+        break;
       }
     }
 

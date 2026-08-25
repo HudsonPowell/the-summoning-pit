@@ -27,7 +27,9 @@ The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same g
 
 Open `/clash.html`. The game per `ReadMe_MDs/CLASH.md`: 2 players, one
 keyboard (P1 wasd / f place / g strike, P2 arrows / enter / shift). Movement
-is 8-way by default — the footer toggles back to the doc's 4-way grammar. Deterministic 60Hz integer
+is four-way and grid-honest; the BODY turns freely to whatever you're asking
+for, so pressing into a wall while running a corridor gives a diagonal,
+shouldered-into-the-wall pose without breaking the grammar. Deterministic 60Hz integer
 sim in `src/clash/sim.ts` (no DOM, no floats); figures are rig genomes
 rendered flat — there are no sprites. `window.clash.step(n, inputs)` drives
 the sim deterministically for tests.

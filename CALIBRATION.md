@@ -364,16 +364,20 @@ Sorting artefacts on limbs are almost always one of these two; check the axis
   the camera (screen-down). Verify with `npx tsx farm/facing_test.ts`.
 - The smoothed heading lives in the RENDERER (0.45 toward target per frame),
   never in the sim — the sim keeps integer facing, so determinism is intact.
-- **8-way movement**: both axes step in the same tick, each collision-checked
-  separately so you slide along walls. Per-axis step is `(speed * 181) >> 8`
-  (≈1/√2, integer) — measured 0.94× straight-line speed, so a diagonal is a
-  slight cost, never an exploit.
-- **Facing answers the key even when movement is blocked** — turning on the
-  spot is most of what "in control" feels like.
-- **This departs from the design doc**, which specifies four-way movement as
-  part of the grammar. Kept as a footer toggle (8-way default, persisted) so
-  it is one click to return to doc-legal 4-way. Diagonals make lane-based
-  bomb dodging easier, which changes the danger maths — worth a play test.
+- **The space stays four-way; the BODY turns freely.** Jody's framing, and
+  it is better than the 8-way movement I first built (now removed): movement
+  is one axis per tick, grid-honest, but the pose turns to the raw INPUT
+  intent. Running up a thin corridor while also pressing left keeps you
+  moving up and swings the body to a diagonal, leaning on the wall. Reads as
+  physical contact rather than a snap between four poses.
+- Three separate quantities, and keeping them separate is the trick:
+  `ix/iy` intent (drives the drawn heading), `fx/fy` four-way facing
+  (gameplay: strike arc, imp direction — grammar untouched), `pressX/pressY`
+  an axis asked for and refused (a wall being leaned on). The last two are
+  presentation-only outputs of a deterministic sim.
+- Wall lean is a 1.6px positional nudge toward the pressed wall. Turning is
+  exponential at rate 16/s using real frame dt, so it feels the same at any
+  refresh rate.
 - Forge arrow keys orbit: tap = 0.045 rad, shift-tap = ⅛ of that, hold =
   1.4 rad/s continuous, `[` / `]` snap to compass eighths. Camera sliders
   stepped down to 0.001 so a fine nudge is actually visible in the readout.

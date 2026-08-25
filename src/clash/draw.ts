@@ -44,6 +44,9 @@ interface FigureState {
   heading: number; // smoothed, presentation-only — the sim stays integer
 }
 
+const TURN_RATE = 16; // radians-ish per second of exponential approach
+const PRESS_PX = 1.6;  // how far the body lays into a wall it cannot pass
+
 const CELL = 34;
 const CELL_H = 40;
 
@@ -68,6 +71,7 @@ export class ClashDraw {
   private beastChars: Character[];
   private beastGenomes: Genome[];
   settings: RenderSettings;
+  private dt = 1 / 60;
 
   constructor(
     display: HTMLCanvasElement,
@@ -109,7 +113,8 @@ export class ClashDraw {
     return (h ^ (h >> 16)) >>> 0;
   }
 
-  render(g: Game, shakeX = 0, shakeY = 0): void {
+  render(g: Game, shakeX = 0, shakeY = 0, dt = 1 / 60): void {
+    this.dt = dt;
     const c = this.nctx;
     const tone = this.settings.boardTone;
     c.fillStyle = INK.bg;
@@ -345,14 +350,19 @@ export class ClashDraw {
     };
   }
 
-  /** Turn toward the input's direction fast but not instantly — snap reads as a glitch. */
-  private turn(f: FigureState, fx: number, fy: number, dt = 1): void {
+  /**
+   * Turn the body toward what the hands asked for — including diagonals the
+   * four-way maze will never actually let you walk. Pressing left while
+   * running up a corridor keeps you moving up but swings the body round to
+   * lean into the wall. Exponential, so the rate is the same at any fps.
+   */
+  private turn(f: FigureState, fx: number, fy: number): void {
     if (fx === 0 && fy === 0) return;
     const target = Math.atan2(fy, fx);
     let d = target - f.heading;
     while (d > Math.PI) d -= TAU;
     while (d < -Math.PI) d += TAU;
-    f.heading += d * Math.min(1, 0.45 * dt);
+    f.heading += d * (1 - Math.exp(-TURN_RATE * this.dt));
   }
 
   private oriented(caps: Capsule[], heading: number): Capsule[] {
@@ -411,10 +421,14 @@ export class ClashDraw {
     if (hurtFlash)
       for (const cp of caps) cp.color = [255, 235, 235];
 
-    this.turn(f, p.fx, p.fy);
+    // the body follows intent; gameplay (strike arc, imp direction) still
+    // reads the four-way p.fx/p.fy, so the grammar is untouched
+    this.turn(f, p.ix, p.iy);
+    const leanX = p.pressX * PRESS_PX;
+    const leanY = p.pressY * PRESS_PX;
     this.shadow(pxf, pyf);
     this.figRenderer.render(this.figBuf, this.oriented(caps, f.heading), this.figCam(genome), 0);
-    this.blit(pxf, pyf, false);
+    this.blit(pxf + leanX, pyf + leanY, false);
   }
 
   private drawBeast(g: Game, b: Beast): void {

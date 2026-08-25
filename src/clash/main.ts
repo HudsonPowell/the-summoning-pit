@@ -15,7 +15,6 @@ interface SavedCfg {
   heroes: [string, string]; // slugs
   settings: RenderSettings;
   scale: number;
-  diagonal: boolean;
 }
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, '');
@@ -29,11 +28,10 @@ function loadCfg(): SavedCfg {
         heroes: c.heroes ?? ['scout', 'scout'],
         settings: { ...DEFAULT_SETTINGS, ...(c.settings ?? {}) },
         scale: c.scale ?? 2,
-        diagonal: c.diagonal ?? true,
       };
     }
   } catch { /* fresh */ }
-  return { heroes: ['scout', 'scout'], settings: { ...DEFAULT_SETTINGS }, scale: 2, diagonal: true };
+  return { heroes: ['scout', 'scout'], settings: { ...DEFAULT_SETTINGS }, scale: 2 };
 }
 let saved = loadCfg();
 function persist() {
@@ -151,7 +149,6 @@ async function boot() {
       hp: 2,
     })),
     beastBase: 2,
-    diagonal: saved.diagonal,
   };
 
   const game = createGame(NUM_PLAYERS, 0xC1A54, cfg);
@@ -183,15 +180,6 @@ async function boot() {
     saved.settings.figureStyle = styleSel.value as RenderSettings['figureStyle'];
     persist();
   });
-  const moveSel = document.getElementById('movemode') as HTMLSelectElement | null;
-  if (moveSel) {
-    moveSel.value = saved.diagonal ? '8' : '4';
-    moveSel.addEventListener('input', () => {
-      saved.diagonal = moveSel.value === '8';
-      game.cfg.diagonal = saved.diagonal;
-      persist();
-    });
-  }
   const blendInput = document.getElementById('figblend') as HTMLInputElement | null;
   if (blendInput) {
     blendInput.value = String(saved.settings.blend);
@@ -214,7 +202,7 @@ async function boot() {
     persist();
   });
   document.getElementById('resetlook')!.addEventListener('click', () => {
-    saved = { heroes: ['scout', 'scout'], settings: { ...DEFAULT_SETTINGS }, scale: 2, diagonal: true };
+    saved = { heroes: ['scout', 'scout'], settings: { ...DEFAULT_SETTINGS }, scale: 2 };
     persist();
     location.reload();
   });
@@ -226,6 +214,7 @@ async function boot() {
   let freeze = 0;       // hit-stop frames
   let shake = 0;        // decaying shake amplitude, native px
   let lastCount = -1;   // countdown state
+  let lastFrame = performance.now();
 
   const hearts = (hp: number) =>
     '♥'.repeat(Math.max(0, hp)) + '·'.repeat(Math.max(0, PLAYER_HP - hp));
@@ -272,7 +261,8 @@ async function boot() {
     shake *= 0.82;
     const sx = shake > 0.3 ? (Math.random() * 2 - 1) * shake : 0;
     const sy = shake > 0.3 ? (Math.random() * 2 - 1) * shake : 0;
-    draw.render(game, sx, sy);
+    draw.render(game, sx, sy, Math.min(0.05, (now - lastFrame) / 1000));
+    lastFrame = now;
 
     if (game.roundEndT > 0 && lastWinner !== game.roundWinner) {
       lastWinner = game.roundWinner;
