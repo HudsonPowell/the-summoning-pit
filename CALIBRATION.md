@@ -284,6 +284,34 @@ This file is the only thing that accumulates. Add, don't rewrite.
 - Round flow: 2s frozen countdown (3-2-1-GO toasts + ticks) each round;
   first to 3 wins takes the match (toast + fanfare, 6s, then full reset).
 
+### The seven class rules (2026-08-25) — pattern IS the game
+Each pattern changes exactly ONE rule of the verb; damage is identical
+everywhere, per the design doc. All verified by `npm test`.
+- FLAME — baseline damage cross, one block per arm.
+- RUNE — damage cross, but an enemy standing still on it for 36 ticks (0.6s)
+  scuffs it out. Movement resets the counter; scuffing never damages.
+- VINE — grows wall (240 ticks) instead of destroying; crushes what it grows
+  through, stops at blocks without consuming them, buries rather than chains.
+  **The origin tile never crushes** — you can always step out of your own
+  placement, the same principle as the collision overlap allowance.
+- OIL — two-part: puddles paint instantly, inert and harmless, and wait for
+  ANY player's real fire; ignition flood-fills the connected slick. Placement
+  is on a cooldown (the fuse value) rather than a candle count.
+- CURSE — ordinary damage cross rendered at 0.22 alpha as a 2px smudge:
+  hidden information in a genre with none.
+- BELL — non-lethal: radius+1, soft flame (flameSoft=1, 12 ticks) that damages
+  nothing and shoves bodies 2 tiles outward along each arm.
+- IMP — the placeable walks: 3 tiles at 2 sub-px/tick in the placer's facing,
+  passing over tiles as non-solid, then arms with a 60-tick fuse.
+
+### Sim tests (farm/sim_test.ts, `npm test`)
+- Determinism: a 900-tick scripted replay hashes identically across runs for
+  all seven patterns; different seeds diverge. This is the property netcode,
+  spectating and desync detection will rest on — run it after ANY sim change.
+- Class-rule assertions cover every bullet above. A weak-looking result is
+  worth a second look: the bell's 5-subpixel shove was a wall correctly
+  stopping it, confirmed by clearing the lane (then 2.03 tiles).
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the

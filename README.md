@@ -22,6 +22,9 @@ The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same g
 
 ## Play CLASH (arena mode)
 
+`npm test` runs the sim suite: a 900-tick replay must hash identically
+(determinism is what netcode will rest on) plus one assertion per class rule.
+
 Open `/clash.html`. The game per `ReadMe_MDs/CLASH.md`: 2 players, one
 keyboard (P1 wasd+f, P2 arrows+enter), one class. Deterministic 60Hz integer
 sim in `src/clash/sim.ts` (no DOM, no floats); figures are rig genomes
