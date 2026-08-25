@@ -225,6 +225,29 @@ This file is the only thing that accumulates. Add, don't rewrite.
   x1.7 — unscaled limbs are 1px and vanish. Facing: profile yaw 0.45,
   mirrored via canvas flip for left; back -1.1; front 2.4.
 
+### The character model (2026-08-25)
+- A character = genome + named behaviour sets + weapon spec + blast spec,
+  ~4KB total. Behaviours are typed data: 'gait' (a Gait + mood), 'still'
+  (collapse/tired/breathe — idle and sleep are the same type, different
+  numbers), 'strike' (parameterised arc: duration, windup/strike fractions,
+  bezier posts, reach range, torso twist).
+- behaviours.walk.gait shares the genome.gait OBJECT — walk is canonical;
+  chip-switching repoints genome.gait at the active behaviour's gait so the
+  solver and sliders stay honest.
+- Defaults derived, not authored per character: run = walk transformed
+  (cadence x1.35, stride x1.25, lean+, swing+); sleep = still with collapse
+  0.82 + slow deep breath. Light strike 0.38s low flat arc; heavy 0.95s
+  overhead (windup 50%, strike 14%).
+- Weapons are capsule parts in GRIP SPACE (+x along blade, +y knuckle-side);
+  the smith (llama3.2:3b) composes 2-6 parts; hard clamps keep it holdable;
+  keyword armoury answers when ollama is down. First forge: a 6-part staff
+  with orb + ember nodes — genuinely composed, not from the armoury.
+- Stores: characters/ via /api/characters (GET/POST/DELETE), never glob'd,
+  watcher-ignored. genomes/ remains the legacy pool; bestiary lists both
+  (legacy badge) through migrateCharacter.
+- Bestiary thumbnails are the real rig walking at 64px — there are no
+  preview images anywhere in the app.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
