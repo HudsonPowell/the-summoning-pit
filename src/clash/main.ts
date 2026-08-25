@@ -1,7 +1,8 @@
 // CLASH — ARENA mode. Pick a hero you built in the forge, fight the other
 // player and whatever crawled off the bestiary shelf.
 
-import { createGame, step, Input, Game, PLAYER_HP, GameCfg } from './sim';
+import { createGame, step, Input, PLAYER_HP, GameCfg, GameEvent } from './sim';
+import { ClashAudio } from './audio';
 import { ClashDraw, RenderSettings, DEFAULT_SETTINGS } from './draw';
 import { Character, makeCharacter, migrateCharacter } from '../character';
 import { defaultBiped, walkSpeed } from './helpers';
@@ -78,7 +79,15 @@ const toastEl = document.getElementById('toast')!;
 const held = new Set<string>();
 const placedEdge = [false, false];
 const meleeEdge = [false, false];
+let audio: ClashAudio | null = null;
+function ensureAudio() {
+  if (!audio) {
+    try { audio = new ClashAudio(); } catch { /* no audio here */ }
+  }
+  audio?.resume();
+}
 addEventListener('keydown', e => {
+  ensureAudio();
   const k = e.key.toLowerCase();
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'enter', 'shift'].includes(k) ||
       ['w', 'a', 's', 'd', 'f', 'g'].includes(k)) e.preventDefault();
@@ -193,6 +202,9 @@ async function boot() {
   let acc = 0;
   let last = performance.now();
   let lastWinner = -2;
+  let freeze = 0;       // hit-stop frames
+  let shake = 0;        // decaying shake amplitude, native px
+  let lastCount = -1;   // countdown state
 
   const hearts = (hp: number) =>
     '♥'.repeat(Math.max(0, hp)) + '·'.repeat(Math.max(0, PLAYER_HP - hp));
@@ -200,11 +212,46 @@ async function boot() {
   function frame(now: number) {
     acc += Math.min(250, now - last);
     last = now;
-    while (acc >= TICK_MS) {
-      step(game, readInputs());
-      acc -= TICK_MS;
+    const frameEvents: GameEvent[] = [];
+    if (freeze > 0) {
+      freeze--;
+      acc = 0; // don't bank time during hit-stop
+    } else {
+      while (acc >= TICK_MS) {
+        step(game, readInputs());
+        frameEvents.push(...game.events);
+        acc -= TICK_MS;
+      }
     }
-    draw.render(game);
+
+    for (const e of frameEvents) {
+      if (e.type === 'strikeHit') freeze = Math.max(freeze, 4);
+      if (e.type === 'diePlayer' || e.type === 'dieBeast') freeze = Math.max(freeze, 8);
+      if (e.type === 'explode') shake = Math.max(shake, Math.min(4, 1.5 + e.tiles / 6));
+      if (e.type === 'diePlayer') shake = Math.max(shake, 3);
+      if (e.type === 'matchOver')
+        toast(`${heroChars[e.winner].name.toUpperCase()} WINS THE MATCH`);
+    }
+    audio?.handle(frameEvents);
+    audio?.updateFuses(game);
+
+    // countdown: 3.. 2.. 1.. GO
+    const count = game.introT > 0 ? Math.ceil(game.introT / 40) : 0;
+    if (count !== lastCount) {
+      if (count > 0) {
+        toast(String(count));
+        audio?.countdownTick(count);
+      } else if (lastCount > 0) {
+        toast('GO');
+        audio?.countdownTick(0);
+      }
+      lastCount = count;
+    }
+
+    shake *= 0.82;
+    const sx = shake > 0.3 ? (Math.random() * 2 - 1) * shake : 0;
+    const sy = shake > 0.3 ? (Math.random() * 2 - 1) * shake : 0;
+    draw.render(game, sx, sy);
 
     if (game.roundEndT > 0 && lastWinner !== game.roundWinner) {
       lastWinner = game.roundWinner;

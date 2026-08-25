@@ -29,6 +29,28 @@ const STRIKE_RANGE = TS * 1.2;
 
 export const enum Pickup { FOCUS = 0, HAND = 1, BOOTS = 2 }
 
+export const BITE_WINDUP = 24;   // 0.4s telegraph — a human can react to this
+export const BITE_TOTAL = 40;
+const BITE_COOLDOWN = 50;
+const BITE_RANGE = HALF * 2.6; // slightly beyond contact so the lunge can land
+const INTRO_TICKS = 120;  // 3..2..1..go
+export const WINS_TO_MATCH = 3;
+
+/** Pure sim output for presentation (sound, shake, toasts). Cleared each tick. */
+export type GameEvent =
+  | { type: 'place'; owner: number }
+  | { type: 'explode'; tiles: number; x: number; y: number }
+  | { type: 'pickup'; kind: Pickup }
+  | { type: 'hurtPlayer'; pi: number }
+  | { type: 'hurtBeast' }
+  | { type: 'diePlayer'; pi: number }
+  | { type: 'dieBeast' }
+  | { type: 'strike'; pi: number }
+  | { type: 'strikeHit' }
+  | { type: 'bite' }
+  | { type: 'roundOver'; winner: number }
+  | { type: 'matchOver'; winner: number };
+
 export interface Input {
   dx: -1 | 0 | 1;
   dy: -1 | 0 | 1;
@@ -74,6 +96,8 @@ export interface Beast {
   moving: boolean;
   dirX: number; dirY: number;
   repathT: number;
+  biteT: number;  // -1 idle, else ticks into the windup+lunge
+  biteCd: number;
 }
 
 export interface Candle {
@@ -104,8 +128,12 @@ export interface Game {
   round: number;
   roundEndT: number;
   roundWinner: number;
+  introT: number;      // countdown before each round; inputs frozen
+  matchWinner: number; // -1 running; else match point reached
+  matchEndT: number;
   rng: number;
   cfg: GameCfg;
+  events: GameEvent[];
 }
 
 const idx = (tx: number, ty: number) => ty * GW + tx;
@@ -194,6 +222,7 @@ function spawnBeasts(g: Game): void {
       x: tx * TS + TS / 2, y: ty * TS + TS / 2,
       fx: 1, fy: 0, def, hp: d.hp, hurtT: 0, deadT: -1,
       moving: false, dirX: 1, dirY: 0, repathT: 0,
+      biteT: -1, biteCd: 0,
     });
   }
 }
@@ -216,7 +245,11 @@ export function createGame(numPlayers: number, seed: number, cfg?: Partial<GameC
     round: 1,
     roundEndT: -1,
     roundWinner: -1,
+    introT: INTRO_TICKS,
+    matchWinner: -1,
+    matchEndT: -1,
     rng: seed >>> 0,
+    events: [],
     cfg: {
       players: cfg?.players ?? [],
       beastDefs: cfg?.beastDefs ?? [],
@@ -239,6 +272,7 @@ function resetRound(g: Game): void {
   spawnBeasts(g);
   g.roundEndT = -1;
   g.roundWinner = -1;
+  g.introT = INTRO_TICKS;
 }
 
 // --- movement -------------------------------------------------------------
@@ -306,6 +340,9 @@ function damagePlayer(g: Game, pi: number): void {
     p.alive = false;
     p.deadT = 0;
     p.strikeT = -1;
+    g.events.push({ type: 'diePlayer', pi });
+  } else {
+    g.events.push({ type: 'hurtPlayer', pi });
   }
 }
 
@@ -313,7 +350,12 @@ function damageBeast(g: Game, b: Beast): void {
   if (b.deadT >= 0 || b.hurtT > 0) return;
   b.hp--;
   b.hurtT = HURT_INVULN / 2;
-  if (b.hp <= 0) b.deadT = 0;
+  if (b.hp <= 0) {
+    b.deadT = 0;
+    g.events.push({ type: 'dieBeast' });
+  } else {
+    g.events.push({ type: 'hurtBeast' });
+  }
 }
 
 // --- the verb -------------------------------------------------------------
@@ -326,6 +368,7 @@ function place(g: Game, pi: number): void {
   if (g.candles.some(c => c.tx === tx && c.ty === ty)) return;
   if (g.grid[idx(tx, ty)] !== T.FLOOR) return;
   g.candles.push({ tx, ty, timer: cfg.fuse, fuse: cfg.fuse, owner: pi, radius: p.radius });
+  g.events.push({ type: 'place', owner: pi });
 }
 
 function resolve(g: Game): void {
@@ -378,11 +421,30 @@ function resolve(g: Game): void {
     g.flame[i] = FLAME_TTL;
     g.flameOwner[i] = owner;
   }
+  if (flamed.length) {
+    const origin = flamed[0][0];
+    g.events.push({
+      type: 'explode',
+      tiles: flamed.length,
+      x: (origin % GW) * TILE + TILE / 2,
+      y: Math.floor(origin / GW) * TILE + TILE / 2,
+    });
+  }
   g.candles = g.candles.filter((_, i) => !exploded.has(i));
   g.pickups = g.pickups.filter(pk => g.flame[idx(pk.tx, pk.ty)] <= 0);
 }
 
 // --- melee ----------------------------------------------------------------
+
+/** Knockback: push a body along the hit direction as far as the maze allows. */
+function shove(g: Game, m: Mover, fx: number, fy: number): void {
+  for (let i = 0; i < 6; i++) {
+    const nx = m.x + fx * 5, ny = m.y + fy * 5;
+    if (!fits(g, nx, ny, m.x, m.y)) break;
+    m.x = nx;
+    m.y = ny;
+  }
+}
 
 function strikeHit(g: Game, pi: number): void {
   const p = g.players[pi];
@@ -396,14 +458,24 @@ function strikeHit(g: Game, pi: number): void {
     // point-blank counts: something standing on you is very much in range
     return dist < STRIKE_RANGE && (ox * fx + oy * fy > 0 || dist < HALF * 2);
   };
+  let connected = false;
   g.players.forEach((o, oi) => {
     if (oi === pi || !o.alive) return;
-    if (inArc(o.x - p.x, o.y - p.y)) damagePlayer(g, oi);
+    if (inArc(o.x - p.x, o.y - p.y)) {
+      damagePlayer(g, oi);
+      shove(g, o, fx, fy);
+      connected = true;
+    }
   });
   for (const b of g.beasts) {
     if (b.deadT >= 0) continue;
-    if (inArc(b.x - p.x, b.y - p.y)) damageBeast(g, b);
+    if (inArc(b.x - p.x, b.y - p.y)) {
+      damageBeast(g, b);
+      shove(g, b, fx, fy);
+      connected = true;
+    }
   }
+  if (connected) g.events.push({ type: 'strikeHit' });
 }
 
 // --- beasts ---------------------------------------------------------------
@@ -443,21 +515,49 @@ function stepBeast(g: Game, b: Beast): void {
     }
   }
 
-  b.moving = moveAxis(g, b, d.speed, b.dirX, b.dirY);
+  if (b.biteT >= 0 && b.biteT < BITE_WINDUP) {
+    b.moving = false;
+    // still telegraphing — stand and rear
+  } else {
+    b.moving = moveAxis(g, b, d.speed, b.dirX, b.dirY);
+  }
   if (!b.moving) b.repathT = 0;
   if (b.dirX !== 0 || b.dirY !== 0) { b.fx = b.dirX; b.fy = b.dirY; }
 
-  // teeth: touching a player hurts them
-  g.players.forEach((p, pi) => {
-    if (!p.alive) return;
-    if (Math.abs(p.x - b.x) < HALF * 2 && Math.abs(p.y - b.y) < HALF * 2) damagePlayer(g, pi);
-  });
+  // teeth, with a telegraph: rear up (no damage), THEN the lunge lands
+  if (b.biteCd > 0) b.biteCd--;
+  if (b.biteT < 0 && b.biteCd <= 0) {
+    const near = g.players.some(
+      p => p.alive && Math.abs(p.x - b.x) < HALF * 2.2 && Math.abs(p.y - b.y) < HALF * 2.2,
+    );
+    if (near) {
+      b.biteT = 0;
+      g.events.push({ type: 'bite' });
+    }
+  }
+  if (b.biteT >= 0) {
+    b.biteT++;
+    if (b.biteT === BITE_WINDUP) {
+      g.players.forEach((p, pi) => {
+        if (!p.alive) return;
+        if (Math.abs(p.x - b.x) < BITE_RANGE && Math.abs(p.y - b.y) < BITE_RANGE) damagePlayer(g, pi);
+      });
+    }
+    if (b.biteT >= BITE_TOTAL) {
+      b.biteT = -1;
+      b.biteCd = BITE_COOLDOWN;
+    }
+  }
 }
 
 // --- tick -----------------------------------------------------------------
 
 export function step(g: Game, inputs: Input[]): void {
   g.tick++;
+  g.events.length = 0;
+
+  if (g.introT > 0) g.introT--;
+  const frozen = g.introT > 0;
 
   if (g.roundEndT >= 0) {
     g.roundEndT--;
@@ -470,9 +570,15 @@ export function step(g: Game, inputs: Input[]): void {
       return;
     }
     if (p.hurtT > 0) p.hurtT--;
-    const inp = inputs[pi] ?? { dx: 0, dy: 0, place: false, melee: false };
+    const inp = frozen
+      ? { dx: 0 as const, dy: 0 as const, place: false, melee: false }
+      : inputs[pi] ?? { dx: 0, dy: 0, place: false, melee: false };
     if (inp.place) place(g, pi);
-    if (inp.melee && p.strikeT < 0) { p.strikeT = 0; p.struck = false; }
+    if (inp.melee && p.strikeT < 0) {
+      p.strikeT = 0;
+      p.struck = false;
+      g.events.push({ type: 'strike', pi });
+    }
     if (p.strikeT >= 0) {
       p.strikeT++;
       if (!p.struck && p.strikeT >= STRIKE_HIT_TICK) {
@@ -502,11 +608,12 @@ export function step(g: Game, inputs: Input[]): void {
       if (pk.kind === Pickup.FOCUS) p.radius = Math.min(MAX_RADIUS, p.radius + 1);
       if (pk.kind === Pickup.HAND) p.maxCandles = Math.min(MAX_CANDLES_CAP, p.maxCandles + 1);
       if (pk.kind === Pickup.BOOTS) p.speed = Math.min(MAX_SPEED, p.speed + 1);
+      g.events.push({ type: 'pickup', kind: pk.kind });
       return false;
     });
   });
 
-  for (const b of g.beasts) stepBeast(g, b);
+  if (!frozen) for (const b of g.beasts) stepBeast(g, b);
   g.beasts = g.beasts.filter(b => b.deadT < 100);
 
   for (const c of g.candles) c.timer--;
@@ -522,16 +629,33 @@ export function step(g: Game, inputs: Input[]): void {
     if (g.flame[idx(tileOf(b.x), tileOf(b.y))] > 0) damageBeast(g, b);
   }
 
-  if (g.roundEndT < 0) {
+  if (g.roundEndT < 0 && g.matchWinner < 0) {
     const alive = g.players.filter(p => p.alive);
     if (alive.length <= 1 && g.players.length > 1) {
       g.roundEndT = ROUND_END;
       if (alive.length === 1) {
         g.roundWinner = g.players.indexOf(alive[0]);
         alive[0].wins++;
+        g.events.push({ type: 'roundOver', winner: g.roundWinner });
+        if (alive[0].wins >= WINS_TO_MATCH) {
+          g.matchWinner = g.roundWinner;
+          g.matchEndT = 360;
+          g.roundEndT = -1;
+          g.events.push({ type: 'matchOver', winner: g.matchWinner });
+        }
       } else {
         g.roundWinner = -1;
+        g.events.push({ type: 'roundOver', winner: -1 });
       }
+    }
+  }
+  if (g.matchWinner >= 0) {
+    g.matchEndT--;
+    if (g.matchEndT <= 0) {
+      for (const p of g.players) p.wins = 0;
+      g.round = 0;
+      g.matchWinner = -1;
+      resetRound(g);
     }
   }
 }

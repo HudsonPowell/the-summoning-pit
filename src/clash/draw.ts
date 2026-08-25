@@ -3,7 +3,7 @@
 // their weapon swings, their blast colours burn. Beasts come off the
 // bestiary shelf. There are no sprites anywhere.
 
-import { Game, GW, GH, TILE, SUB, T, Pickup, Candle, Beast, STRIKE_TICKS } from './sim';
+import { Game, GW, GH, TILE, SUB, T, Pickup, Candle, Beast, STRIKE_TICKS, BITE_TOTAL, BITE_WINDUP } from './sim';
 import { Genome, Mood, scaleSkeleton } from '../genome';
 import { Character, StrikeSpec, DEFAULT_STRIKE_LIGHT } from '../character';
 import { solvePose, slashWeight, Intent } from '../pose';
@@ -103,7 +103,7 @@ export class ClashDraw {
     return (h ^ (h >> 16)) >>> 0;
   }
 
-  render(g: Game): void {
+  render(g: Game, shakeX = 0, shakeY = 0): void {
     const c = this.nctx;
     const tone = this.settings.boardTone;
     c.fillStyle = INK.bg;
@@ -171,7 +171,11 @@ export class ClashDraw {
     });
 
     this.ctx.imageSmoothingEnabled = false;
-    this.ctx.drawImage(this.native, 0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+    this.ctx.fillStyle = INK.bg;
+    this.ctx.fillRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+    const sx = Math.round(shakeX * (this.ctx.canvas.width / NATIVE_W));
+    const sy = Math.round(shakeY * (this.ctx.canvas.height / NATIVE_H));
+    this.ctx.drawImage(this.native, sx, sy, this.ctx.canvas.width, this.ctx.canvas.height);
   }
 
   private drawCandle(cd: Candle, g: Game): void {
@@ -261,6 +265,12 @@ export class ClashDraw {
     };
   }
 
+  private shadow(pxf: number, pyf: number, w = 10): void {
+    const c = this.nctx;
+    c.fillStyle = '#06070b';
+    c.fillRect(Math.round(pxf) - w / 2, Math.round(pyf) + 3, w, 3);
+  }
+
   private blit(pxf: number, pyf: number, flip: boolean): void {
     const img = new ImageData(new Uint8ClampedArray(this.figBuf), CELL, CELL_H);
     this.figCtx.clearRect(0, 0, CELL, CELL_H);
@@ -307,6 +317,7 @@ export class ClashDraw {
     if (hurtFlash)
       for (const cp of caps) cp.color = [255, 235, 235];
 
+    this.shadow(pxf, pyf);
     const { cam, flip } = this.figCam(genome, p.fx, p.fy);
     this.figRenderer.render(this.figBuf, caps, cam, 0);
     this.blit(pxf, pyf, flip);
@@ -328,20 +339,37 @@ export class ClashDraw {
 
     const collapse = b.deadT >= 0 ? Math.min(1, b.deadT / 27) : 0;
     const hurtFlash = b.hurtT > 0 && (g.tick >> 2) % 2 === 0;
+    let intent;
+    if (b.biteT >= 0) {
+      const spec =
+        (ch?.behaviors['attack-light'] as { strike?: StrikeSpec } | undefined)?.strike ??
+        DEFAULT_STRIKE_LIGHT;
+      const t = b.biteT / BITE_TOTAL;
+      intent = { slash: { t, weight: slashWeight(t), spec } };
+    }
     const caps = solvePose(
       genome,
-      { tired: 0, angry: 0.3 },
+      { tired: 0, angry: b.biteT >= 0 ? 1 : 0.3 },
       f.phase,
       b.moving ? 1 : 0,
       g.tick / 60,
-      undefined,
+      intent,
       collapse,
       { weapon: ch?.weapon },
     );
     if (hurtFlash)
       for (const cp of caps) cp.color = [255, 235, 235];
+    this.shadow(pxf, pyf, 12);
     const { cam, flip } = this.figCam(genome, b.fx, b.fy);
     this.figRenderer.render(this.figBuf, caps, cam, 0);
     this.blit(pxf, pyf, flip);
+    // the telegraph everyone can read: ! over a beast about to lunge
+    if (b.biteT >= 0 && b.biteT < BITE_WINDUP) {
+      const c = this.nctx;
+      c.fillStyle = '#ffd25e';
+      const bx = Math.round(pxf), by = Math.round(pyf) - CELL_H + 6;
+      c.fillRect(bx - 1, by, 2, 5);
+      c.fillRect(bx - 1, by + 7, 2, 2);
+    }
   }
 }

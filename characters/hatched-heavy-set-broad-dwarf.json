@@ -1,6 +1,6 @@
 {
   "name": "hatched-heavy-set-broad-dwarf",
-  "kind": "beast",
+  "kind": "hero",
   "genome": {
     "name": "hatched-heavy-set-broad-dwarf",
     "skeleton": {
@@ -35,19 +35,19 @@
       ]
     },
     "gait": {
-      "cadence": 1.62,
-      "stride": 1.5,
-      "stance": 0.6,
-      "lift": 0.10800000000000001,
-      "bounce": 0.045500000000000006,
-      "sway": 0.03,
-      "lean": 0.2,
+      "cadence": 0.89,
+      "stride": 1.2,
+      "stance": 0.51,
+      "lift": 0.01,
+      "bounce": 0.044,
+      "sway": 0.049,
+      "lean": 0.06,
       "slump": 0,
       "crouch": 0.03,
       "pelvisTwist": 0.05,
       "shoulderTwist": 0.05,
-      "armSwing": 0.6075,
-      "elbowBase": 0.6,
+      "armSwing": 0.45,
+      "elbowBase": 0.35,
       "elbowAmp": 0.5,
       "elbowLag": 0.16666666666666666,
       "headPitch": 0,
@@ -257,6 +257,8 @@
   "blast": {
     "core": "#fff3c4",
     "edge": "#ffd25e",
-    "pattern": "flame"
+    "pattern": "flame",
+    "delay": 2.5,
+    "radius": 2
   }
 }
