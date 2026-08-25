@@ -66,7 +66,7 @@ export interface Genome {
 }
 
 const BASE_GAIT: Gait = {
-  cadence: 0.9, stride: 1.35, stance: 0.6, lift: 0.11,
+  cadence: 1.05, stride: 1.45, stance: 0.6, lift: 0.11,
   bounce: 0.028, sway: 0.03, lean: 0.06, slump: 0, crouch: 0.03,
   pelvisTwist: 0.1, shoulderTwist: 0.14,
   armSwing: 0.42, elbowBase: 0.35, elbowAmp: 0.5, elbowLag: 1 / 6,

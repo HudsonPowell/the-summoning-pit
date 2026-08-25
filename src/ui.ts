@@ -36,6 +36,28 @@ export function toggle(
   parent.appendChild(row);
 }
 
+export function color(
+  parent: HTMLElement,
+  label: string,
+  value: string,
+  onInput: (v: string) => void,
+): (v: string) => void {
+  const row = document.createElement('label');
+  row.className = 'row';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.value = value;
+  input.addEventListener('input', () => onInput(input.value));
+  const val = document.createElement('em');
+  val.textContent = value;
+  input.addEventListener('input', () => { val.textContent = input.value; });
+  row.append(name, input, val);
+  parent.appendChild(row);
+  return (v: string) => { input.value = v; val.textContent = v; };
+}
+
 export function select(
   parent: HTMLElement,
   label: string,

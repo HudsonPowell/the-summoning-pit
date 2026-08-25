@@ -65,11 +65,21 @@
     }
     #genomebar { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
     #bytes { color: var(--dim); font-size: 11px; }
-    #copy {
+    #copy, #apply {
       background: none; border: 1px solid #2c2f3a; color: var(--ink);
       font: inherit; font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px;
     }
-    #copy:hover { border-color: var(--accent); color: var(--accent); }
+    #copy:hover, #apply:hover { border-color: var(--accent); color: var(--accent); }
+    select {
+      background: #0b0c10; color: var(--ink); border: 1px solid #2c2f3a;
+      font: inherit; font-size: 11px; padding: 2px 6px; border-radius: 3px; width: 100%;
+    }
+    input[type=color] {
+      width: 100%; height: 18px; border: 1px solid #2c2f3a; border-radius: 3px;
+      background: none; padding: 0; cursor: pointer;
+    }
+    #view { cursor: grab; touch-action: none; }
+    #view:active { cursor: grabbing; }
     .act {
       background: none; border: 1px solid var(--accent); color: var(--accent);
       font: inherit; font-size: 11px; padding: 3px 14px; cursor: pointer;
@@ -92,8 +102,14 @@
     <div class="sub">one creature, moving, changeable while it moves</div>
     <div class="group">
       <h2>genome — the whole creature</h2>
-      <textarea id="genome" spellcheck="false" readonly></textarea>
-      <div id="genomebar"><span id="bytes"></span><button id="copy">copy</button></div>
+      <textarea id="genome" spellcheck="false"></textarea>
+      <div id="genomebar">
+        <span id="bytes"></span>
+        <span>
+          <button id="apply">apply</button>
+          <button id="copy">copy</button>
+        </span>
+      </div>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

@@ -5,34 +5,81 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>rig — arena</title>
   <style>
+    :root {
+      --bg: #0b0c10;
+      --panel: #14161c;
+      --line: #23252e;
+      --ink: #c8cdd6;
+      --dim: #6b7280;
+      --accent: #3aa7a0;
+      --hp: #d5573b;
+    }
     * { margin: 0; box-sizing: border-box; }
     body {
-      background: #0b0c10; color: #6b7280;
+      background: var(--bg); color: var(--dim);
       font: 12px/1.5 'SF Mono', ui-monospace, Menlo, monospace;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      height: 100vh; gap: 10px;
+      height: 100vh; gap: 0;
     }
+    #frame {
+      position: relative;
+      display: flex; flex-direction: column;
+      border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+      background: var(--panel);
+    }
+    #topbar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 8px 14px; border-bottom: 1px solid var(--line);
+    }
+    #topbar .title { color: var(--accent); font-weight: 600; letter-spacing: 0.1em; }
+    #hearts { color: var(--hp); letter-spacing: 0.15em; font-size: 13px; }
+    #hearts .empty { color: #3a3f4b; }
+    #status { color: var(--dim); }
+    #status b { color: var(--ink); font-weight: 500; }
+    #keys { margin-left: auto; color: var(--dim); font-size: 11px; }
+    #keys b { color: var(--accent); font-weight: 500; }
     #view {
-      width: min(120vh, 92vw);
+      width: min(74vh * 1.3333, 92vw);
       aspect-ratio: 4 / 3;
       image-rendering: pixelated;
-      border: 1px solid #23252e;
+      display: block;
+      background: #0c0d12;
     }
-    #hud b { color: #3aa7a0; }
-    a { color: #3aa7a0; text-decoration: none; }
-    #controls { display: flex; gap: 18px; align-items: center; }
-    #controls label { display: flex; gap: 6px; align-items: center; }
-    input[type=range] { width: 110px; accent-color: #3aa7a0; }
+    #toast {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      pointer-events: none; opacity: 0;
+      color: var(--ink); font-size: 34px; letter-spacing: 0.35em; font-weight: 600;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+      transition: opacity 0.5s ease;
+    }
+    #toast.show { opacity: 1; transition: opacity 0.12s ease; }
+    #controls {
+      display: flex; gap: 20px; align-items: center;
+      padding: 8px 14px; border-top: 1px solid var(--line); font-size: 11px;
+    }
+    #controls label { display: flex; gap: 8px; align-items: center; color: var(--dim); }
+    input[type=range] { width: 100px; accent-color: var(--accent); height: 12px; }
+    #controls a { color: var(--accent); text-decoration: none; margin-left: auto; }
   </style>
 </head>
 <body>
-  <canvas id="view" width="960" height="720"></canvas>
-  <div id="hud"></div>
-  <div id="controls">
-    <label>zoom <input id="zoom" type="range" min="14" max="64" step="1" value="26" /></label>
-    <label>resolution <input id="res" type="range" min="160" max="512" step="16" value="240" /></label>
-    <a href="/">← studio</a>
+  <div id="frame">
+    <div id="topbar">
+      <span class="title">RIG ARENA</span>
+      <span id="hearts"></span>
+      <span id="status"></span>
+      <span id="keys"><b>wasd</b> move · <b>space</b> bomb · <b>x</b> slash</span>
+    </div>
+    <canvas id="view" width="960" height="720"></canvas>
+    <div id="toast"></div>
+    <div id="controls">
+      <label>pace <input id="pace" type="range" min="0.6" max="2.5" step="0.05" value="1.5" /></label>
+      <label>zoom <input id="zoom" type="range" min="14" max="64" step="1" value="26" /></label>
+      <label>resolution <input id="res" type="range" min="160" max="512" step="16" value="240" /></label>
+      <a href="/">← studio</a>
+    </div>
   </div>
+  <div id="hud" style="display:none"></div>
   <script type="module" src="/src/arena.ts"></script>
 </body>
 </html>

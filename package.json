@@ -8,7 +8,8 @@
     "build": "vite build",
     "farm:strip": "tsx farm/strip.ts",
     "farm:judge": "tsx farm/judge.ts",
-    "farm:evolve": "tsx farm/evolve.ts"
+    "farm:evolve": "tsx farm/evolve.ts",
+    "hatch": "tsx farm/hatch.ts"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",

@@ -1,11 +1,11 @@
 import {
-  defaultBiped, effectiveGait, Mood, serializeGenome, Weapon,
+  defaultBiped, effectiveGait, migrateGenome, Mood, serializeGenome, Weapon,
   PRESETS, Skeleton, SkeletonScales, scaleSkeleton, Gait,
 } from './genome';
 import { solvePose, walkSpeed, Intent, slashWeight } from './pose';
 import { Camera } from './render';
 import { PixelView } from './view';
-import { group, slider, button, toggle, select } from './ui';
+import { group, slider, button, toggle, select, color } from './ui';
 
 let genome = defaultBiped();
 let baseSkeleton: Skeleton = structuredClone(genome.skeleton);
@@ -37,13 +37,30 @@ let savedWeapon: Weapon | undefined = genome.weapon;
 const gaitSetters: [keyof Gait, (v: number) => void][] = [];
 const scaleSetters: [keyof SkeletonScales, (v: number) => void][] = [];
 
-const gCreature = group(panel, 'creature');
-select(gCreature, 'preset', Object.keys(PRESETS), 'scout', name => {
-  genome = PRESETS[name]();
+const paletteSetters: [keyof typeof genome.palette, (v: string) => void][] = [];
+
+function adoptGenome(g: typeof genome) {
+  genome = g;
   baseSkeleton = structuredClone(genome.skeleton);
   savedWeapon = genome.weapon;
   for (const [k, set] of scaleSetters) { scales[k] = 1; set(1); }
   for (const [k, set] of gaitSetters) set(genome.gait[k]);
+  for (const [k, set] of paletteSetters) set(genome.palette[k]);
+  refreshGenomeView();
+}
+
+const gCreature = group(panel, 'creature');
+select(gCreature, 'preset', Object.keys(PRESETS), 'scout', name => adoptGenome(PRESETS[name]()));
+button(gCreature, 'mutate', () => {
+  const jitter = (v: number, lo: number, hi: number) =>
+    Math.min(hi, Math.max(lo, v + (Math.random() * 2 - 1) * 0.12 * (hi - lo)));
+  for (const [key, mn, mx] of gaitSliders) genome.gait[key] = jitter(genome.gait[key], mn, mx);
+  for (const [k, set] of gaitSetters) set(genome.gait[k]);
+  for (const [k, set] of scaleSetters) {
+    scales[k] = jitter(scales[k], 0.7, 1.4);
+    set(scales[k]);
+  }
+  genome.skeleton = scaleSkeleton(baseSkeleton, scales);
   refreshGenomeView();
 });
 for (const key of ['legs', 'arms', 'head', 'bulk', 'width'] as (keyof SkeletonScales)[]) {
@@ -53,6 +70,15 @@ for (const key of ['legs', 'arms', 'head', 'bulk', 'width'] as (keyof SkeletonSc
     refreshGenomeView();
   });
   scaleSetters.push([key, set]);
+}
+
+const gPalette = group(panel, 'palette');
+for (const key of ['torso', 'limbs', 'head', 'accent'] as (keyof typeof genome.palette)[]) {
+  const set = color(gPalette, key, genome.palette[key], v => {
+    genome.palette[key] = v;
+    refreshGenomeView();
+  });
+  paletteSetters.push([key, set]);
 }
 
 const gIntent = group(panel, 'intent — punctuation moves');
@@ -97,10 +123,10 @@ for (const [key, mn, mx, st] of gaitSliders) {
   gaitSetters.push([key, set]);
 }
 
-const gCam = group(panel, 'camera — 3d, viewed flat');
-slider(gCam, 'yaw', -Math.PI, Math.PI, 0.01, cam.yaw, v => { cam.yaw = v; });
-slider(gCam, 'pitch', -0.1, 0.9, 0.01, cam.pitch, v => { cam.pitch = v; });
-slider(gCam, 'zoom', 24, 140, 1, cam.ppm, v => { cam.ppm = v; });
+const gCam = group(panel, 'camera — drag the canvas to orbit');
+const camYawSet = slider(gCam, 'yaw', -Math.PI, Math.PI, 0.01, cam.yaw, v => { cam.yaw = v; });
+const camPitchSet = slider(gCam, 'pitch', -0.1, 0.9, 0.01, cam.pitch, v => { cam.pitch = v; });
+const camZoomSet = slider(gCam, 'zoom', 24, 140, 1, cam.ppm, v => { cam.ppm = v; });
 
 const gRender = group(panel, 'render');
 slider(gRender, 'resolution', 96, 400, 16, 176, v => { view.setSize(v, v); });
@@ -108,6 +134,40 @@ slider(gRender, 'resolution', 96, 400, 16, 176, v => { view.setSize(v, v); });
 document.getElementById('copy')!.addEventListener('click', () => {
   navigator.clipboard.writeText(genomeBox.value);
 });
+
+// the genome box is a door, not a window: paste any genome and apply it
+const applyBtn = document.getElementById('apply')!;
+applyBtn.addEventListener('click', () => {
+  try {
+    const parsed = migrateGenome(JSON.parse(genomeBox.value));
+    delete (parsed as { mood?: unknown }).mood;
+    adoptGenome(parsed);
+    applyBtn.textContent = 'apply ✓';
+  } catch (e) {
+    applyBtn.textContent = 'apply ✗';
+  }
+  setTimeout(() => { applyBtn.textContent = 'apply'; }, 1200);
+});
+
+// drag the canvas to orbit, wheel to zoom — the camera is a held object
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener('pointerdown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  cam.yaw += (e.clientX - lastX) * 0.008;
+  cam.pitch = Math.min(0.9, Math.max(-0.1, cam.pitch + (e.clientY - lastY) * 0.004));
+  lastX = e.clientX; lastY = e.clientY;
+  camYawSet(cam.yaw); camPitchSet(cam.pitch);
+});
+canvas.addEventListener('pointerup', () => { dragging = false; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.ppm = Math.min(140, Math.max(24, cam.ppm * (e.deltaY < 0 ? 1.06 : 0.94)));
+  camZoomSet(cam.ppm);
+}, { passive: false });
 
 refreshGenomeView();
 

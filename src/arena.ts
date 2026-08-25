@@ -39,6 +39,7 @@ const LOW_W = 240, LOW_H = 180;
 const GW = 13, GH = 11; // tiles
 const T = 1; // metres per tile
 const SLASH_DURATION = 0.55;
+let pace = 1.5; // global tempo multiplier — drives speed AND cycle rate together
 
 // 0 empty, 1 hard pillar, 2 soft block
 const grid: number[][] = [];
@@ -94,6 +95,7 @@ function makeCreature(genome: Genome, tx: number, tz: number, hp: number): Creat
 }
 
 const PLAYER_HP = 5;
+let playerWasDead = false;
 const player = makeCreature(defaultBiped(), 1, 1, PLAYER_HP);
 let enemies: Creature[] = [];
 let round = 0;
@@ -110,8 +112,17 @@ function openTileFarFromPlayer(): [number, number] {
   return [GW - 2, GH - 2];
 }
 
+function toast(msg: string) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1400);
+}
+
 function nextRound() {
   round++;
+  if (round > 1) toast(`ROUND ${round}`);
   // regrow some cover
   for (let z = 1; z < GH - 1; z++)
     for (let x = 1; x < GW - 1; x++)
@@ -221,7 +232,7 @@ function updateCreature(cr: Creature, dt: number, input: CreatureInput) {
   const { dx, dz } = input;
   const wantMove = dx !== 0 || dz !== 0;
   const hurtMood: Mood = cr.hurtT > 0 ? { tired: 0.6, angry: 0.4 } : cr.mood;
-  const speed = walkSpeed(cr.genome, hurtMood) * (cr.hurtT > 0 ? 0.45 : 1);
+  const speed = walkSpeed(cr.genome, hurtMood) * pace * (cr.hurtT > 0 ? 0.45 : 1);
   let moved = false;
   if (wantMove) {
     const l = Math.hypot(dx, dz);
@@ -243,9 +254,9 @@ function updateCreature(cr: Creature, dt: number, input: CreatureInput) {
   cr.idleT += dt;
   if (cr.hurtT > 0) cr.hurtT -= dt;
 
-  // slash timeline + strike event
+  // slash timeline + strike event (attack speed rides the pace)
   if (cr.slashT >= 0) {
-    cr.slashT += dt / SLASH_DURATION;
+    cr.slashT += (dt / SLASH_DURATION) * pace;
     if (!cr.struck && cr.slashT >= 0.55) {
       cr.struck = true;
       strike(cr);
@@ -282,11 +293,13 @@ const cam: Camera = { yaw: 0.0, pitch: 0.62, ppm: 26, cy: 0.55, cx: player.x, cz
 // play-mode render controls
 const zoomInput = document.getElementById('zoom') as HTMLInputElement | null;
 const resInput = document.getElementById('res') as HTMLInputElement | null;
+const paceInput = document.getElementById('pace') as HTMLInputElement | null;
 zoomInput?.addEventListener('input', () => { cam.ppm = parseFloat(zoomInput.value); });
 resInput?.addEventListener('input', () => {
   const w = parseInt(resInput.value, 10);
   view.setSize(w, Math.round(w * 0.75));
 });
+paceInput?.addEventListener('input', () => { pace = parseFloat(paceInput.value); });
 
 const PILLAR: [number, number, number] = [72, 78, 96];
 const SOFT: [number, number, number] = [150, 106, 66];
@@ -393,7 +406,9 @@ function step(dt: number, t: number) {
 
   // deaths: enemies fade out, the player gets back up
   enemies = enemies.filter(e => e.deadT < 1.6);
+  if (player.deadT >= 0 && !playerWasDead) { playerWasDead = true; toast('DOWN'); }
   if (player.deadT > 1.6) {
+    playerWasDead = false;
     player.deadT = -1;
     player.hp = PLAYER_HP;
     player.hurtT = 1.0; // brief grace
@@ -422,10 +437,16 @@ function step(dt: number, t: number) {
 
   view.render(caps, cam, 0);
 
-  const hearts = '♥'.repeat(Math.max(0, player.hp)) + '·'.repeat(Math.max(0, PLAYER_HP - player.hp));
-  hud.textContent =
-    `${hearts}  round ${round}  enemies ${enemies.length}  ${view.mode}   ` +
-    (manual ? 'wasd / arrows · space = bomb · x = slash' : 'wandering — press any key to take over');
+  const heartsEl = document.getElementById('hearts');
+  const statusEl = document.getElementById('status');
+  if (heartsEl && statusEl) {
+    heartsEl.innerHTML =
+      '♥'.repeat(Math.max(0, player.hp)) +
+      `<span class="empty">${'♥'.repeat(Math.max(0, PLAYER_HP - player.hp))}</span>`;
+    statusEl.innerHTML =
+      `round <b>${round}</b> · enemies <b>${enemies.length}</b> · ${view.mode}` +
+      (manual ? '' : ' · <b>wandering</b>');
+  }
 }
 requestAnimationFrame(frame);
 
