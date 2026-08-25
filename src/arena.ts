@@ -10,7 +10,21 @@ import { v3, V3, rotY, TAU, clamp } from './vec';
 import { defaultBiped, effectiveGait, Genome, Mood } from './genome';
 import { solvePose, walkSpeed, Capsule, Intent, slashWeight } from './pose';
 import { PixelRenderer, Camera } from './render';
-import bredTired from '../genomes/bred-tired.json';
+
+// every genome the farm has bred is an enemy candidate, automatically
+const genomePool: Genome[] = Object.entries(
+  import.meta.glob('../genomes/*.json', { eager: true }) as Record<string, { default: Genome }>,
+)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([, m]) => m.default);
+
+// how a bred creature behaves when the player is near — keyed by genome name
+const BEHAVIOR: Record<string, { style: 'chase' | 'flee'; radius: number; speed: number }> = {
+  'bred-tired': { style: 'chase', radius: 3.2, speed: 1 },
+  'bred-brute': { style: 'chase', radius: 4.2, speed: 0.8 },
+  'bred-skittish': { style: 'flee', radius: 2.6, speed: 1.35 },
+};
+const DEFAULT_BEHAVIOR = { style: 'chase' as const, radius: 3.2, speed: 1 };
 
 const LOW_W = 240, LOW_H = 180;
 const GW = 13, GH = 11; // tiles
@@ -52,24 +66,62 @@ interface Creature {
   move: number;
   idleT: number;
   hurtT: number;
+  hp: number;
+  deadT: number; // -1 alive, else seconds into the collapse
   slashT: number; // -1 idle, else 0..1 through the move
   struck: boolean; // strike event already fired this slash
   ai: { dir: [number, number]; repathT: number };
 }
 
-function makeCreature(genome: Genome, tx: number, tz: number): Creature {
+function makeCreature(genome: Genome, tx: number, tz: number, hp: number): Creature {
   return {
     genome, mood: { tired: 0, angry: 0 },
     x: tx2w(tx), z: tz2w(tz), heading: 0,
     phase: 0, move: 0, idleT: Math.random() * 5, hurtT: 0,
+    hp, deadT: -1,
     slashT: -1, struck: false,
     ai: { dir: [1, 0], repathT: 0 },
   };
 }
 
-const player = makeCreature(defaultBiped(), 1, 1);
-const enemy = makeCreature(bredTired as Genome, GW - 2, GH - 2);
-const creatures = [player, enemy];
+const PLAYER_HP = 5;
+const player = makeCreature(defaultBiped(), 1, 1, PLAYER_HP);
+let enemies: Creature[] = [];
+let round = 0;
+const allCreatures = () => [player, ...enemies];
+
+function openTileFarFromPlayer(): [number, number] {
+  for (let tries = 0; tries < 200; tries++) {
+    const tx = 1 + Math.floor(Math.random() * (GW - 2));
+    const tz = 1 + Math.floor(Math.random() * (GH - 2));
+    if (grid[tz][tx] !== 0) continue;
+    if (Math.hypot(tx2w(tx) - player.x, tz2w(tz) - player.z) < 4) continue;
+    return [tx, tz];
+  }
+  return [GW - 2, GH - 2];
+}
+
+function nextRound() {
+  round++;
+  // regrow some cover
+  for (let z = 1; z < GH - 1; z++)
+    for (let x = 1; x < GW - 1; x++)
+      if (grid[z][x] === 0 && Math.random() < 0.08 &&
+          Math.hypot(tx2w(x) - player.x, tz2w(z) - player.z) > 2) grid[z][x] = 2;
+  const n = Math.min(1 + round, 5);
+  for (let i = 0; i < n; i++) {
+    const genome = genomePool[(round + i) % genomePool.length];
+    const [tx, tz] = openTileFarFromPlayer();
+    enemies.push(makeCreature(genome, tx, tz, 3));
+  }
+}
+
+function damage(cr: Creature) {
+  if (cr.hurtT > 0 || cr.deadT >= 0) return;
+  cr.hp--;
+  cr.hurtT = 0.7;
+  if (cr.hp <= 0) { cr.deadT = 0; cr.slashT = -1; }
+}
 
 interface Bomb { x: number; z: number; t: number }
 interface Flame { tx: number; tz: number; ttl: number }
@@ -152,6 +204,11 @@ function aiStep(cr: Creature, dt: number, blocked: boolean) {
 interface CreatureInput { dx: number; dz: number }
 
 function updateCreature(cr: Creature, dt: number, input: CreatureInput) {
+  if (cr.deadT >= 0) {
+    cr.deadT += dt;
+    cr.move += (0 - cr.move) * Math.min(1, 8 * dt);
+    return { moving: false, moved: false, wantMove: false };
+  }
   const { dx, dz } = input;
   const wantMove = dx !== 0 || dz !== 0;
   const hurtMood: Mood = cr.hurtT > 0 ? { tired: 0.6, angry: 0.4 } : cr.mood;
@@ -196,12 +253,12 @@ function strike(cr: Creature) {
   const tx = w2tx(cr.x + fx * T), tz = w2tz(cr.z + fz * T);
   if (tx >= 0 && tz >= 0 && tx < GW && tz < GH && grid[tz][tx] === 2) grid[tz][tx] = 0;
   // other creatures in front get hurt and knocked back
-  for (const other of creatures) {
+  for (const other of allCreatures()) {
     if (other === cr) continue;
     const ox = other.x - cr.x, oz = other.z - cr.z;
     const dist = Math.hypot(ox, oz);
     if (dist < 1.15 && ox * fx + oz * fz > dist * 0.4) {
-      other.hurtT = 0.7;
+      damage(other);
       tryMove(other, fx * 0.35, fz * 0.35);
     }
   }
@@ -250,20 +307,24 @@ function worldCapsules(): Capsule[] {
 }
 
 function creatureCapsules(cr: Creature): Capsule[] {
-  const hurtMood: Mood = cr.hurtT > 0 ? { tired: 0.6, angry: 0.4 } : cr.mood;
+  const hurtMood: Mood = cr.hurtT > 0 && cr.deadT < 0 ? { tired: 0.6, angry: 0.4 } : cr.mood;
   const intent: Intent | undefined =
     cr.slashT >= 0 ? { slash: { t: cr.slashT, weight: slashWeight(cr.slashT) } } : undefined;
-  const local = solvePose(cr.genome, hurtMood, cr.phase, cr.move, cr.idleT, intent);
+  const collapse = cr.deadT >= 0 ? clamp(cr.deadT / 0.45, 0, 1) : 0;
+  const local = solvePose(cr.genome, hurtMood, cr.phase, cr.move, cr.idleT, intent, collapse);
   const place = (p: V3): V3 => {
     const r = rotY(p, -cr.heading);
     return v3(r.x + cr.x, r.y, r.z + cr.z);
   };
-  const flash = cr.hurtT > 0 && Math.sin(TAU * 10 * cr.hurtT) > 0;
+  const flash = cr.hurtT > 0 && cr.deadT < 0 && Math.sin(TAU * 10 * cr.hurtT) > 0;
+  const fade = cr.deadT >= 0 ? Math.max(0.25, 1 - Math.max(0, cr.deadT - 0.8) / 0.8) : 1;
   return local.map(cp => ({
     ...cp,
     a: place(cp.a),
     b: place(cp.b),
-    color: flash ? ([255, 235, 235] as [number, number, number]) : cp.color,
+    color: flash
+      ? ([255, 235, 235] as [number, number, number])
+      : ([cp.color[0] * fade, cp.color[1] * fade, cp.color[2] * fade] as [number, number, number]),
   }));
 }
 
@@ -291,24 +352,39 @@ function step(dt: number, t: number) {
     dx = player.ai.dir[0]; dz = player.ai.dir[1];
   }
   const pres = updateCreature(player, dt, { dx, dz });
-  if (!manual) aiStep(player, dt, pres.wantMove && !pres.moved);
+  if (!manual && player.deadT < 0) aiStep(player, dt, pres.wantMove && !pres.moved);
 
-  // enemy: shuffles, until you get close — then the tired thing gets angry
-  const pdx = player.x - enemy.x, pdz = player.z - enemy.z;
-  const pdist = Math.hypot(pdx, pdz);
-  const chasing = pdist < 3.2 && enemy.hurtT <= 0;
-  enemy.mood.angry = chasing ? 1 : 0;
-  let edx: number, edz: number;
-  if (chasing) {
-    // axis-dominant pursuit keeps it honest to the lanes
-    if (Math.abs(pdx) > Math.abs(pdz)) { edx = Math.sign(pdx); edz = 0; }
-    else { edx = 0; edz = Math.sign(pdz); }
-    if (pdist < 1.0) triggerSlash(enemy);
-  } else {
-    edx = enemy.ai.dir[0]; edz = enemy.ai.dir[1];
+  // enemies: each genome brings its own temperament
+  for (const enemy of enemies) {
+    const b = BEHAVIOR[enemy.genome.name] ?? DEFAULT_BEHAVIOR;
+    const pdx = player.x - enemy.x, pdz = player.z - enemy.z;
+    const pdist = Math.hypot(pdx, pdz);
+    const engaged = pdist < b.radius && enemy.hurtT <= 0 && player.deadT < 0;
+    enemy.mood.angry = engaged && b.style === 'chase' ? 1 : 0;
+    enemy.mood.tired = 0;
+    let edx: number, edz: number;
+    if (engaged) {
+      const sign = b.style === 'chase' ? 1 : -1; // flee inverts the pursuit
+      if (Math.abs(pdx) > Math.abs(pdz)) { edx = sign * Math.sign(pdx); edz = 0; }
+      else { edx = 0; edz = sign * Math.sign(pdz); }
+      if (b.style === 'chase' && pdist < 1.0) triggerSlash(enemy);
+    } else {
+      edx = enemy.ai.dir[0]; edz = enemy.ai.dir[1];
+    }
+    const eres = updateCreature(enemy, dt, { dx: edx * b.speed, dz: edz * b.speed });
+    if (!engaged && enemy.deadT < 0) aiStep(enemy, dt, eres.wantMove && !eres.moved);
   }
-  const eres = updateCreature(enemy, dt, { dx: edx, dz: edz });
-  if (!chasing) aiStep(enemy, dt, eres.wantMove && !eres.moved);
+
+  // deaths: enemies fade out, the player gets back up
+  enemies = enemies.filter(e => e.deadT < 1.6);
+  if (player.deadT > 1.6) {
+    player.deadT = -1;
+    player.hp = PLAYER_HP;
+    player.hurtT = 1.0; // brief grace
+    const [tx, tz] = openTileFarFromPlayer();
+    player.x = tx2w(tx); player.z = tz2w(tz);
+  }
+  if (enemies.length === 0) nextRound();
 
   // bombs & flames
   for (const b of bombs) b.t -= dt;
@@ -316,14 +392,13 @@ function step(dt: number, t: number) {
   bombs = bombs.filter(b => b.t > 0);
   for (const f of flames) f.ttl -= dt;
   flames = flames.filter(f => f.ttl > 0);
-  for (const cr of creatures)
-    if (cr.hurtT <= 0)
-      for (const f of flames)
-        if (Math.hypot(tx2w(f.tx) - cr.x, tz2w(f.tz) - cr.z) < 0.55) cr.hurtT = 0.7;
+  for (const cr of allCreatures())
+    for (const f of flames)
+      if (Math.hypot(tx2w(f.tx) - cr.x, tz2w(f.tz) - cr.z) < 0.55) damage(cr);
 
   // render
   const caps: Capsule[] = [];
-  for (const cr of creatures) caps.push(...creatureCapsules(cr));
+  for (const cr of allCreatures()) caps.push(...creatureCapsules(cr));
   caps.push(...worldCapsules());
 
   cam.cx! += (player.x - cam.cx!) * Math.min(1, 4 * dt);
@@ -334,9 +409,10 @@ function step(dt: number, t: number) {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(lowC, 0, 0, canvas.width, canvas.height);
 
-  hud.textContent = manual
-    ? 'wasd / arrows · space = bomb · x = slash'
-    : 'wandering — press any key to take over';
+  const hearts = '♥'.repeat(Math.max(0, player.hp)) + '·'.repeat(Math.max(0, PLAYER_HP - player.hp));
+  hud.textContent =
+    `${hearts}  round ${round}  enemies ${enemies.length}   ` +
+    (manual ? 'wasd / arrows · space = bomb · x = slash' : 'wandering — press any key to take over');
 }
 requestAnimationFrame(frame);
 
@@ -344,11 +420,16 @@ requestAnimationFrame(frame);
 // outside; this is the seed of the MCP-drivable instrument
 (window as any).rig = {
   state: () => ({
-    player: { x: player.x, z: player.z, heading: player.heading, hurtT: player.hurtT, slashT: player.slashT },
-    enemy: { x: enemy.x, z: enemy.z, angry: enemy.mood.angry, hurtT: enemy.hurtT, slashT: enemy.slashT },
+    round,
+    player: { x: player.x, z: player.z, hp: player.hp, hurtT: player.hurtT, deadT: player.deadT, slashT: player.slashT },
+    enemies: enemies.map(e => ({
+      name: e.genome.name, x: e.x, z: e.z, hp: e.hp, angry: e.mood.angry, hurtT: e.hurtT, deadT: e.deadT,
+    })),
     bombs: bombs.length, flames: flames.length,
   }),
   drop: dropBomb,
   slash: () => triggerSlash(player),
+  hurt: (i: number) => { if (enemies[i]) damage(enemies[i]); },
+  hurtPlayer: () => damage(player),
   step: (dt: number) => step(dt, now()),
 };

@@ -1,0 +1,42 @@
+{
+  "name": "bred-brute",
+  "body": {
+    "hipWidth": 0.21861360807143335,
+    "shoulderWidth": 0.3277043672662952,
+    "thigh": 0.4967764088479971,
+    "shin": 0.4476020653502272,
+    "foot": 0.16,
+    "lowerSpine": 0.26,
+    "upperSpine": 0.24,
+    "neck": 0.09,
+    "headR": 0.10350000000000001,
+    "upperArm": 0.3821888607147007,
+    "forearm": 0.4158838965494349,
+    "torsoR": 0.10832096226267739,
+    "limbR": 0.11
+  },
+  "gait": {
+    "cadence": 0.23040528866970666,
+    "stride": 1.0369671309804769,
+    "stance": 0.6307830904226005,
+    "lift": 0.06482782119298745,
+    "bounce": 0,
+    "sway": 0.04893943635889758,
+    "lean": -0.2,
+    "slump": 0.3492043993886722,
+    "crouch": 0.13066679075844706,
+    "pelvisTwist": 0.15733268041253806,
+    "shoulderTwist": 0,
+    "armSwing": 0,
+    "elbowBase": 0.6128527643188457,
+    "elbowAmp": 0,
+    "elbowLag": 0,
+    "headPitch": 0.360058508579238
+  },
+  "palette": {
+    "torso": "#8a6d3f",
+    "limbs": "#5f4a2c",
+    "head": "#c4a077",
+    "accent": "#3f7d4e"
+  }
+}

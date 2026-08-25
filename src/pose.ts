@@ -86,6 +86,12 @@ function footTrack(p: number, g: Gait): { x: number; y: number } {
  * move: 1 = full locomotion, 0 = standing idle (drivers fade to rest and a
  * slow breath takes over). idleT feeds the breathing oscillator.
  */
+/**
+ * collapse: 0 = standing, 1 = crumpled on the ground. Death is not an
+ * animation either — it's the same drivers with the height driven out of
+ * them: the pelvis drops, the spine folds, the head goes, the legs fold
+ * under IK like they always do.
+ */
 export function solvePose(
   genome: Genome,
   mood: Mood,
@@ -93,12 +99,14 @@ export function solvePose(
   move = 1,
   idleT = 0,
   intent?: Intent,
+  collapse = 0,
 ): Capsule[] {
   const b = genome.body;
   const g = effectiveGait(genome.gait, mood);
   const caps: Capsule[] = [];
-  const mv = clamp(move, 0, 1);
-  const breathe = (1 - mv) * 0.012 * Math.sin(TAU * 0.35 * idleT);
+  const mv = clamp(move, 0, 1) * (1 - clamp(collapse, 0, 1));
+  const co = clamp(collapse, 0, 1);
+  const breathe = (1 - mv) * (1 - co) * 0.012 * Math.sin(TAU * 0.35 * idleT);
 
   const cTorso = hex(genome.palette.torso);
   const cLimb = hex(genome.palette.limbs);
@@ -108,7 +116,10 @@ export function solvePose(
   // --- pelvis ---------------------------------------------------------
   const legLen = b.thigh + b.shin;
   const ankleH = 0.06;
-  const hipH = legLen * 0.985 - g.crouch + ankleH;
+  const hipH = (legLen * 0.985 - g.crouch) * (1 - 0.72 * co) + ankleH;
+  const slumpCo = g.slump + co * 1.0;
+  const leanCo = g.lean + co * 0.3;
+  const headCo = g.headPitch + co * 0.8;
   // pelvis rides highest at each mid-stance (phi ~0.3 for the left, ~0.8 right)
   const pelvis = v3(
     g.lean * 0.12,
@@ -143,15 +154,15 @@ export function solvePose(
   // --- spine ----------------------------------------------------------
   // lean is distributed: a bit at the pelvis, more at the top; slump bends
   // only the upper segment, which is what reads as "tired" vs "leaning".
-  const lowAng = g.lean * 0.6;
+  const lowAng = leanCo * 0.6;
   const chest = add(pelvis, v3(Math.sin(lowAng) * b.lowerSpine, Math.cos(lowAng) * b.lowerSpine, 0));
-  const upAng = g.lean * 1.3 + g.slump;
+  const upAng = leanCo * 1.3 + slumpCo;
   const neckBase = add(chest, v3(Math.sin(upAng) * b.upperSpine, Math.cos(upAng) * b.upperSpine, 0));
   caps.push({ a: pelvis, b: chest, r: b.torsoR, color: cTorso, part: 'spineLow' });
   caps.push({ a: chest, b: neckBase, r: b.torsoR * 1.05, color: mul(cTorso, 1.08), part: 'spineUp' });
 
   // --- head -----------------------------------------------------------
-  const headAng = upAng + g.headPitch;
+  const headAng = upAng + headCo;
   const headC = add(neckBase, v3(Math.sin(headAng) * (b.neck + b.headR), Math.cos(headAng) * (b.neck + b.headR), 0));
   caps.push({ a: neckBase, b: headC, r: b.headR * 0.45, color: mul(cHead, 0.85), part: 'neck' });
   caps.push({ a: headC, b: headC, r: b.headR, color: cHead, part: 'head' });

@@ -34,9 +34,9 @@
     "headPitch": 0.765085924153196
   },
   "palette": {
-    "torso": "#3aa7a0",
-    "limbs": "#2b7f8f",
-    "head": "#e8c39a",
-    "accent": "#d5573b"
+    "torso": "#7a8f57",
+    "limbs": "#55663c",
+    "head": "#c9b68a",
+    "accent": "#8f5540"
   }
 }
