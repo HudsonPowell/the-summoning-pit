@@ -355,6 +355,29 @@ Both caught by `farm/render_test.ts`, which now runs as part of `npm test`.
 Sorting artefacts on limbs are almost always one of these two; check the axis
 -vs-surface question first.
 
+### Control feel & orientation (2026-08-25)
+- **Figures are now turned to their heading and shot with ONE fixed camera**
+  (`rotY(cap, -heading)`, cam yaw 0 / pitch 0.3), replacing the old trick of
+  snapping between four hand-picked camera yaws plus a canvas flip. Any angle
+  works, so diagonals orient correctly and a turn reads as a turn.
+  `heading = atan2(fy, fx)` maps straight from grid input: +x east, +z toward
+  the camera (screen-down). Verify with `npx tsx farm/facing_test.ts`.
+- The smoothed heading lives in the RENDERER (0.45 toward target per frame),
+  never in the sim — the sim keeps integer facing, so determinism is intact.
+- **8-way movement**: both axes step in the same tick, each collision-checked
+  separately so you slide along walls. Per-axis step is `(speed * 181) >> 8`
+  (≈1/√2, integer) — measured 0.94× straight-line speed, so a diagonal is a
+  slight cost, never an exploit.
+- **Facing answers the key even when movement is blocked** — turning on the
+  spot is most of what "in control" feels like.
+- **This departs from the design doc**, which specifies four-way movement as
+  part of the grammar. Kept as a footer toggle (8-way default, persisted) so
+  it is one click to return to doc-legal 4-way. Diagonals make lane-based
+  bomb dodging easier, which changes the danger maths — worth a play test.
+- Forge arrow keys orbit: tap = 0.045 rad, shift-tap = ⅛ of that, hold =
+  1.4 rad/s continuous, `[` / `]` snap to compass eighths. Camera sliders
+  stepped down to 0.001 so a fine nudge is actually visible in the readout.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
