@@ -1,7 +1,7 @@
 // CLASH sim — ARENA mode. Fixed 60Hz tick, integers only, no rendering.
 // The grammar: place a thing on a tile, it waits, it resolves as a cross
-// along the corridors. Melee strikes and roaming beasts are gameplay
-// experiments layered on the same integer board.
+// along the corridors. Each class changes exactly ONE rule of that verb —
+// the seven patterns below are the game.
 
 export const GW = 32;
 export const GH = 22;
@@ -22,21 +22,42 @@ const ROUND_END = 150;
 const PICKUP_CHANCE = 4;
 
 export const PLAYER_HP = 3;
-const HURT_INVULN = 60;      // 1s of grace after any hit
+const HURT_INVULN = 60;
 export const STRIKE_TICKS = 26;
 const STRIKE_HIT_TICK = 14;
 const STRIKE_RANGE = TS * 1.2;
 
-export const enum Pickup { FOCUS = 0, HAND = 1, BOOTS = 2 }
-
 export const BITE_WINDUP = 24;   // 0.4s telegraph — a human can react to this
 export const BITE_TOTAL = 40;
 const BITE_COOLDOWN = 50;
-const BITE_RANGE = HALF * 2.6; // slightly beyond contact so the lunge can land
-const INTRO_TICKS = 120;  // 3..2..1..go
+const BITE_RANGE = HALF * 2.6;
+const INTRO_TICKS = 120;
 export const WINS_TO_MATCH = 3;
 
-/** Pure sim output for presentation (sound, shake, toasts). Cleared each tick. */
+export const enum Pickup { FOCUS = 0, HAND = 1, BOOTS = 2 }
+
+/**
+ * The seven. Identical damage everywhere — the differences are entirely
+ * timing, visibility, and geometry, per the design doc.
+ */
+export const enum Pattern {
+  FLAME = 0, // the Wick: the baseline damage cross
+  RUNE = 1,  // the Chalk: an enemy standing still on it 0.6s scuffs it out
+  VINE = 2,  // the Warden: builds temporary wall instead of destroying
+  OIL = 3,   // the Still: inert puddles, lit by any flame, chaining
+  CURSE = 4, // the Hex: near-invisible until it fires
+  BELL = 5,  // the Peal: non-lethal shove cross, one tile wider
+  IMP = 6,   // the Horn: the bomb walks three tiles, then bursts
+}
+export const PATTERN_NAMES = ['flame', 'rune', 'vine', 'oil', 'curse', 'bell', 'imp'] as const;
+
+const VINE_TTL = 240;      // 4s of grown wall
+const SCUFF_TICKS = 36;    // 0.6s standing still on an enemy rune
+const IMP_WALK_TILES = 3;
+const IMP_SPEED = 2;
+const IMP_FUSE = 60;
+const BELL_SHOVE = TS * 2; // pushed two tiles along the corridor
+
 export type GameEvent =
   | { type: 'place'; owner: number }
   | { type: 'explode'; tiles: number; x: number; y: number }
@@ -48,6 +69,10 @@ export type GameEvent =
   | { type: 'strike'; pi: number }
   | { type: 'strikeHit' }
   | { type: 'bite' }
+  | { type: 'scuff' }
+  | { type: 'bell'; tiles: number }
+  | { type: 'vineGrow'; tiles: number }
+  | { type: 'ignite' }
   | { type: 'roundOver'; winner: number }
   | { type: 'matchOver'; winner: number };
 
@@ -59,13 +84,14 @@ export interface Input {
 }
 
 export interface PlayerCfg {
-  fuse: number;   // ticks
-  radius: number; // starting cross reach
+  fuse: number;
+  radius: number;
+  pattern: Pattern;
 }
 
 export interface BeastDef {
-  speed: number;  // sub-px per tick
-  chaseR: number; // sub-px
+  speed: number;
+  chaseR: number;
   hp: number;
 }
 
@@ -76,8 +102,9 @@ export interface PlayerState {
   deadT: number;
   hp: number;
   hurtT: number;
-  strikeT: number; // -1 idle, else ticks into the swing
+  strikeT: number;
   struck: boolean;
+  placeCd: number; // oil cooldown
   speed: number;
   radius: number;
   maxCandles: number;
@@ -89,23 +116,29 @@ export interface PlayerState {
 export interface Beast {
   x: number; y: number;
   fx: number; fy: number;
-  def: number;    // index into cfg.beastDefs (render maps it to a genome)
+  def: number;
   hp: number;
   hurtT: number;
-  deadT: number;  // -1 alive
+  deadT: number;
   moving: boolean;
   dirX: number; dirY: number;
   repathT: number;
-  biteT: number;  // -1 idle, else ticks into the windup+lunge
+  biteT: number;
   biteCd: number;
 }
 
 export interface Candle {
   tx: number; ty: number;
-  timer: number;
-  fuse: number;   // for rendering the shortening
+  timer: number;   // -1 while an imp is still walking
+  fuse: number;
   owner: number;
   radius: number;
+  pattern: Pattern;
+  scuffT: number;
+  walking: boolean;
+  wx: number; wy: number;
+  dirX: number; dirY: number;
+  walked: number;
 }
 
 export interface PickupState { tx: number; ty: number; kind: Pickup }
@@ -113,13 +146,17 @@ export interface PickupState { tx: number; ty: number; kind: Pickup }
 export interface GameCfg {
   players: PlayerCfg[];
   beastDefs: BeastDef[];
-  beastBase: number; // beasts in round 1
+  beastBase: number;
 }
 
 export interface Game {
   grid: Uint8Array;
   flame: Int16Array;
   flameOwner: Uint8Array;
+  flameSoft: Uint8Array;  // 1 = non-lethal (the bell's ring)
+  vine: Int16Array;       // grown-wall ticks remaining
+  vineOwner: Uint8Array;
+  oil: Uint8Array;        // 0 none, else owner+1
   players: PlayerState[];
   beasts: Beast[];
   candles: Candle[];
@@ -128,8 +165,8 @@ export interface Game {
   round: number;
   roundEndT: number;
   roundWinner: number;
-  introT: number;      // countdown before each round; inputs frozen
-  matchWinner: number; // -1 running; else match point reached
+  introT: number;
+  matchWinner: number;
   matchEndT: number;
   rng: number;
   cfg: GameCfg;
@@ -179,7 +216,7 @@ function buildGrid(g: Game): void {
 function spawnPlayers(g: Game): void {
   g.players.forEach((p, i) => {
     const [tx, ty] = SPAWNS[i % SPAWNS.length];
-    const cfg = g.cfg.players[i] ?? { fuse: 150, radius: 2 };
+    const cfg = g.cfg.players[i];
     p.x = tx * TS + TS / 2;
     p.y = ty * TS + TS / 2;
     p.fx = i % 2 === 0 ? 1 : -1;
@@ -190,8 +227,9 @@ function spawnPlayers(g: Game): void {
     p.hurtT = 0;
     p.strikeT = -1;
     p.struck = false;
+    p.placeCd = 0;
     p.speed = BASE_SPEED;
-    p.radius = cfg.radius;
+    p.radius = cfg ? cfg.radius : 2;
     p.maxCandles = 1;
     p.moving = false;
     p.axis = 0;
@@ -204,11 +242,10 @@ function spawnBeasts(g: Game): void {
   const count = Math.min(g.cfg.beastBase + g.round - 1, 6);
   for (let i = 0; i < count; i++) {
     const def = (g.round + i) % g.cfg.beastDefs.length;
-    // an open odd-odd tile far from every spawn corner
     let tx = 15, ty = 11;
     for (let tries = 0; tries < 100; tries++) {
-      const cx = 1 + 2 * (rand(g) % 15); // odd 1..29
-      const cy = 1 + 2 * (rand(g) % 10); // odd 1..19
+      const cx = 1 + 2 * (rand(g) % 15);
+      const cy = 1 + 2 * (rand(g) % 10);
       if (g.grid[idx(cx, cy)] !== T.FLOOR) continue;
       const farFromAll = g.players.every(
         p => Math.abs(cx * TS + TS / 2 - p.x) + Math.abs(cy * TS + TS / 2 - p.y) > TS * 7,
@@ -232,9 +269,13 @@ export function createGame(numPlayers: number, seed: number, cfg?: Partial<GameC
     grid: new Uint8Array(GW * GH),
     flame: new Int16Array(GW * GH),
     flameOwner: new Uint8Array(GW * GH),
+    flameSoft: new Uint8Array(GW * GH),
+    vine: new Int16Array(GW * GH),
+    vineOwner: new Uint8Array(GW * GH),
+    oil: new Uint8Array(GW * GH),
     players: Array.from({ length: numPlayers }, () => ({
       x: 0, y: 0, fx: 1, fy: 0, alive: true, deadT: -1,
-      hp: PLAYER_HP, hurtT: 0, strikeT: -1, struck: false,
+      hp: PLAYER_HP, hurtT: 0, strikeT: -1, struck: false, placeCd: 0,
       speed: BASE_SPEED, radius: 2, maxCandles: 1,
       wins: 0, moving: false, axis: 0 as const,
     })),
@@ -249,12 +290,12 @@ export function createGame(numPlayers: number, seed: number, cfg?: Partial<GameC
     matchWinner: -1,
     matchEndT: -1,
     rng: seed >>> 0,
-    events: [],
     cfg: {
       players: cfg?.players ?? [],
       beastDefs: cfg?.beastDefs ?? [],
       beastBase: cfg?.beastBase ?? 2,
     },
+    events: [],
   };
   buildGrid(g);
   spawnPlayers(g);
@@ -267,6 +308,9 @@ function resetRound(g: Game): void {
   g.candles = [];
   g.pickups = [];
   g.flame.fill(0);
+  g.flameSoft.fill(0);
+  g.vine.fill(0);
+  g.oil.fill(0);
   buildGrid(g);
   spawnPlayers(g);
   spawnBeasts(g);
@@ -279,8 +323,10 @@ function resetRound(g: Game): void {
 
 function solidAt(g: Game, tx: number, ty: number): boolean {
   if (tx < 0 || ty < 0 || tx >= GW || ty >= GH) return true;
-  if (g.grid[idx(tx, ty)] !== T.FLOOR) return true;
-  for (const c of g.candles) if (c.tx === tx && c.ty === ty) return true;
+  const i = idx(tx, ty);
+  if (g.grid[i] !== T.FLOOR) return true;
+  if (g.vine[i] > 0) return true;
+  for (const c of g.candles) if (!c.walking && c.tx === tx && c.ty === ty) return true;
   return false;
 }
 
@@ -360,48 +406,147 @@ function damageBeast(g: Game, b: Beast): void {
 
 // --- the verb -------------------------------------------------------------
 
+function paintOil(g: Game, pi: number, tx: number, ty: number, radius: number): void {
+  const paint = (x: number, y: number) => {
+    const i = idx(x, y);
+    if (g.oil[i] === 0) g.oil[i] = pi + 1;
+  };
+  paint(tx, ty);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (let r = 1; r <= radius; r++) {
+      const x = tx + dx * r, y = ty + dy * r;
+      if (x < 0 || y < 0 || x >= GW || y >= GH) break;
+      if (g.grid[idx(x, y)] !== T.FLOOR) break;
+      paint(x, y);
+    }
+  }
+}
+
 function place(g: Game, pi: number): void {
   const p = g.players[pi];
-  const cfg = g.cfg.players[pi] ?? { fuse: 150, radius: 2 };
+  const cfg = g.cfg.players[pi];
+  const pattern = cfg ? cfg.pattern : Pattern.FLAME;
+  const fuse = cfg ? cfg.fuse : 150;
   const tx = tileOf(p.x), ty = tileOf(p.y);
-  if (g.candles.filter(c => c.owner === pi).length >= p.maxCandles) return;
-  if (g.candles.some(c => c.tx === tx && c.ty === ty)) return;
   if (g.grid[idx(tx, ty)] !== T.FLOOR) return;
-  g.candles.push({ tx, ty, timer: cfg.fuse, fuse: cfg.fuse, owner: pi, radius: p.radius });
+
+  if (pattern === Pattern.OIL) {
+    // two-part: the puddles go down NOW, harmless, and wait for anyone's fire
+    if (p.placeCd > 0) return;
+    paintOil(g, pi, tx, ty, p.radius);
+    p.placeCd = fuse;
+    g.events.push({ type: 'place', owner: pi });
+    return;
+  }
+
+  if (g.candles.filter(c => c.owner === pi).length >= p.maxCandles) return;
+  if (g.candles.some(c => !c.walking && c.tx === tx && c.ty === ty)) return;
+
+  const walking = pattern === Pattern.IMP;
+  const dirX = walking ? (p.fx !== 0 ? p.fx : 1) : 0;
+  const dirY = walking ? (p.fx !== 0 ? 0 : p.fy) : 0;
+  g.candles.push({
+    tx, ty,
+    timer: walking ? -1 : fuse,
+    fuse: walking ? IMP_FUSE : fuse,
+    owner: pi,
+    radius: p.radius,
+    pattern,
+    scuffT: 0,
+    walking,
+    wx: p.x, wy: p.y,
+    dirX, dirY,
+    walked: 0,
+  });
   g.events.push({ type: 'place', owner: pi });
 }
 
+/** Knockback: push a body along a direction as far as the maze allows. */
+function shove(g: Game, m: Mover, fx: number, fy: number, dist = 30): void {
+  const steps = Math.ceil(dist / 5);
+  for (let i = 0; i < steps; i++) {
+    const nx = m.x + fx * 5, ny = m.y + fy * 5;
+    if (!fits(g, nx, ny, m.x, m.y)) break;
+    m.x = nx;
+    m.y = ny;
+  }
+}
+
+function crushAt(g: Game, tx: number, ty: number): void {
+  g.players.forEach((p, pi) => {
+    if (p.alive && tileOf(p.x) === tx && tileOf(p.y) === ty) damagePlayer(g, pi);
+  });
+  for (const b of g.beasts) {
+    if (b.deadT < 0 && tileOf(b.x) === tx && tileOf(b.y) === ty) damageBeast(g, b);
+  }
+}
+
+/**
+ * The resolution queue. Every zero-timer placeable resolves this tick; a
+ * cross touching another placeable zeroes it into the same queue. What
+ * "resolve" MEANS depends on the pattern — that is the whole game.
+ */
 function resolve(g: Game): void {
   const queue: number[] = [];
   g.candles.forEach((c, i) => {
-    if (c.timer <= 0) queue.push(i);
+    if (!c.walking && c.timer === 0) queue.push(i);
   });
   if (queue.length === 0) return;
 
   const exploded = new Set<number>();
-  const flamed: [number, number][] = []; // [tileIdx, owner]
+  const flamed: [number, number][] = [];
+  const softFlamed: [number, number][] = [];
+  const vined: [number, number][] = [];
+  const vinedOrigins = new Set<number>();
   const destroyed: number[] = [];
+  let bellTiles = 0;
 
   while (queue.length) {
     const ci = queue.shift()!;
     if (exploded.has(ci)) continue;
     exploded.add(ci);
     const c = g.candles[ci];
-    flamed.push([idx(c.tx, c.ty), c.owner]);
+    const isVine = c.pattern === Pattern.VINE;
+    const isBell = c.pattern === Pattern.BELL;
+    const radius = isBell ? c.radius + 1 : c.radius;
+
+    // the origin grows wall but never crushes — you can always step out of
+    // your own placement, same rule as the collision overlap allowance
+    if (isVine) vinedOrigins.add(idx(c.tx, c.ty));
+    if (isVine) vined.push([idx(c.tx, c.ty), c.owner]);
+    else if (isBell) softFlamed.push([idx(c.tx, c.ty), c.owner]);
+    else flamed.push([idx(c.tx, c.ty), c.owner]);
+
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      for (let r = 1; r <= c.radius; r++) {
+      for (let r = 1; r <= radius; r++) {
         const tx = c.tx + dx * r, ty = c.ty + dy * r;
         if (tx < 0 || ty < 0 || tx >= GW || ty >= GH) break;
         const t = g.grid[idx(tx, ty)];
         if (t === T.WALL) break;
         if (t === T.BLOCK) {
-          destroyed.push(idx(tx, ty));
-          flamed.push([idx(tx, ty), c.owner]);
-          break;
+          if (!isVine && !isBell) {
+            destroyed.push(idx(tx, ty));
+            flamed.push([idx(tx, ty), c.owner]);
+          }
+          break; // vine and bell stop at blocks without consuming them
         }
-        flamed.push([idx(tx, ty), c.owner]);
+        if (isVine) {
+          vined.push([idx(tx, ty), c.owner]);
+          continue; // vines bury placeables rather than triggering them
+        }
+        if (isBell) {
+          softFlamed.push([idx(tx, ty), c.owner]);
+          bellTiles++;
+          // the ring shoves everything on this tile outward along the arm
+          for (const p of g.players)
+            if (p.alive && tileOf(p.x) === tx && tileOf(p.y) === ty) shove(g, p, dx, dy, BELL_SHOVE);
+          for (const b of g.beasts)
+            if (b.deadT < 0 && tileOf(b.x) === tx && tileOf(b.y) === ty) shove(g, b, dx, dy, BELL_SHOVE);
+        } else {
+          flamed.push([idx(tx, ty), c.owner]);
+        }
         g.candles.forEach((o, oi) => {
-          if (!exploded.has(oi) && o.tx === tx && o.ty === ty) {
+          if (!exploded.has(oi) && !o.walking && o.tx === tx && o.ty === ty) {
             o.timer = 0;
             queue.push(oi);
           }
@@ -420,7 +565,48 @@ function resolve(g: Game): void {
   for (const [i, owner] of flamed) {
     g.flame[i] = FLAME_TTL;
     g.flameOwner[i] = owner;
+    g.flameSoft[i] = 0;
   }
+  for (const [i, owner] of softFlamed) {
+    if (g.flame[i] <= 0) {
+      g.flame[i] = 12;
+      g.flameOwner[i] = owner;
+      g.flameSoft[i] = 1;
+    }
+  }
+  for (const [i, owner] of vined) {
+    if (g.vine[i] <= 0) {
+      g.vine[i] = VINE_TTL;
+      g.vineOwner[i] = owner;
+      if (!vinedOrigins.has(i)) crushAt(g, i % GW, Math.floor(i / GW));
+    }
+  }
+
+  // oil ignition: real fire touching a puddle sets the whole slick off
+  if (flamed.length) {
+    const stack: number[] = [];
+    for (let i = 0; i < g.oil.length; i++)
+      if (g.oil[i] > 0 && g.flame[i] > 0 && g.flameSoft[i] === 0) stack.push(i);
+    if (stack.length) g.events.push({ type: 'ignite' });
+    while (stack.length) {
+      const i = stack.pop()!;
+      if (g.oil[i] === 0) continue;
+      const owner = g.oil[i] - 1;
+      g.oil[i] = 0;
+      g.flame[i] = FLAME_TTL;
+      g.flameOwner[i] = owner;
+      g.flameSoft[i] = 0;
+      const tx = i % GW, ty = Math.floor(i / GW);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = tx + dx, ny = ty + dy;
+        if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+        if (g.oil[idx(nx, ny)] > 0) stack.push(idx(nx, ny));
+      }
+    }
+  }
+
+  if (bellTiles) g.events.push({ type: 'bell', tiles: bellTiles });
+  if (vined.length) g.events.push({ type: 'vineGrow', tiles: vined.length });
   if (flamed.length) {
     const origin = flamed[0][0];
     g.events.push({
@@ -431,31 +617,21 @@ function resolve(g: Game): void {
     });
   }
   g.candles = g.candles.filter((_, i) => !exploded.has(i));
-  g.pickups = g.pickups.filter(pk => g.flame[idx(pk.tx, pk.ty)] <= 0);
+  g.pickups = g.pickups.filter(
+    pk => g.flame[idx(pk.tx, pk.ty)] <= 0 || g.flameSoft[idx(pk.tx, pk.ty)] === 1,
+  );
 }
 
 // --- melee ----------------------------------------------------------------
 
-/** Knockback: push a body along the hit direction as far as the maze allows. */
-function shove(g: Game, m: Mover, fx: number, fy: number): void {
-  for (let i = 0; i < 6; i++) {
-    const nx = m.x + fx * 5, ny = m.y + fy * 5;
-    if (!fits(g, nx, ny, m.x, m.y)) break;
-    m.x = nx;
-    m.y = ny;
-  }
-}
-
 function strikeHit(g: Game, pi: number): void {
   const p = g.players[pi];
   const fx = p.fx, fy = p.fy;
-  // the block one tile ahead crumbles
   const tx = tileOf(p.x) + fx, ty = tileOf(p.y) + fy;
   if (tx >= 0 && ty >= 0 && tx < GW && ty < GH && g.grid[idx(tx, ty)] === T.BLOCK)
     g.grid[idx(tx, ty)] = T.FLOOR;
   const inArc = (ox: number, oy: number) => {
     const dist = Math.abs(ox) + Math.abs(oy);
-    // point-blank counts: something standing on you is very much in range
     return dist < STRIKE_RANGE && (ox * fx + oy * fy > 0 || dist < HALF * 2);
   };
   let connected = false;
@@ -489,7 +665,6 @@ function stepBeast(g: Game, b: Beast): void {
   if (b.hurtT > 0) b.hurtT--;
   const d = g.cfg.beastDefs[b.def];
 
-  // nearest living player
   let best = -1, bestDist = 1e9;
   g.players.forEach((p, pi) => {
     if (!p.alive) return;
@@ -516,15 +691,13 @@ function stepBeast(g: Game, b: Beast): void {
   }
 
   if (b.biteT >= 0 && b.biteT < BITE_WINDUP) {
-    b.moving = false;
-    // still telegraphing — stand and rear
+    b.moving = false; // still telegraphing — stand and rear
   } else {
     b.moving = moveAxis(g, b, d.speed, b.dirX, b.dirY);
   }
-  if (!b.moving) b.repathT = 0;
+  if (!b.moving && b.biteT < 0) b.repathT = 0;
   if (b.dirX !== 0 || b.dirY !== 0) { b.fx = b.dirX; b.fy = b.dirY; }
 
-  // teeth, with a telegraph: rear up (no damage), THEN the lunge lands
   if (b.biteCd > 0) b.biteCd--;
   if (b.biteT < 0 && b.biteCd <= 0) {
     const near = g.players.some(
@@ -570,6 +743,7 @@ export function step(g: Game, inputs: Input[]): void {
       return;
     }
     if (p.hurtT > 0) p.hurtT--;
+    if (p.placeCd > 0) p.placeCd--;
     const inp = frozen
       ? { dx: 0 as const, dy: 0 as const, place: false, melee: false }
       : inputs[pi] ?? { dx: 0, dy: 0, place: false, melee: false };
@@ -616,17 +790,59 @@ export function step(g: Game, inputs: Input[]): void {
   if (!frozen) for (const b of g.beasts) stepBeast(g, b);
   g.beasts = g.beasts.filter(b => b.deadT < 100);
 
-  for (const c of g.candles) c.timer--;
+  // the Horn's imps waddle, then arm
+  for (const c of g.candles) {
+    if (!c.walking) continue;
+    const m: Mover = { x: c.wx, y: c.wy };
+    const moved = moveAxis(g, m, IMP_SPEED, c.dirX, c.dirY);
+    c.wx = m.x;
+    c.wy = m.y;
+    if (moved) c.walked += IMP_SPEED;
+    c.tx = tileOf(c.wx);
+    c.ty = tileOf(c.wy);
+    if (!moved || c.walked >= IMP_WALK_TILES * TS) {
+      c.walking = false;
+      c.timer = IMP_FUSE;
+      c.wx = c.tx * TS + TS / 2;
+      c.wy = c.ty * TS + TS / 2;
+    }
+  }
+
+  // the Chalk's runes can be scuffed: an enemy standing still on one erases it
+  for (const c of g.candles) {
+    if (c.pattern !== Pattern.RUNE || c.walking) continue;
+    const scuffing = g.players.some(
+      (p, pi) =>
+        pi !== c.owner && p.alive && !p.moving &&
+        tileOf(p.x) === c.tx && tileOf(p.y) === c.ty,
+    );
+    c.scuffT = scuffing ? c.scuffT + 1 : 0;
+  }
+  const beforeScuff = g.candles.length;
+  g.candles = g.candles.filter(c => c.scuffT < SCUFF_TICKS);
+  if (g.candles.length < beforeScuff) g.events.push({ type: 'scuff' });
+
+  for (const c of g.candles) if (!c.walking && c.timer > 0) c.timer--;
   resolve(g);
 
-  for (let i = 0; i < g.flame.length; i++) if (g.flame[i] > 0) g.flame[i]--;
+  // the Warden's walls rot on schedule
+  for (let i = 0; i < g.vine.length; i++) if (g.vine[i] > 0) g.vine[i]--;
+
+  for (let i = 0; i < g.flame.length; i++) {
+    if (g.flame[i] > 0) {
+      g.flame[i]--;
+      if (g.flame[i] === 0) g.flameSoft[i] = 0;
+    }
+  }
   g.players.forEach((p, pi) => {
     if (!p.alive) return;
-    if (g.flame[idx(tileOf(p.x), tileOf(p.y))] > 0) damagePlayer(g, pi);
+    const i = idx(tileOf(p.x), tileOf(p.y));
+    if (g.flame[i] > 0 && g.flameSoft[i] === 0) damagePlayer(g, pi);
   });
   for (const b of g.beasts) {
     if (b.deadT >= 0) continue;
-    if (g.flame[idx(tileOf(b.x), tileOf(b.y))] > 0) damageBeast(g, b);
+    const i = idx(tileOf(b.x), tileOf(b.y));
+    if (g.flame[i] > 0 && g.flameSoft[i] === 0) damageBeast(g, b);
   }
 
   if (g.roundEndT < 0 && g.matchWinner < 0) {

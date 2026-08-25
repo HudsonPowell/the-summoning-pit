@@ -65,7 +65,7 @@ export interface WeaponSpec {
 export interface BlastSpec {
   core: string;
   edge: string;
-  pattern: 'flame' | 'rune' | 'vine';
+  pattern: 'flame' | 'rune' | 'vine' | 'oil' | 'curse' | 'bell' | 'imp';
   delay: number;  // seconds of fuse
   radius: number; // cross reach in tiles
 }

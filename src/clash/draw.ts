@@ -3,7 +3,10 @@
 // their weapon swings, their blast colours burn. Beasts come off the
 // bestiary shelf. There are no sprites anywhere.
 
-import { Game, GW, GH, TILE, SUB, T, Pickup, Candle, Beast, STRIKE_TICKS, BITE_TOTAL, BITE_WINDUP } from './sim';
+import {
+  Game, GW, GH, TILE, SUB, T, Pickup, Candle, Beast, Pattern,
+  STRIKE_TICKS, BITE_TOTAL, BITE_WINDUP,
+} from './sim';
 import { Genome, Mood, scaleSkeleton } from '../genome';
 import { Character, StrikeSpec, DEFAULT_STRIKE_LIGHT } from '../character';
 import { solvePose, slashWeight, Intent } from '../pose';
@@ -154,6 +157,35 @@ export class ClashDraw {
       }
     }
 
+    // the Still's slicks lie on the floor, waiting
+    for (let i = 0; i < g.oil.length; i++) {
+      if (g.oil[i] === 0) continue;
+      const hero = this.heroes[g.oil[i] - 1];
+      const px = (i % GW) * TILE, py = Math.floor(i / GW) * TILE;
+      c.fillStyle = hero?.blast.edge ?? '#3a2a4a';
+      c.globalAlpha = 0.35;
+      c.fillRect(px + 1, py + 1, TILE - 2, TILE - 2);
+      c.globalAlpha = 1;
+      c.fillStyle = hero?.blast.core ?? '#6a5a7a';
+      c.fillRect(px + 5, py + 6, 3, 2);
+      c.fillRect(px + 9, py + 9, 2, 2);
+    }
+
+    // the Warden's grown walls
+    for (let i = 0; i < g.vine.length; i++) {
+      const ttl = g.vine[i];
+      if (ttl <= 0) continue;
+      const hero = this.heroes[g.vineOwner[i]];
+      const px = (i % GW) * TILE, py = Math.floor(i / GW) * TILE;
+      const dying = ttl < 60 && (g.tick >> 2) % 2 === 0;
+      c.fillStyle = dying ? (hero?.blast.core ?? '#9fe0a0') : (hero?.blast.edge ?? '#4a8a4e');
+      c.fillRect(px + 1, py + 1, TILE - 2, TILE - 2);
+      c.fillStyle = hero?.blast.core ?? '#9fe0a0';
+      c.fillRect(px + 3, py + 3, 2, TILE - 6);
+      c.fillRect(px + 7, py + 5, 2, TILE - 8);
+      c.fillRect(px + 11, py + 2, 2, TILE - 5);
+    }
+
     for (const cd of g.candles) this.drawCandle(cd, g);
     this.drawFlames(g);
 
@@ -183,16 +215,56 @@ export class ClashDraw {
     const hero = this.heroes[cd.owner];
     const edge = hero?.blast.edge ?? '#ffd25e';
     const core = hero?.blast.core ?? '#fff3c4';
-    const px = cd.tx * TILE, py = cd.ty * TILE;
+    const px = cd.walking ? Math.round(cd.wx / SUB) - TILE / 2 : cd.tx * TILE;
+    const py = cd.walking ? Math.round(cd.wy / SUB) - TILE / 2 : cd.ty * TILE;
     const frac = Math.max(0, cd.timer) / cd.fuse;
-    const pattern = hero?.blast.pattern ?? 'flame';
-    if (pattern === 'rune') {
+    if (cd.pattern === Pattern.CURSE) {
+      // hidden information: a faint smudge only, until the instant it fires
+      c.globalAlpha = 0.22;
+      c.fillStyle = edge;
+      c.fillRect(px + 7, py + 7, 2, 2);
+      c.globalAlpha = 1;
+      return;
+    }
+    if (cd.walking) {
+      // the Horn's imp waddles with a bobbing body
+      const bob = (g.tick >> 2) % 2;
+      c.fillStyle = edge;
+      c.fillRect(px + 4, py + 5 + bob, 8, 7);
+      c.fillStyle = core;
+      c.fillRect(px + 6, py + 3 + bob, 4, 3);
+      c.fillRect(px + 5, py + 12, 2, 2);
+      c.fillRect(px + 9, py + 12, 2, 2);
+      return;
+    }
+    if (cd.pattern === Pattern.BELL) {
+      const r = 3 + Math.round(4 * (1 - frac));
+      c.fillStyle = edge;
+      c.fillRect(px + 8 - r, py + 8 - r, r * 2, r * 2);
+      c.fillStyle = core;
+      c.fillRect(px + 7, py + 5, 2, 6);
+      return;
+    }
+    if (cd.pattern === Pattern.RUNE) {
+      // scuff progress reads as the sigil being rubbed away
+      const scuffed = cd.scuffT > 0;
+      c.fillStyle = edge;
+      c.fillRect(px + 4, py + 4, TILE - 8, TILE - 8);
+      c.fillStyle = scuffed
+        ? '#1a1c24'
+        : frac < 0.3 && (g.tick >> 2) % 2 === 0
+        ? core
+        : toneHex(core, 0.5 + 0.5 * (1 - frac));
+      c.fillRect(px + 6, py + 6, TILE - 12, TILE - 12);
+      return;
+    }
+    if (false) {
       // a sigil that brightens as it arms
       c.fillStyle = edge;
       c.fillRect(px + 4, py + 4, TILE - 8, TILE - 8);
       c.fillStyle = frac < 0.3 && (g.tick >> 2) % 2 === 0 ? core : toneHex(core, 0.5 + 0.5 * (1 - frac));
       c.fillRect(px + 6, py + 6, TILE - 12, TILE - 12);
-    } else if (pattern === 'vine') {
+    } else if (cd.pattern === Pattern.VINE) {
       const h = 3 + Math.round(9 * (1 - frac));
       c.fillStyle = edge;
       c.fillRect(px + 7, py + TILE - 2 - h, 3, h);
@@ -219,6 +291,13 @@ export class ClashDraw {
       const edge = hero?.blast.edge ?? '#ffd25e';
       const pattern = hero?.blast.pattern ?? 'flame';
       const px = (i % GW) * TILE, py = Math.floor(i / GW) * TILE;
+      if (g.flameSoft[i] === 1) {
+        // the Peal's ring: a bright hoop that pushes but never kills
+        c.strokeStyle = core;
+        c.lineWidth = 2;
+        c.strokeRect(px + 2, py + 2, TILE - 4, TILE - 4);
+        continue;
+      }
       if (pattern === 'rune') {
         c.fillStyle = edge;
         c.beginPath();

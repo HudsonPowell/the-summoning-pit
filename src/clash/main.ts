@@ -1,7 +1,7 @@
 // CLASH — ARENA mode. Pick a hero you built in the forge, fight the other
 // player and whatever crawled off the bestiary shelf.
 
-import { createGame, step, Input, PLAYER_HP, GameCfg, GameEvent } from './sim';
+import { createGame, step, Input, PLAYER_HP, GameCfg, GameEvent, Pattern, PATTERN_NAMES } from './sim';
 import { ClashAudio } from './audio';
 import { ClashDraw, RenderSettings, DEFAULT_SETTINGS } from './draw';
 import { Character, makeCharacter, migrateCharacter } from '../character';
@@ -141,6 +141,7 @@ async function boot() {
     players: heroChars.map(h => ({
       fuse: Math.round(h.blast.delay * 60),
       radius: Math.round(h.blast.radius),
+      pattern: Math.max(0, PATTERN_NAMES.indexOf(h.blast.pattern as never)) as Pattern,
     })),
     beastDefs: beasts.map(b => ({
       speed: Math.max(2, Math.min(4, Math.round(walkSpeed(b.genome, { tired: 0, angry: 0 }) * 1.6))),
@@ -261,8 +262,8 @@ async function boot() {
 
     const p = game.players;
     status.innerHTML =
-      `<b class="p1">${heroChars[0].name}</b> ${hearts(p[0].hp)} ${p[0].wins}w` +
-      ` &nbsp;·&nbsp; <b class="p2">${heroChars[1].name}</b> ${hearts(p[1].hp)} ${p[1].wins}w` +
+      `<b class="p1">${heroChars[0].name}</b> <i>${heroChars[0].blast.pattern}</i> ${hearts(p[0].hp)} ${p[0].wins}w` +
+      ` &nbsp;·&nbsp; <b class="p2">${heroChars[1].name}</b> <i>${heroChars[1].blast.pattern}</i> ${hearts(p[1].hp)} ${p[1].wins}w` +
       ` &nbsp;·&nbsp; beasts ${game.beasts.filter(b => b.deadT < 0).length}`;
     requestAnimationFrame(frame);
   }

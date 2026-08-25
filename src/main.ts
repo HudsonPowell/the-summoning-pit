@@ -138,15 +138,32 @@ saveBtn.addEventListener('click', async () => {
 
 // --- blast controls ---------------------------------------------------------
 
+// each pattern changes exactly one rule of the verb — this is the game
+const PATTERN_RULES: Record<string, string> = {
+  flame: 'the baseline: damage cross, destroys one block per arm',
+  rune: 'damage cross — but enemies can scuff it out by standing still on it',
+  vine: 'builds temporary wall instead of destroying; crushes what it grows through',
+  oil: 'inert puddles, harmless until ANY flame touches them — then the slick goes up',
+  curse: 'damage cross, near-invisible to everyone else until it fires',
+  bell: 'non-lethal: shoves everything two tiles along the corridor, one tile wider',
+  imp: 'the bomb walks three tiles in your facing direction, then bursts',
+};
+
 const gBlast = document.getElementById('gBlast')!;
 {
   const core = color(gBlast, 'core', character.blast.core, v => { character.blast.core = v; refreshFile(); });
   const edge = color(gBlast, 'edge', character.blast.edge, v => { character.blast.edge = v; refreshFile(); });
   blastSetters = { core, edge };
-  select(gBlast, 'pattern', ['flame', 'rune', 'vine'], character.blast.pattern, v => {
-    character.blast.pattern = v as Character['blast']['pattern'];
-    refreshFile();
-  });
+  select(gBlast, 'pattern', ['flame', 'rune', 'vine', 'oil', 'curse', 'bell', 'imp'],
+    character.blast.pattern, v => {
+      character.blast.pattern = v as Character['blast']['pattern'];
+      patternNote.textContent = PATTERN_RULES[character.blast.pattern];
+      refreshFile();
+    });
+  const patternNote = document.createElement('div');
+  patternNote.className = 'status';
+  patternNote.textContent = PATTERN_RULES[character.blast.pattern];
+  gBlast.appendChild(patternNote);
   // the two gameplay numbers the CLASH grammar allows an attack to have
   blastDelaySet = slider(gBlast, 'delay (s)', 1, 4, 0.1, character.blast.delay, v => {
     character.blast.delay = v;
