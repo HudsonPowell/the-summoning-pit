@@ -191,6 +191,19 @@ This file is the only thing that accumulates. Add, don't rewrite.
 - Reroll runs at temperature 0.9 (vs 0.7) for variety.
 - Effect: dwarf judge score 0.075 → 0.219, correct silhouette on next roll.
 
+### The hatch-reset bug (2026-08-25)
+- Symptom: hatched creature "flashes up then resets". Cause: saving the genome
+  file landed in a directory covered by the arena's `import.meta.glob`, which
+  put genomes/ in the module graph — and Vite broadcasts glob-invalidation
+  full-reloads to EVERY connected client, including the studio tab.
+- Fix: **never glob a directory the app writes into.** The arena now fetches
+  the pool from GET /api/genome at runtime; the watcher ignores genomes/ and
+  farm/out/. Bonus: the arena picks up new creatures on every page load with
+  no rebuild.
+- Belt-and-braces: the studio persists the current creature to sessionStorage
+  on every adopt and restores it on load — no reload of any cause can eat a
+  hatch again.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
