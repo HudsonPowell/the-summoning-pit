@@ -12,16 +12,17 @@ import { solvePose, walkSpeed, Capsule, Intent, slashWeight } from './pose';
 import { Camera } from './render';
 import { PixelView } from './view';
 
-// every genome the farm has bred is an enemy candidate, automatically —
-// plus the authored monsters
-const genomePool: Genome[] = [
-  ...Object.entries(
-    import.meta.glob('../genomes/*.json', { eager: true }) as Record<string, { default: unknown }>,
-  )
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, m]) => migrateGenome(m.default)),
-  imp(), hound(), troll(), ogre(),
-];
+// every genome the farm has bred or the studio has hatched is an enemy
+// candidate, plus the authored monsters. Fetched at runtime, never glob'd —
+// a build-time glob would make every hatch-save reload every open tab.
+const genomePool: Genome[] = [imp(), hound(), troll(), ogre()];
+let poolReady = false;
+fetch('/api/genome')
+  .then(r => (r.ok ? r.json() : []))
+  .then((list: unknown[]) => genomePool.unshift(...list.map(migrateGenome)))
+  .catch(() => {})
+  .finally(() => { poolReady = true; });
+setTimeout(() => { poolReady = true; }, 1500);
 
 // how a creature behaves when the player is near — keyed by genome name
 const BEHAVIOR: Record<string, { style: 'chase' | 'flee'; radius: number; speed: number }> = {
@@ -415,7 +416,7 @@ function step(dt: number, t: number) {
     const [tx, tz] = openTileFarFromPlayer();
     player.x = tx2w(tx); player.z = tz2w(tz);
   }
-  if (enemies.length === 0) nextRound();
+  if (enemies.length === 0 && poolReady) nextRound();
 
   // bombs & flames
   for (const b of bombs) b.t -= dt;

@@ -48,6 +48,9 @@ function adoptGenome(g: typeof genome) {
   for (const [k, set] of gaitSetters) set(genome.gait[k]);
   for (const [k, set] of paletteSetters) set(genome.palette[k]);
   refreshGenomeView();
+  // survive any page reload (HMR, accidental refresh): the current creature
+  // is never more than a sessionStorage read away
+  try { sessionStorage.setItem('rig-genome', JSON.stringify(g)); } catch { /* full */ }
 }
 
 const gCreature = group(panel, 'creature');
@@ -211,6 +214,12 @@ hatchBtn.addEventListener('click', () => doHatch(hatchDesc.value.trim(), 0.7));
 rerollBtn.addEventListener('click', () =>
   doHatch(hatchDesc.value.trim() || lastHatchDesc, 0.9));
 hatchDesc.addEventListener('keydown', e => { if (e.key === 'Enter') doHatch(hatchDesc.value.trim(), 0.7); });
+
+// restore the creature from before any reload
+try {
+  const saved = sessionStorage.getItem('rig-genome');
+  if (saved) adoptGenome(migrateGenome(JSON.parse(saved)));
+} catch { /* ignore corrupt state */ }
 
 refreshGenomeView();
 

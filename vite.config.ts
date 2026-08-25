@@ -1,13 +1,31 @@
 import { defineConfig, Plugin } from 'vite';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 
-// dev-tool endpoint: the studio's hatch box POSTs a genome here and it lands
-// in genomes/, where the arena's glob picks it up as an enemy candidate
-function genomeSave(): Plugin {
+// dev-tool endpoint: POST saves a genome into genomes/, GET lists them all.
+// The arena fetches the pool at runtime (never a build-time glob): a glob
+// would put genomes/ in the module graph, and every hatch-save would
+// broadcast a full page reload to every open tab — resetting the creature
+// you just hatched.
+function genomeStore(): Plugin {
   return {
-    name: 'genome-save',
+    name: 'genome-store',
     configureServer(server) {
       server.middlewares.use('/api/genome', (req, res) => {
+        res.setHeader('content-type', 'application/json');
+        if (req.method === 'GET') {
+          try {
+            mkdirSync('genomes', { recursive: true });
+            const list = readdirSync('genomes')
+              .filter(f => f.endsWith('.json'))
+              .sort()
+              .map(f => JSON.parse(readFileSync(`genomes/${f}`, 'utf8')));
+            res.end(JSON.stringify(list));
+          } catch {
+            res.statusCode = 500;
+            res.end('[]');
+          }
+          return;
+        }
         if (req.method !== 'POST') {
           res.statusCode = 405;
           res.end();
@@ -25,7 +43,6 @@ function genomeSave(): Plugin {
                 .slice(0, 48) || 'creature';
             mkdirSync('genomes', { recursive: true });
             writeFileSync(`genomes/${slug}.json`, JSON.stringify(g, null, 2));
-            res.setHeader('content-type', 'application/json');
             res.end(JSON.stringify({ ok: true, file: `genomes/${slug}.json` }));
           } catch {
             res.statusCode = 400;
@@ -38,5 +55,8 @@ function genomeSave(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [genomeSave()],
+  plugins: [genomeStore()],
+  server: {
+    watch: { ignored: ['**/genomes/**', '**/farm/out/**'] },
+  },
 });

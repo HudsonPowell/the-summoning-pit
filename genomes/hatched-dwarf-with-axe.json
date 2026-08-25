@@ -1,0 +1,75 @@
+{
+  "name": "hatched-dwarf-with-axe",
+  "skeleton": {
+    "prone": false,
+    "spine": 0.4,
+    "neck": 0.12,
+    "headR": 0.09,
+    "hipW": 0.25,
+    "chestW": 0.28,
+    "torsoR": 0.11,
+    "chains": [
+      {
+        "role": "arm",
+        "attach": "chest",
+        "seg": [
+          0.25,
+          0.25
+        ],
+        "r": 0.06,
+        "spread": 0.12
+      },
+      {
+        "role": "leg",
+        "attach": "hip",
+        "seg": [
+          0.24,
+          0.24
+        ],
+        "r": 0.055,
+        "spread": 0.12
+      },
+      {
+        "role": "tail",
+        "attach": "hip",
+        "seg": [
+          0.21,
+          0.19
+        ],
+        "r": 0.03,
+        "spread": 0
+      }
+    ]
+  },
+  "gait": {
+    "cadence": 1.2,
+    "stride": 0.9,
+    "stance": 0.6,
+    "lift": 0.1,
+    "bounce": 0.025,
+    "sway": 0.02,
+    "lean": 0.06,
+    "slump": 0,
+    "crouch": 0.03,
+    "pelvisTwist": 0.05,
+    "shoulderTwist": 0.05,
+    "armSwing": 0.42,
+    "elbowBase": 0.35,
+    "elbowAmp": 0.5,
+    "elbowLag": 0.16666666666666666,
+    "headPitch": 0,
+    "flapAmp": 0,
+    "tailWave": 0.5
+  },
+  "palette": {
+    "torso": "#964b00",
+    "limbs": "#434a54",
+    "head": "#b2d3c8",
+    "accent": "#3b3b3b"
+  },
+  "weapon": {
+    "length": 0.42,
+    "r": 0.055,
+    "color": "#9aa1ab"
+  }
+}
