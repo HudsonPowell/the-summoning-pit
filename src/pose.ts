@@ -4,8 +4,9 @@
 // 'tail'. Chains don't know about layers. Nothing here counts limbs to decide
 // what kind of animal it is looking at.
 
-import { V3, v3, add, sub, scale, dot, len, norm, lerp as vlerp, TAU, frac, clamp } from './vec';
+import { V3, v3, add, sub, scale, dot, len, norm, cross, lerp as vlerp, TAU, frac, clamp } from './vec';
 import { Genome, Gait, Mood, ChainSpec, effectiveGait } from './genome';
+import { StrikeSpec, WeaponSpec, DEFAULT_STRIKE_LIGHT } from './character';
 
 export interface Capsule {
   a: V3;
@@ -16,7 +17,14 @@ export interface Capsule {
 }
 
 export interface Intent {
-  slash?: { t: number; weight: number };
+  slash?: { t: number; weight: number; spec?: StrikeSpec };
+}
+
+/** Optional extras: a crafted multi-part weapon and breathing character. */
+export interface PoseExtras {
+  weapon?: WeaponSpec;
+  breatheAmp?: number;
+  breatheRate?: number;
 }
 
 function hex(c: string): [number, number, number] {
@@ -49,17 +57,18 @@ function footTrack(p: number, g: Gait): { x: number; y: number } {
   return { x: (-0.5 + e) * travel, y: g.lift * Math.sin(Math.PI * u) };
 }
 
-function slashDir(u: number): V3 {
-  const p0 = v3(-0.35, 0.55, 0.55);
-  const p1 = v3(0.9, 0.35, 0.15);
-  const p2 = v3(0.7, -0.5, -0.45);
+function slashDir(u: number, s: StrikeSpec): V3 {
+  const p0 = v3(s.posts[0][0], s.posts[0][1], s.posts[0][2]);
+  const p1 = v3(s.posts[1][0], s.posts[1][1], s.posts[1][2]);
+  const p2 = v3(s.posts[2][0], s.posts[2][1], s.posts[2][2]);
   const a = vlerp(p0, p1, u), b = vlerp(p1, p2, u);
   return norm(vlerp(a, b, u));
 }
-function slashU(t: number): number {
-  if (t < 0.4) return 0.25 * (t / 0.4);
-  if (t < 0.6) return 0.25 + 0.6 * ((t - 0.4) / 0.2);
-  return 0.85 + 0.15 * ((t - 0.6) / 0.4);
+function slashU(t: number, s: StrikeSpec): number {
+  const w = s.windup, st = s.strike;
+  if (t < w) return 0.25 * (t / w);
+  if (t < w + st) return 0.25 + 0.6 * ((t - w) / st);
+  return 0.85 + 0.15 * ((t - w - st) / Math.max(1e-4, 1 - w - st));
 }
 export function slashWeight(t: number): number {
   const inW = clamp(t / 0.12, 0, 1);
@@ -77,13 +86,16 @@ export function solvePose(
   idleT = 0,
   intent?: Intent,
   collapse = 0,
+  extras?: PoseExtras,
 ): Capsule[] {
   const sk = genome.skeleton;
   const g = effectiveGait(genome.gait, mood);
   const caps: Capsule[] = [];
   const co = clamp(collapse, 0, 1);
   const mv = clamp(move, 0, 1) * (1 - co);
-  const breathe = (1 - mv) * (1 - co) * 0.012 * Math.sin(TAU * 0.35 * idleT);
+  const breathe =
+    (1 - mv) * 0.012 * (extras?.breatheAmp ?? 1) *
+    Math.sin(TAU * (extras?.breatheRate ?? 0.35) * idleT);
 
   const cTorso = hex(genome.palette.torso);
   const cLimb = hex(genome.palette.limbs);
@@ -107,9 +119,10 @@ export function solvePose(
   const swayAt = () => -g.sway * Math.cos(TAU * (phase - 0.3)) * mv;
 
   const slash = intent?.slash;
+  const spec = slash?.spec ?? DEFAULT_STRIKE_LIGHT;
   const sw2 = slash ? slash.weight : 0;
-  const su = slash ? slashU(clamp(slash.t, 0, 1)) : 0;
-  const slashTw = sw2 * 0.5 * (su < 0.3 ? -su / 0.3 : Math.sin((Math.PI * (su - 0.3)) / 0.7));
+  const su = slash ? slashU(clamp(slash.t, 0, 1), spec) : 0;
+  const slashTw = sw2 * spec.twist * (su < 0.3 ? -su / 0.3 : Math.sin((Math.PI * (su - 0.3)) / 0.7));
 
   if (!sk.prone) {
     const hipH = (legLenAt('hip') * 0.985 - g.crouch) * (1 - 0.72 * co) + ANKLE_H;
@@ -207,8 +220,10 @@ export function solvePose(
 
       // intent claims the first right arm only
       if (pair === 0 && side > 0 && sw2 > 0) {
-        const reach = (chain.seg[0] + chain.seg[1]) * (0.72 + 0.24 * Math.sin(Math.PI * su));
-        const target = add(shoulder, scale(slashDir(su), reach));
+        const reach =
+          (chain.seg[0] + chain.seg[1]) *
+          (spec.reachMin + (spec.reachMax - spec.reachMin) * Math.sin(Math.PI * su));
+        const target = add(shoulder, scale(slashDir(su, spec), reach));
         hand = vlerp(hand, target, sw2);
         elbow = twoBoneIK(shoulder, hand, chain.seg[0], chain.seg[1], v3(-0.6, -0.25, 0.9));
       }
@@ -218,12 +233,34 @@ export function solvePose(
       caps.push({ a: elbow, b: hand, r: chain.r * 0.9, color: mul(cLimb, shade * 0.95), part: 'forearm' });
       caps.push({ a: hand, b: hand, r: chain.r * 1.05, color: mul(cHead, shade * 0.95), part: 'hand' });
 
-      if (pair === 0 && side > 0 && genome.weapon) {
-        const w = genome.weapon;
-        const bladeDir = norm(sub(hand, elbow));
-        const tip = add(hand, scale(bladeDir, w.length));
-        caps.push({ a: add(hand, scale(bladeDir, 0.06)), b: tip, r: w.r, color: hex(w.color), part: 'blade' });
-        caps.push({ a: hand, b: hand, r: chain.r * 1.2, color: mul(cAccent, 0.9), part: 'guard' });
+      if (pair === 0 && side > 0) {
+        // crafted multi-part weapon in grip space (+x along the blade),
+        // else the legacy single-capsule weapon from old genomes
+        const spec2 = extras?.weapon;
+        if (spec2) {
+          const ex = norm(sub(hand, elbow));
+          let ez = cross(ex, v3(0, 1, 0));
+          if (len(ez) < 1e-3) ez = v3(0, 0, 1);
+          ez = norm(ez);
+          const ey = cross(ez, ex);
+          const gripToWorld = (p: [number, number, number]): V3 =>
+            add(hand, add(scale(ex, p[0]), add(scale(ey, p[1]), scale(ez, p[2]))));
+          for (const part of spec2.parts) {
+            caps.push({
+              a: gripToWorld(part.a),
+              b: gripToWorld(part.b),
+              r: part.r,
+              color: hex(part.color),
+              part: 'weapon',
+            });
+          }
+        } else if (genome.weapon) {
+          const w = genome.weapon;
+          const bladeDir = norm(sub(hand, elbow));
+          const tip = add(hand, scale(bladeDir, w.length));
+          caps.push({ a: add(hand, scale(bladeDir, 0.06)), b: tip, r: w.r, color: hex(w.color), part: 'blade' });
+          caps.push({ a: hand, b: hand, r: chain.r * 1.2, color: mul(cAccent, 0.9), part: 'guard' });
+        }
       }
     }
   });

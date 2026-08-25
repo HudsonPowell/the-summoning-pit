@@ -1,0 +1,295 @@
+{
+  "name": "ember-scout",
+  "kind": "hero",
+  "genome": {
+    "name": "scout",
+    "skeleton": {
+      "prone": false,
+      "spine": 0.5,
+      "neck": 0.09,
+      "headR": 0.115,
+      "hipW": 0.22,
+      "chestW": 0.36,
+      "torsoR": 0.1,
+      "chains": [
+        {
+          "role": "leg",
+          "attach": "hip",
+          "seg": [
+            0.44,
+            0.43
+          ],
+          "r": 0.055,
+          "spread": 0.11
+        },
+        {
+          "role": "arm",
+          "attach": "chest",
+          "seg": [
+            0.3,
+            0.28
+          ],
+          "r": 0.05,
+          "spread": 0.18
+        }
+      ]
+    },
+    "gait": {
+      "cadence": 1.05,
+      "stride": 1.45,
+      "stance": 0.6,
+      "lift": 0.11,
+      "bounce": 0.028,
+      "sway": 0.03,
+      "lean": 0.06,
+      "slump": 0,
+      "crouch": 0.03,
+      "pelvisTwist": 0.1,
+      "shoulderTwist": 0.14,
+      "armSwing": 0.42,
+      "elbowBase": 0.35,
+      "elbowAmp": 0.5,
+      "elbowLag": 0.16666666666666666,
+      "headPitch": 0,
+      "flapAmp": 0.5,
+      "tailWave": 0.35
+    },
+    "palette": {
+      "torso": "#3aa7a0",
+      "limbs": "#2b7f8f",
+      "head": "#e8c39a",
+      "accent": "#d5573b"
+    },
+    "weapon": {
+      "length": 0.62,
+      "r": 0.032,
+      "color": "#cfd6e4"
+    }
+  },
+  "behaviors": {
+    "walk": {
+      "type": "gait",
+      "gait": {
+        "cadence": 1.05,
+        "stride": 1.45,
+        "stance": 0.6,
+        "lift": 0.11,
+        "bounce": 0.028,
+        "sway": 0.03,
+        "lean": 0.06,
+        "slump": 0,
+        "crouch": 0.03,
+        "pelvisTwist": 0.1,
+        "shoulderTwist": 0.14,
+        "armSwing": 0.42,
+        "elbowBase": 0.35,
+        "elbowAmp": 0.5,
+        "elbowLag": 0.16666666666666666,
+        "headPitch": 0,
+        "flapAmp": 0.5,
+        "tailWave": 0.35
+      },
+      "mood": {
+        "tired": 0,
+        "angry": 0
+      }
+    },
+    "run": {
+      "type": "gait",
+      "gait": {
+        "cadence": 1.4175000000000002,
+        "stride": 1.8125,
+        "stance": 0.6,
+        "lift": 0.14850000000000002,
+        "bounce": 0.0364,
+        "sway": 0.03,
+        "lean": 0.2,
+        "slump": 0,
+        "crouch": 0.03,
+        "pelvisTwist": 0.1,
+        "shoulderTwist": 0.14,
+        "armSwing": 0.5670000000000001,
+        "elbowBase": 0.6,
+        "elbowAmp": 0.5,
+        "elbowLag": 0.16666666666666666,
+        "headPitch": 0,
+        "flapAmp": 0.5,
+        "tailWave": 0.35
+      },
+      "mood": {
+        "tired": 0,
+        "angry": 0
+      }
+    },
+    "idle": {
+      "type": "still",
+      "still": {
+        "collapse": 0,
+        "tired": 0,
+        "angry": 0,
+        "breatheAmp": 1,
+        "breatheRate": 0.35
+      }
+    },
+    "sleep": {
+      "type": "still",
+      "still": {
+        "collapse": 0.82,
+        "tired": 1,
+        "angry": 0,
+        "breatheAmp": 2.2,
+        "breatheRate": 0.14
+      }
+    },
+    "attack-light": {
+      "type": "strike",
+      "strike": {
+        "duration": 0.38,
+        "posts": [
+          [
+            -0.2,
+            0.35,
+            0.6
+          ],
+          [
+            0.95,
+            0.15,
+            0.2
+          ],
+          [
+            0.6,
+            -0.2,
+            -0.5
+          ]
+        ],
+        "windup": 0.3,
+        "strike": 0.25,
+        "reachMin": 0.7,
+        "reachMax": 0.9,
+        "twist": 0.3
+      }
+    },
+    "attack-heavy": {
+      "type": "strike",
+      "strike": {
+        "duration": 0.95,
+        "posts": [
+          [
+            -0.45,
+            0.85,
+            0.35
+          ],
+          [
+            0.55,
+            0.75,
+            0.05
+          ],
+          [
+            0.8,
+            -0.55,
+            -0.3
+          ]
+        ],
+        "windup": 0.5,
+        "strike": 0.14,
+        "reachMin": 0.75,
+        "reachMax": 1,
+        "twist": 0.7
+      }
+    }
+  },
+  "weapon": {
+    "name": "crooked-bone-staff",
+    "parts": [
+      {
+        "a": [
+          -0.1,
+          0,
+          0
+        ],
+        "b": [
+          0.75,
+          0,
+          0
+        ],
+        "r": 0.024,
+        "color": "#964b00"
+      },
+      {
+        "a": [
+          0.75,
+          0,
+          0
+        ],
+        "b": [
+          0.75,
+          0,
+          0
+        ],
+        "r": 0.045,
+        "color": "#ffd700"
+      },
+      {
+        "a": [
+          0.4,
+          0,
+          0
+        ],
+        "b": [
+          0.4,
+          0,
+          0
+        ],
+        "r": 0.015,
+        "color": "#ff9900"
+      },
+      {
+        "a": [
+          0.1,
+          0,
+          0
+        ],
+        "b": [
+          0.2,
+          0,
+          0
+        ],
+        "r": 0.018,
+        "color": "#ffcc00"
+      },
+      {
+        "a": [
+          0.2,
+          0,
+          0
+        ],
+        "b": [
+          0.2,
+          0,
+          0
+        ],
+        "r": 0.025,
+        "color": "#ff9900"
+      },
+      {
+        "a": [
+          0.3,
+          0,
+          0
+        ],
+        "b": [
+          0.3,
+          0,
+          0
+        ],
+        "r": 0.025,
+        "color": "#66dd00"
+      }
+    ]
+  },
+  "blast": {
+    "core": "#fff3c4",
+    "edge": "#ffd25e",
+    "pattern": "flame"
+  }
+}

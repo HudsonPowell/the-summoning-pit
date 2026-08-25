@@ -10,6 +10,8 @@ export const norm = (a: V3): V3 => {
   const l = len(a);
   return l < 1e-9 ? v3(0, 1, 0) : scale(a, 1 / l);
 };
+export const cross = (a: V3, b: V3): V3 =>
+  v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 export const lerp = (a: V3, b: V3, t: number): V3 =>
   v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
 
