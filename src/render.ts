@@ -101,7 +101,9 @@ export class PixelRenderer {
           }
         }
         const o4 = i * 4;
-        out[o4] = r; out[o4 + 1] = g; out[o4 + 2] = b; out[o4 + 3] = 255;
+        // floor:false renders sprite-style: background transparent for compositing
+        out[o4] = r; out[o4 + 1] = g; out[o4 + 2] = b;
+        out[o4 + 3] = cam.floor === false ? 0 : 255;
       }
     }
 

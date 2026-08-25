@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CLASH — arena</title>
+  <style>
+    :root {
+      --bg: #050508; --panel: #0d0f16; --line: #1f2230;
+      --ink: #c8cdd6; --dim: #6b7280;
+      --p1: #3ec5c9; --p2: #e2c93c;
+    }
+    * { margin: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--dim);
+      font: 12px/1.5 'SF Mono', ui-monospace, Menlo, monospace;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100vh;
+    }
+    #frame { position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+    #topbar { display: flex; align-items: center; gap: 18px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+    #topbar .title { color: var(--ink); font-weight: 700; letter-spacing: 0.3em; }
+    #status b.p1 { color: var(--p1); } #status b.p2 { color: var(--p2); }
+    #keys { margin-left: auto; font-size: 11px; }
+    #keys b { color: var(--ink); font-weight: 500; }
+    /* 512x352 native, integer-scaled x2 — never fractional */
+    #view { width: 1024px; height: 704px; image-rendering: pixelated; display: block; background: #050508; }
+    @media (max-width: 1080px), (max-height: 800px) { #view { width: 512px; height: 352px; } }
+    #toast {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      pointer-events: none; opacity: 0; color: var(--ink);
+      font-size: 30px; letter-spacing: 0.4em; font-weight: 700;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+      transition: opacity 0.5s ease;
+    }
+    #toast.show { opacity: 1; transition: opacity 0.1s ease; }
+    #footer { display: flex; gap: 16px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 11px; }
+    #footer a { color: var(--p1); text-decoration: none; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <div id="frame">
+    <div id="topbar">
+      <span class="title">CLASH</span>
+      <span id="status"></span>
+      <span id="keys"><b>P1</b> wasd + f &nbsp; <b>P2</b> arrows + enter</span>
+    </div>
+    <canvas id="view" width="512" height="352"></canvas>
+    <div id="toast"></div>
+    <div id="footer">
+      <span>arena · one class · first to laugh wins</span>
+      <a href="/">studio</a>
+    </div>
+  </div>
+  <script type="module" src="/src/clash/main.ts"></script>
+</body>
+</html>
