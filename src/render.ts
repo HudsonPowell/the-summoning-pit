@@ -16,6 +16,8 @@ export interface Camera {
   cx?: number;   // world-space look-at (defaults to origin)
   cz?: number;
   tile?: number; // floor checker size in metres (default 0.5); centred on integer coords
+  flat?: boolean;  // CLASH look: solid inks, no shading, no depth dim, no outlines
+  floor?: boolean; // false = solid near-black ground plane (default true: checkered)
 }
 
 interface Proj {
@@ -79,7 +81,7 @@ export class PixelRenderer {
         const oy = o00.y + px * oDx.y + py * oDy.y;
         const oz = o00.z + px * oDx.z + py * oDy.z;
         let r = 12, g = 13, b = 18; // void
-        if (Math.abs(d.y) > 1e-4) {
+        if (cam.floor !== false && Math.abs(d.y) > 1e-4) {
           const s = -oy / d.y;
           {
             const rx = ox + s * d.x, rz = oz + s * d.z;
@@ -134,10 +136,13 @@ export class PixelRenderer {
             this.depth[i] = z;
             this.q[i] = dist / p.r;
             this.hit[i] = 1;
-            const depthDim = 1 - 0.22 * ((maxZ - z) / zRange);
-            let shade = 0.5 + 0.5 * Math.sqrt(Math.max(0, 1 - this.q[i] * this.q[i]));
-            shade = Math.ceil(shade * SHADE_LEVELS) / SHADE_LEVELS;
-            const s = shade * depthDim;
+            let s = 1;
+            if (!cam.flat) {
+              const depthDim = 1 - 0.22 * ((maxZ - z) / zRange);
+              let shade = 0.5 + 0.5 * Math.sqrt(Math.max(0, 1 - this.q[i] * this.q[i]));
+              shade = Math.ceil(shade * SHADE_LEVELS) / SHADE_LEVELS;
+              s = shade * depthDim;
+            }
             this.colR[i] = p.color[0] * s;
             this.colG[i] = p.color[1] * s;
             this.colB[i] = p.color[2] * s;
@@ -151,6 +156,14 @@ export class PixelRenderer {
       for (let px = 0; px < W; px++) {
         const i = py * W + px;
         if (!this.hit[i]) continue;
+        if (cam.flat) {
+          const o4 = i * 4;
+          out[o4] = this.colR[i];
+          out[o4 + 1] = this.colG[i];
+          out[o4 + 2] = this.colB[i];
+          out[o4 + 3] = 255;
+          continue;
+        }
         let m = 1;
         // silhouette edge, and interior edges where another limb sits in front
         for (const [nx, ny] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {

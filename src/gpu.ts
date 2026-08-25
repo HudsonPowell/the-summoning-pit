@@ -18,7 +18,7 @@ struct U {
   rayDx: vec4f,
   rayDy: vec4f,
   world: vec4f, // ccx, ccz, scroll, 0
-  zr:   vec4f,  // minZ, maxZ, 0, 0
+  zr:   vec4f,  // minZ, maxZ, flags (1=flat, 2=nofloor), 0
 };
 struct Cap { a: vec4f, b: vec4f, color: vec4f }; // a.xyz screen+depth, a.w r
 
@@ -53,10 +53,11 @@ fn bestHit(p: vec2f) -> vec3f { // (z, q, index) — z stays -1e9 on miss
 @fragment
 fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let p = pos.xy;
+  let flags = u32(u.zr.z);
   // floor: orthographic ray onto y=0
   var col = vec3f(12.0, 13.0, 18.0);
   let o = u.rayO.xyz + pos.x * u.rayDx.xyz + pos.y * u.rayDy.xyz;
-  if (abs(u.rayD.y) > 1e-4) {
+  if ((flags & 2u) == 0u && abs(u.rayD.y) > 1e-4) {
     let s = -o.y / u.rayD.y;
     let rx = o.x + s * u.rayD.x;
     let rz = o.z + s * u.rayD.z;
@@ -77,6 +78,9 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let h = bestHit(p);
   if (h.z >= 0.0) {
     let c = caps[u32(h.z)];
+    if ((flags & 1u) != 0u) {
+      return vec4f(c.color.rgb / 255.0, 1.0); // CLASH look: solid ink
+    }
     var shade = 0.5 + 0.5 * sqrt(max(0.0, 1.0 - h.y * h.y));
     shade = ceil(shade * 4.0) / 4.0;
     let dim = 1.0 - 0.22 * ((u.zr.y - h.x) / max(1e-4, u.zr.y - u.zr.x));
@@ -198,7 +202,8 @@ export class GpuRenderer {
     u.set([oDx.x, oDx.y, oDx.z, 0], 12);
     u.set([oDy.x, oDy.y, oDy.z, 0], 16);
     u.set([ccx, ccz, scroll, 0], 20);
-    u.set([minZ, maxZ, 0, 0], 24);
+    const flags = (cam.flat ? 1 : 0) | (cam.floor === false ? 2 : 0);
+    u.set([minZ, maxZ, flags, 0], 24);
 
     this.device.queue.writeBuffer(this.ubuf, 0, u);
     this.device.queue.writeBuffer(this.cbuf, 0, this.cData, 0, n * 12);

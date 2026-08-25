@@ -134,6 +134,7 @@ const camZoomSet = slider(gCam, 'zoom', 24, 140, 1, cam.ppm, v => { cam.ppm = v;
 
 const gRender = group(panel, 'render');
 slider(gRender, 'resolution', 96, 400, 16, 176, v => { view.setSize(v, v); });
+toggle(gRender, 'CLASH flat look', false, v => { cam.flat = v; });
 
 document.getElementById('copy')!.addEventListener('click', () => {
   navigator.clipboard.writeText(genomeBox.value);
