@@ -1,8 +1,38 @@
 // Drivers -> joints, every frame. Nothing here is a keyframe: the whole pose
 // is resolved from the gait phase and a handful of authored relationships.
 
-import { V3, v3, add, sub, scale, dot, len, norm, TAU, frac, clamp } from './vec';
+import { V3, v3, add, sub, scale, dot, len, norm, lerp as vlerp, TAU, frac, clamp } from './vec';
 import { Genome, Gait, Mood, effectiveGait } from './genome';
+
+/**
+ * The intent layer: grabs specific limbs toward targets and blends in and
+ * out by weight. It claims the right arm (and borrows a little torso);
+ * locomotion neither knows nor cares.
+ */
+export interface Intent {
+  slash?: { t: number; weight: number }; // t runs 0..1 through the move
+}
+
+// Wind-up, whip, settle: a bezier through three direction posts, with the
+// timing squeezed so the middle of the arc happens fast.
+function slashDir(u: number): V3 {
+  const p0 = v3(-0.35, 0.55, 0.55);
+  const p1 = v3(0.9, 0.35, 0.15);
+  const p2 = v3(0.7, -0.5, -0.45);
+  const a = vlerp(p0, p1, u), b = vlerp(p1, p2, u);
+  return norm(vlerp(a, b, u));
+}
+function slashU(t: number): number {
+  if (t < 0.4) return 0.25 * (t / 0.4);            // wind-up
+  if (t < 0.6) return 0.25 + 0.6 * ((t - 0.4) / 0.2); // strike
+  return 0.85 + 0.15 * ((t - 0.6) / 0.4);          // settle
+}
+/** Envelope for blending the whole move in and out. */
+export function slashWeight(t: number): number {
+  const inW = clamp(t / 0.12, 0, 1);
+  const outW = 1 - clamp((t - 0.82) / 0.18, 0, 1);
+  return inW * outW;
+}
 
 export interface Capsule {
   a: V3;
@@ -62,6 +92,7 @@ export function solvePose(
   phase: number,
   move = 1,
   idleT = 0,
+  intent?: Intent,
 ): Capsule[] {
   const b = genome.body;
   const g = effectiveGait(genome.gait, mood);
@@ -126,7 +157,12 @@ export function solvePose(
   caps.push({ a: headC, b: headC, r: b.headR, color: cHead, part: 'head' });
 
   // --- arms -----------------------------------------------------------
-  const sTw = -g.shoulderTwist * Math.sin(TAU * phase) * mv;
+  const slash = intent?.slash;
+  const sw2 = slash ? slash.weight : 0;
+  const su = slash ? slashU(clamp(slash.t, 0, 1)) : 0;
+  // the intent layer borrows the torso: wind back, then throw into the cut
+  const slashTw = sw2 * 0.5 * (su < 0.3 ? -su / 0.3 : Math.sin((Math.PI * (su - 0.3)) / 0.7));
+  const sTw = -g.shoulderTwist * Math.sin(TAU * phase) * mv - slashTw;
   const sw = b.shoulderWidth / 2;
   const hunch = 0.03 * mood.angry;
   for (const side of [-1, 1] as const) {
@@ -143,13 +179,32 @@ export function solvePose(
     const beta =
       g.elbowBase + g.elbowAmp * 0.5 * (1 + Math.sin(TAU * (pArm - g.elbowLag))) * mv;
     const dU = v3(Math.sin(alpha), -Math.cos(alpha), side * 0.12);
-    const elbow = add(shoulder, scale(norm(dU), b.upperArm));
+    let elbow = add(shoulder, scale(norm(dU), b.upperArm));
     const dF = v3(Math.sin(alpha + beta), -Math.cos(alpha + beta), side * 0.16);
-    const hand = add(elbow, scale(norm(dF), b.forearm));
+    let hand = add(elbow, scale(norm(dF), b.forearm));
+
+    // intent claims the right arm: blend the hand toward the slash arc and
+    // re-solve the elbow with IK (pole back and out, so the fold stays human)
+    if (side > 0 && sw2 > 0) {
+      const reach = (b.upperArm + b.forearm) * (0.72 + 0.24 * Math.sin(Math.PI * su));
+      const target = add(shoulder, scale(slashDir(su), reach));
+      hand = vlerp(hand, target, sw2);
+      elbow = twoBoneIK(shoulder, hand, b.upperArm, b.forearm, v3(-0.6, -0.25, 0.9));
+    }
+
     const shade = side < 0 ? 0.8 : 1.0;
     caps.push({ a: shoulder, b: elbow, r: b.limbR, color: mul(cLimb, shade * 1.05), part: 'upperArm' });
     caps.push({ a: elbow, b: hand, r: b.limbR * 0.9, color: mul(cLimb, shade * 0.95), part: 'forearm' });
     caps.push({ a: hand, b: hand, r: b.limbR * 1.05, color: mul(cHead, shade * 0.95), part: 'hand' });
+
+    // the weapon is just another chain: gripped along the forearm line
+    if (side > 0 && genome.weapon) {
+      const w = genome.weapon;
+      const bladeDir = norm(sub(hand, elbow));
+      const tip = add(hand, scale(bladeDir, w.length));
+      caps.push({ a: add(hand, scale(bladeDir, 0.06)), b: tip, r: w.r, color: hex(w.color), part: 'blade' });
+      caps.push({ a: hand, b: hand, r: b.limbR * 1.2, color: mul(cAccent, 0.9), part: 'guard' });
+    }
   }
 
   return caps;

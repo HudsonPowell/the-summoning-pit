@@ -67,6 +67,28 @@ This file is the only thing that accumulates. Add, don't rewrite.
   folded double); regularised winner (0.252) still visibly trudges but stands
   like a person. Multiplication, not min — both qualities must be present.
 
+### Intent layer (slash), verified 2026-08-25
+- Slash claims the right arm + borrows torso twist; locomotion never consulted.
+  Hand follows a bezier through three direction posts (wind-up back-high,
+  strike forward, follow-through down-across); elbow re-solved by IK with pole
+  back-and-out `(-0.6, -0.25, 0.9)`.
+- Timing: wind-up 40% of the move, strike 20%, settle 40%, total 0.55 s.
+  The whip lives in that compressed middle fifth.
+- Blend envelope: in over first 12%, out over last 18% — locomotion arm swing
+  underneath never pops.
+- Reach varies `(upper+fore) × (0.72 + 0.24·sin(πu))` — bent at wind-up,
+  extended at strike.
+- Weapon = a capsule continuing the elbow→hand line. Grip offset 0.06 m past
+  the hand. Reads as held, no orientation math needed.
+- Strike event fires once at t = 0.55: soft block 1 tile ahead crumbles;
+  creatures within 1.15 m and ≥ 0.4 dot-product in front get hurt + 0.35 m
+  knockback.
+
+### Enemy behaviour
+- The arena enemy IS genomes/bred-tired.json, unedited — farm output in game.
+- Chase radius 3.2 m, axis-dominant pursuit (lane-honest), melee trigger < 1.0 m.
+  Chase mood: angry = 1 stacked on the bred gait. Hurt suspends chasing.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the

@@ -22,12 +22,14 @@ The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same g
 
 ## Run the arena
 
-Open `/grid.html` from the dev server. Bomberman tiles, one creature: WASD/arrows
-to move, space to bomb; left alone it wanders and occasionally bombs itself.
-Bombs burn a flame cross, destroy soft blocks, and hurt the creature — the hurt
-reaction is a mood re-weighting (tired 0.6 / angry 0.4) plus a speed cut. There
-is no hurt animation, which is the point. `window.rig.step(dt)` advances the sim
-manually for tooling.
+Open `/grid.html` from the dev server. Bomberman tiles: WASD/arrows to move,
+space to bomb, **x to slash** — the sword cuts soft blocks and enemies. Left
+alone the player wanders and occasionally bombs itself. The enemy is
+`genomes/bred-tired.json` — the creature the farm evolved from text, walking
+into the game unedited; get close and the tired thing turns angry and swipes.
+Hurt is a mood re-weighting (tired 0.6 / angry 0.4) plus a speed cut. There are
+no animations anywhere in this paragraph, which is the point.
+`window.rig.step(dt)` advances the sim manually for tooling.
 
 ## Run the farm (headless, local models)
 

@@ -10,6 +10,32 @@ export function group(parent: HTMLElement, title: string): HTMLElement {
   return g;
 }
 
+export function button(parent: HTMLElement, label: string, onClick: () => void): void {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.className = 'act';
+  b.addEventListener('click', onClick);
+  parent.appendChild(b);
+}
+
+export function toggle(
+  parent: HTMLElement,
+  label: string,
+  value: boolean,
+  onInput: (v: boolean) => void,
+): void {
+  const row = document.createElement('label');
+  row.className = 'row';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = value;
+  input.addEventListener('input', () => onInput(input.checked));
+  row.append(name, input, document.createElement('em'));
+  parent.appendChild(row);
+}
+
 export function slider(
   parent: HTMLElement,
   label: string,

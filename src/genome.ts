@@ -43,11 +43,18 @@ export interface Mood {
   angry: number; // 0..1
 }
 
+export interface Weapon {
+  length: number; // blade length from the grip, metres
+  r: number;      // blade radius
+  color: string;
+}
+
 export interface Genome {
   name: string;
   body: Body;
   gait: Gait;
   palette: { torso: string; limbs: string; head: string; accent: string };
+  weapon?: Weapon;
 }
 
 export function defaultBiped(): Genome {
@@ -87,6 +94,7 @@ export function defaultBiped(): Genome {
       headPitch: 0.0,
     },
     palette: { torso: '#3aa7a0', limbs: '#2b7f8f', head: '#e8c39a', accent: '#d5573b' },
+    weapon: { length: 0.62, r: 0.032, color: '#cfd6e4' },
   };
 }
 

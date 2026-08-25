@@ -1,7 +1,7 @@
-import { defaultBiped, effectiveGait, Mood, serializeGenome } from './genome';
-import { solvePose, walkSpeed } from './pose';
+import { defaultBiped, effectiveGait, Mood, serializeGenome, Weapon } from './genome';
+import { solvePose, walkSpeed, Intent, slashWeight } from './pose';
 import { PixelRenderer, Camera } from './render';
-import { group, slider } from './ui';
+import { group, slider, button, toggle } from './ui';
 
 const LOW = 176; // low-res buffer size; the pixel look is born here
 
@@ -32,6 +32,19 @@ function refreshGenomeView() {
   genomeBox.value = s;
   byteCount.textContent = `${new Blob([s]).size} bytes`;
 }
+
+const slash = { active: false, t: 0, auto: false };
+const SLASH_DURATION = 0.55;
+let savedWeapon: Weapon | undefined = genome.weapon;
+
+const gIntent = group(panel, 'intent — punctuation moves');
+button(gIntent, 'slash', () => { slash.active = true; slash.t = 0; });
+toggle(gIntent, 'auto-repeat', slash.auto, v => { slash.auto = v; if (v) slash.active = true; });
+toggle(gIntent, 'weapon', !!genome.weapon, v => {
+  if (v) genome.weapon = savedWeapon ?? { length: 0.62, r: 0.032, color: '#cfd6e4' };
+  else { savedWeapon = genome.weapon; delete genome.weapon; }
+  refreshGenomeView();
+});
 
 const gMood = group(panel, 'mood — adverbs, not animations');
 slider(gMood, 'tired', 0, 1, 0.01, mood.tired, v => { mood.tired = v; refreshGenomeView(); });
@@ -96,12 +109,27 @@ let fpsAcc = 0, fpsN = 0, fpsT = 0;
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  tick(dt);
+  requestAnimationFrame(frame);
+}
 
+function tick(dt: number) {
   const speed = walkSpeed(genome, mood);
   phase = (phase + effectiveGait(genome.gait, mood).cadence * dt) % 1;
   scroll += speed * dt;
 
-  const caps = solvePose(genome, mood, phase);
+  if (slash.active) {
+    slash.t += dt / SLASH_DURATION;
+    if (slash.t >= 1) {
+      slash.t = 0;
+      slash.active = slash.auto;
+    }
+  }
+  const intent: Intent | undefined = slash.active
+    ? { slash: { t: slash.t, weight: slashWeight(slash.t) } }
+    : undefined;
+
+  const caps = solvePose(genome, mood, phase, 1, 0, intent);
   renderer.render(img.data, caps, cam, scroll);
   lowCtx.putImageData(img, 0, 0);
   ctx.imageSmoothingEnabled = false;
@@ -113,7 +141,12 @@ function frame(now: number) {
     fpsOut.textContent = `${(fpsN / fpsAcc).toFixed(0)} fps`;
     fpsAcc = 0; fpsN = 0; fpsT = 0;
   }
-  requestAnimationFrame(frame);
 }
 
 requestAnimationFrame(frame);
+
+// manual sim stepping for outside tooling (the pane suspends rAF when hidden)
+(window as any).rig = {
+  step: (dt: number) => tick(dt),
+  slash: () => { slash.active = true; slash.t = 0; },
+};
