@@ -288,8 +288,8 @@ slider(gMood, 'tired', 0, 1, 0.01, mood.tired, v => { mood.tired = v; });
 slider(gMood, 'angry', 0, 1, 0.01, mood.angry, v => { mood.angry = v; });
 
 const gCam = group(panel, 'camera — drag the canvas to orbit');
-const camYawSet = slider(gCam, 'yaw', -Math.PI, Math.PI, 0.01, cam.yaw, v => { cam.yaw = v; });
-const camPitchSet = slider(gCam, 'pitch', -0.1, 0.9, 0.01, cam.pitch, v => { cam.pitch = v; });
+const camYawSet = slider(gCam, 'yaw', -Math.PI, Math.PI, 0.001, cam.yaw, v => { cam.yaw = v; });
+const camPitchSet = slider(gCam, 'pitch', -0.1, 0.9, 0.001, cam.pitch, v => { cam.pitch = v; });
 const camZoomSet = slider(gCam, 'zoom', 24, 140, 1, cam.ppm, v => { cam.ppm = v; });
 
 const gRender = group(panel, 'render');
@@ -412,6 +412,53 @@ canvas.addEventListener('wheel', e => {
   camZoomSet(cam.ppm);
 }, { passive: false });
 
+// Arrow keys orient the figure precisely: held for smooth continuous turning,
+// tapped for a single fine step, shift for eighth-of-that. Two arrows at once
+// pan diagonally, and [ ] snap to the eight compass views.
+const orbitHeld = new Set<string>();
+const ORBIT_RATE = 1.4;   // radians per second held
+const ORBIT_STEP = 0.045; // radians per tap
+addEventListener('keydown', e => {
+  const k = e.key;
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '[', ']'].includes(k)) return;
+  if (document.activeElement instanceof HTMLInputElement ||
+      document.activeElement instanceof HTMLTextAreaElement) return;
+  e.preventDefault();
+  if (k === '[' || k === ']') {
+    const eighth = Math.PI / 4;
+    const dir = k === ']' ? 1 : -1;
+    cam.yaw = Math.round(cam.yaw / eighth + dir) * eighth;
+    camYawSet(cam.yaw);
+    return;
+  }
+  if (!orbitHeld.has(k)) {
+    // the tap: one precise nudge before the hold takes over
+    const fine = e.shiftKey ? 0.125 : 1;
+    if (k === 'ArrowLeft') cam.yaw -= ORBIT_STEP * fine;
+    if (k === 'ArrowRight') cam.yaw += ORBIT_STEP * fine;
+    if (k === 'ArrowUp') cam.pitch = Math.min(0.9, cam.pitch + ORBIT_STEP * fine);
+    if (k === 'ArrowDown') cam.pitch = Math.max(-0.1, cam.pitch - ORBIT_STEP * fine);
+    camYawSet(cam.yaw);
+    camPitchSet(cam.pitch);
+  }
+  orbitHeld.add(k);
+});
+addEventListener('keyup', e => orbitHeld.delete(e.key));
+addEventListener('blur', () => orbitHeld.clear());
+
+function orbitTick(dt: number) {
+  if (orbitHeld.size === 0) return;
+  const rate = ORBIT_RATE * dt * (orbitHeld.has('Shift') ? 0.125 : 1);
+  if (orbitHeld.has('ArrowLeft')) cam.yaw -= rate;
+  if (orbitHeld.has('ArrowRight')) cam.yaw += rate;
+  if (orbitHeld.has('ArrowUp')) cam.pitch = Math.min(0.9, cam.pitch + rate * 0.6);
+  if (orbitHeld.has('ArrowDown')) cam.pitch = Math.max(-0.1, cam.pitch - rate * 0.6);
+  while (cam.yaw > Math.PI) cam.yaw -= Math.PI * 2;
+  while (cam.yaw < -Math.PI) cam.yaw += Math.PI * 2;
+  camYawSet(cam.yaw);
+  camPitchSet(cam.pitch);
+}
+
 // --- startup: restore or ?load= -----------------------------------------------
 
 async function startup() {
@@ -474,6 +521,7 @@ let last = performance.now();
 let fpsAcc = 0, fpsN = 0, fpsT = 0;
 
 function tick(dt: number) {
+  orbitTick(dt);
   const b = currentBehavior();
   const extras: PoseExtras = { weapon: character.weapon };
   let caps: Capsule[];
@@ -533,4 +581,5 @@ startup().then(() => requestAnimationFrame(frame));
     refreshEditors();
   },
   character: () => character,
+  cam: () => cam,
 };

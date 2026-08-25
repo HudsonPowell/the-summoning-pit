@@ -9,7 +9,8 @@ import {
 } from './sim';
 import { Genome, Mood, scaleSkeleton } from '../genome';
 import { Character, StrikeSpec, DEFAULT_STRIKE_LIGHT } from '../character';
-import { solvePose, slashWeight, Intent } from '../pose';
+import { solvePose, slashWeight, Intent, Capsule } from '../pose';
+import { rotY, TAU } from '../vec';
 import { PixelRenderer, Camera } from '../render';
 
 export const NATIVE_W = GW * TILE;
@@ -40,6 +41,7 @@ interface FigureState {
   phase: number;
   lastX: number;
   lastY: number;
+  heading: number; // smoothed, presentation-only — the sim stays integer
 }
 
 const CELL = 34;
@@ -87,7 +89,7 @@ export class ClashDraw {
     this.heroGenomes = heroes.map(h => this.bulked(h.genome));
     this.beastChars = beasts;
     this.beastGenomes = beasts.map(b => this.bulked(b.genome));
-    this.playerFigs = heroes.map(() => ({ phase: 0, lastX: 0, lastY: 0 }));
+    this.playerFigs = heroes.map(() => ({ phase: 0, lastX: 0, lastY: 0, heading: 0 }));
   }
 
   private bulked(g: Genome): Genome {
@@ -328,22 +330,33 @@ export class ClashDraw {
     }
   }
 
-  private figCam(g: Genome, fx: number, fy: number): { cam: Camera; flip: boolean } {
-    let yaw = 0.45;
-    let flip = false;
-    if (fy < 0) yaw = 1.35;
-    else if (fy > 0) yaw = -1.35;
-    else if (fx < 0) flip = true;
+  /**
+   * The figure is turned to its actual heading and drawn by one fixed camera,
+   * instead of being snapped between four hand-picked camera yaws. Any angle
+   * works, so diagonals orient properly and turns read as turns.
+   */
+  private figCam(g: Genome): Camera {
     const h = this.heightOf(g);
     const ppm = Math.min(15, 24 / h);
     return {
-      cam: {
-        yaw, pitch: 0.28, ppm, cy: h * 0.47,
-        flat: this.settings.figureStyle === 'flat', floor: false,
-        blend: this.settings.blend, blendDepth: 0.35, blendMix: 1, blendShape: 0.5,
-      },
-      flip,
+      yaw: 0, pitch: 0.3, ppm, cy: h * 0.47,
+      flat: this.settings.figureStyle === 'flat', floor: false,
+      blend: this.settings.blend, blendDepth: 0.35, blendMix: 1, blendShape: 0.5,
     };
+  }
+
+  /** Turn toward the input's direction fast but not instantly — snap reads as a glitch. */
+  private turn(f: FigureState, fx: number, fy: number, dt = 1): void {
+    if (fx === 0 && fy === 0) return;
+    const target = Math.atan2(fy, fx);
+    let d = target - f.heading;
+    while (d > Math.PI) d -= TAU;
+    while (d < -Math.PI) d += TAU;
+    f.heading += d * Math.min(1, 0.45 * dt);
+  }
+
+  private oriented(caps: Capsule[], heading: number): Capsule[] {
+    return caps.map(c => ({ ...c, a: rotY(c.a, -heading), b: rotY(c.b, -heading) }));
   }
 
   private shadow(pxf: number, pyf: number, w = 10): void {
@@ -398,10 +411,10 @@ export class ClashDraw {
     if (hurtFlash)
       for (const cp of caps) cp.color = [255, 235, 235];
 
+    this.turn(f, p.fx, p.fy);
     this.shadow(pxf, pyf);
-    const { cam, flip } = this.figCam(genome, p.fx, p.fy);
-    this.figRenderer.render(this.figBuf, caps, cam, 0);
-    this.blit(pxf, pyf, flip);
+    this.figRenderer.render(this.figBuf, this.oriented(caps, f.heading), this.figCam(genome), 0);
+    this.blit(pxf, pyf, false);
   }
 
   private drawBeast(g: Game, b: Beast): void {
@@ -410,7 +423,7 @@ export class ClashDraw {
     if (!genome || b.deadT > 90) return;
     let f = this.beastFigs.get(b);
     if (!f) {
-      f = { phase: Math.random(), lastX: b.x / SUB, lastY: b.y / SUB };
+      f = { phase: Math.random(), lastX: b.x / SUB, lastY: b.y / SUB, heading: Math.atan2(b.fy, b.fx) };
       this.beastFigs.set(b, f);
     }
     const pxf = b.x / SUB, pyf = b.y / SUB;
@@ -440,10 +453,10 @@ export class ClashDraw {
     );
     if (hurtFlash)
       for (const cp of caps) cp.color = [255, 235, 235];
+    this.turn(f, b.fx, b.fy);
     this.shadow(pxf, pyf, 12);
-    const { cam, flip } = this.figCam(genome, b.fx, b.fy);
-    this.figRenderer.render(this.figBuf, caps, cam, 0);
-    this.blit(pxf, pyf, flip);
+    this.figRenderer.render(this.figBuf, this.oriented(caps, f.heading), this.figCam(genome), 0);
+    this.blit(pxf, pyf, false);
     // the telegraph everyone can read: ! over a beast about to lunge
     if (b.biteT >= 0 && b.biteT < BITE_WINDUP) {
       const c = this.nctx;

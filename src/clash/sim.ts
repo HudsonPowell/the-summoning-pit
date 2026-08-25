@@ -147,6 +147,8 @@ export interface GameCfg {
   players: PlayerCfg[];
   beastDefs: BeastDef[];
   beastBase: number;
+  /** 8-way movement. The design doc's grammar is 4-way; this is the dial. */
+  diagonal: boolean;
 }
 
 export interface Game {
@@ -294,6 +296,7 @@ export function createGame(numPlayers: number, seed: number, cfg?: Partial<GameC
       players: cfg?.players ?? [],
       beastDefs: cfg?.beastDefs ?? [],
       beastBase: cfg?.beastBase ?? 2,
+      diagonal: cfg?.diagonal ?? true,
     },
     events: [],
   };
@@ -763,16 +766,32 @@ export function step(g: Game, inputs: Input[]): void {
     }
 
     p.moving = false;
-    const want: [number, number][] = [];
-    if (inp.dx !== 0) want.push([inp.dx, 0]);
-    if (inp.dy !== 0) want.push([0, inp.dy]);
-    if (want.length === 2 && p.axis === 1) want.reverse();
-    for (const [dx, dy] of want) {
-      if (moveAxis(g, p, p.speed, dx, dy)) {
-        p.moving = true;
-        p.fx = dx; p.fy = dy;
-        p.axis = dx !== 0 ? 0 : 1;
-        break;
+    if (g.cfg.diagonal && inp.dx !== 0 && inp.dy !== 0) {
+      // both axes in the same tick, each collision-checked on its own so you
+      // slide along a wall instead of sticking. Per-axis step is scaled by
+      // ~1/sqrt(2) (181/256, integer) so a diagonal isn't a speed exploit.
+      const ds = Math.max(1, (p.speed * 181) >> 8);
+      const movedX = moveAxis(g, p, ds, inp.dx, 0);
+      const movedY = moveAxis(g, p, ds, 0, inp.dy);
+      p.moving = movedX || movedY;
+      p.fx = inp.dx;
+      p.fy = inp.dy;
+      p.axis = movedX ? 0 : 1;
+    } else {
+      const want: [number, number][] = [];
+      if (inp.dx !== 0) want.push([inp.dx, 0]);
+      if (inp.dy !== 0) want.push([0, inp.dy]);
+      if (want.length === 2 && p.axis === 1) want.reverse();
+      // facing answers the key even when the way is blocked — turning on the
+      // spot is most of what "in control" feels like
+      if (want.length) { p.fx = want[0][0]; p.fy = want[0][1]; }
+      for (const [dx, dy] of want) {
+        if (moveAxis(g, p, p.speed, dx, dy)) {
+          p.moving = true;
+          p.fx = dx; p.fy = dy;
+          p.axis = dx !== 0 ? 0 : 1;
+          break;
+        }
       }
     }
 
