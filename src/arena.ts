@@ -7,22 +7,30 @@
 // the game unedited.
 
 import { v3, V3, rotY, TAU, clamp } from './vec';
-import { defaultBiped, effectiveGait, Genome, Mood } from './genome';
+import { defaultBiped, effectiveGait, migrateGenome, Genome, Mood, imp, hound, troll, ogre } from './genome';
 import { solvePose, walkSpeed, Capsule, Intent, slashWeight } from './pose';
 import { PixelRenderer, Camera } from './render';
 
-// every genome the farm has bred is an enemy candidate, automatically
-const genomePool: Genome[] = Object.entries(
-  import.meta.glob('../genomes/*.json', { eager: true }) as Record<string, { default: Genome }>,
-)
-  .sort(([a], [b]) => a.localeCompare(b))
-  .map(([, m]) => m.default);
+// every genome the farm has bred is an enemy candidate, automatically —
+// plus the authored monsters
+const genomePool: Genome[] = [
+  ...Object.entries(
+    import.meta.glob('../genomes/*.json', { eager: true }) as Record<string, { default: unknown }>,
+  )
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, m]) => migrateGenome(m.default)),
+  imp(), hound(), troll(), ogre(),
+];
 
-// how a bred creature behaves when the player is near — keyed by genome name
+// how a creature behaves when the player is near — keyed by genome name
 const BEHAVIOR: Record<string, { style: 'chase' | 'flee'; radius: number; speed: number }> = {
   'bred-tired': { style: 'chase', radius: 3.2, speed: 1 },
   'bred-brute': { style: 'chase', radius: 4.2, speed: 0.8 },
   'bred-skittish': { style: 'flee', radius: 2.6, speed: 1.35 },
+  imp: { style: 'chase', radius: 2.8, speed: 1.4 },
+  hound: { style: 'chase', radius: 4.5, speed: 1.2 },
+  troll: { style: 'chase', radius: 3.6, speed: 0.85 },
+  ogre: { style: 'chase', radius: 3.4, speed: 0.75 },
 };
 const DEFAULT_BEHAVIOR = { style: 'chase' as const, radius: 3.2, speed: 1 };
 

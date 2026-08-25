@@ -6,14 +6,14 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { pipeline } from '@huggingface/transformers';
-import { defaultBiped, Body, Gait, Genome } from '../src/genome';
+import { defaultBiped, Gait, Genome, SkeletonScales, scaleSkeleton } from '../src/genome';
 import { renderSheet } from './lib';
 
 interface Target {
   pos: string;
   neg: string;
   palette: Genome['palette'];
-  bodySeed?: Partial<Record<keyof Body, number>>; // multipliers on the base body
+  scaleSeed?: Partial<SkeletonScales>; // silhouette head start (CLIP is size-blind)
 }
 
 const TARGETS: Record<string, Target> = {
@@ -26,13 +26,13 @@ const TARGETS: Record<string, Target> = {
     pos: 'a nervous jittery creature creeping low and cautiously, ready to bolt',
     neg: 'a calm confident figure strolling upright at ease',
     palette: { torso: '#9b8fc4', limbs: '#6f679e', head: '#d9d3ee', accent: '#e8e26e' },
-    bodySeed: { thigh: 0.9, shin: 0.95, headR: 1.15, torsoR: 0.85, shoulderWidth: 0.85 },
+    scaleSeed: { legs: 0.92, head: 1.15, bulk: 0.85, width: 0.85 },
   },
   brute: {
     pos: 'a huge heavy lumbering brute stomping slowly with massive arms',
     neg: 'a small light nimble figure stepping quickly',
     palette: { torso: '#8a6d3f', limbs: '#5f4a2c', head: '#c4a077', accent: '#3f7d4e' },
-    bodySeed: { upperArm: 1.3, forearm: 1.3, shoulderWidth: 1.35, torsoR: 1.35, limbR: 1.4, headR: 0.9, thigh: 1.05 },
+    scaleSeed: { arms: 1.3, bulk: 1.4, width: 1.35, head: 0.9 },
   },
   strut: {
     pos: 'a proud strutting figure marching with chest out and head high',
@@ -76,20 +76,13 @@ const GAIT_BOUNDS: Record<keyof Gait, [number, number]> = {
   elbowAmp: [0, 1.2],
   elbowLag: [0, 0.4],
   headPitch: [-0.4, 0.8],
+  flapAmp: [0, 1.3],
+  tailWave: [0, 1.2],
 };
-const BODY_BOUNDS: Partial<Record<keyof Body, [number, number]>> = {
-  thigh: [0.25, 0.65],
-  shin: [0.25, 0.65],
-  upperArm: [0.18, 0.55],
-  forearm: [0.18, 0.55],
-  hipWidth: [0.14, 0.42],
-  shoulderWidth: [0.2, 0.62],
-  headR: [0.07, 0.22],
-  torsoR: [0.06, 0.18],
-  limbR: [0.03, 0.11],
-};
+const SCALE_KEYS: (keyof SkeletonScales)[] = ['legs', 'arms', 'head', 'bulk', 'width'];
+const SCALE_BOUNDS: [number, number] = [0.6, 1.7];
 
-type Candidate = { gait: Gait; body: Body };
+type Candidate = { gait: Gait; scales: SkeletonScales };
 
 const clampN = (x: number, [lo, hi]: [number, number]) => Math.min(hi, Math.max(lo, x));
 const gauss = () => {
@@ -107,14 +100,13 @@ function mutate(c: Candidate): Candidate {
       gait[k] = clampN(gait[k] + gauss() * MUT_SCALE * (b[1] - b[0]), b);
     }
   }
-  const body = { ...c.body };
-  for (const k of Object.keys(BODY_BOUNDS) as (keyof Body)[]) {
-    const b = BODY_BOUNDS[k]!;
+  const scales = { ...c.scales };
+  for (const k of SCALE_KEYS) {
     if (Math.random() < MUT_RATE * 0.6) {
-      body[k] = clampN(body[k] + gauss() * MUT_SCALE * 0.6 * (b[1] - b[0]), b);
+      scales[k] = clampN(scales[k] + gauss() * 0.1, SCALE_BOUNDS);
     }
   }
-  return { gait, body };
+  return { gait, scales };
 }
 
 const classify = await pipeline(
@@ -126,10 +118,9 @@ mkdirSync('farm/out/evolve', { recursive: true });
 const base = defaultBiped();
 delete base.weapon; // bred creatures are unarmed
 base.palette = target.palette;
-for (const [k, mult] of Object.entries(target.bodySeed ?? {})) {
-  const key = k as keyof Body;
-  base.body[key] = clampN(base.body[key] * (mult as number), BODY_BOUNDS[key] ?? [0, 10]);
-}
+const seedScales: SkeletonScales = {
+  legs: 1, arms: 1, head: 1, bulk: 1, width: 1, ...(target.scaleSeed ?? {}),
+};
 const mood = { tired: 0, angry: 0 };
 
 async function contrast(path: string, pair: { pos: string; neg: string }): Promise<number> {
@@ -138,7 +129,7 @@ async function contrast(path: string, pair: { pos: string; neg: string }): Promi
 }
 
 async function fitness(c: Candidate, tag: string): Promise<number> {
-  const genome: Genome = { ...base, gait: c.gait, body: c.body };
+  const genome: Genome = { ...base, gait: c.gait, skeleton: scaleSkeleton(base.skeleton, c.scales) };
   const png = renderSheet(genome, mood);
   const path = `farm/out/evolve/${targetName}_${tag}.png`;
   writeFileSync(path, png);
@@ -147,7 +138,7 @@ async function fitness(c: Candidate, tag: string): Promise<number> {
   return t * p;
 }
 
-const seed: Candidate = { gait: base.gait, body: base.body };
+const seed: Candidate = { gait: base.gait, scales: seedScales };
 let pop: Candidate[] = [seed, ...Array.from({ length: POP - 1 }, () => mutate(seed))];
 let best: { c: Candidate; f: number } = { c: seed, f: -1 };
 
@@ -168,7 +159,12 @@ for (let gen = 0; gen < GENERATIONS; gen++) {
   ];
 }
 
-const winner: Genome = { ...base, name: `bred-${targetName}`, gait: best.c.gait, body: best.c.body };
+const winner: Genome = {
+  ...base,
+  name: `bred-${targetName}`,
+  gait: best.c.gait,
+  skeleton: scaleSkeleton(base.skeleton, best.c.scales),
+};
 writeFileSync(`farm/out/evolve/${targetName}_winner.png`, renderSheet(winner, mood));
 writeFileSync(`genomes/bred-${targetName}.json`, JSON.stringify(winner, null, 2));
 console.log(`[${targetName}] winner ${best.f.toFixed(3)} -> genomes/bred-${targetName}.json`);

@@ -36,6 +36,30 @@ export function toggle(
   parent.appendChild(row);
 }
 
+export function select(
+  parent: HTMLElement,
+  label: string,
+  options: string[],
+  value: string,
+  onInput: (v: string) => void,
+): void {
+  const row = document.createElement('label');
+  row.className = 'row';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const sel = document.createElement('select');
+  for (const o of options) {
+    const opt = document.createElement('option');
+    opt.value = o;
+    opt.textContent = o;
+    sel.appendChild(opt);
+  }
+  sel.value = value;
+  sel.addEventListener('input', () => onInput(sel.value));
+  row.append(name, sel, document.createElement('em'));
+  parent.appendChild(row);
+}
+
 export function slider(
   parent: HTMLElement,
   label: string,

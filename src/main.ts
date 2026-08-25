@@ -1,11 +1,16 @@
-import { defaultBiped, effectiveGait, Mood, serializeGenome, Weapon } from './genome';
+import {
+  defaultBiped, effectiveGait, Mood, serializeGenome, Weapon,
+  PRESETS, Skeleton, SkeletonScales, scaleSkeleton, Gait,
+} from './genome';
 import { solvePose, walkSpeed, Intent, slashWeight } from './pose';
 import { PixelRenderer, Camera } from './render';
-import { group, slider, button, toggle } from './ui';
+import { group, slider, button, toggle, select } from './ui';
 
 const LOW = 176; // low-res buffer size; the pixel look is born here
 
-const genome = defaultBiped();
+let genome = defaultBiped();
+let baseSkeleton: Skeleton = structuredClone(genome.skeleton);
+const scales: SkeletonScales = { legs: 1, arms: 1, head: 1, bulk: 1, width: 1 };
 const mood: Mood = { tired: 0, angry: 0 };
 const cam: Camera = { yaw: 0.5, pitch: 0.22, ppm: 72, cy: 0.95 };
 
@@ -37,6 +42,27 @@ const slash = { active: false, t: 0, auto: false };
 const SLASH_DURATION = 0.55;
 let savedWeapon: Weapon | undefined = genome.weapon;
 
+const gaitSetters: [keyof Gait, (v: number) => void][] = [];
+const scaleSetters: [keyof SkeletonScales, (v: number) => void][] = [];
+
+const gCreature = group(panel, 'creature');
+select(gCreature, 'preset', Object.keys(PRESETS), 'scout', name => {
+  genome = PRESETS[name]();
+  baseSkeleton = structuredClone(genome.skeleton);
+  savedWeapon = genome.weapon;
+  for (const [k, set] of scaleSetters) { scales[k] = 1; set(1); }
+  for (const [k, set] of gaitSetters) set(genome.gait[k]);
+  refreshGenomeView();
+});
+for (const key of ['legs', 'arms', 'head', 'bulk', 'width'] as (keyof SkeletonScales)[]) {
+  const set = slider(gCreature, `scale ${key}`, 0.5, 1.8, 0.01, 1, v => {
+    scales[key] = v;
+    genome.skeleton = scaleSkeleton(baseSkeleton, scales);
+    refreshGenomeView();
+  });
+  scaleSetters.push([key, set]);
+}
+
 const gIntent = group(panel, 'intent — punctuation moves');
 button(gIntent, 'slash', () => { slash.active = true; slash.t = 0; });
 toggle(gIntent, 'auto-repeat', slash.auto, v => { slash.auto = v; if (v) slash.active = true; });
@@ -51,7 +77,7 @@ slider(gMood, 'tired', 0, 1, 0.01, mood.tired, v => { mood.tired = v; refreshGen
 slider(gMood, 'angry', 0, 1, 0.01, mood.angry, v => { mood.angry = v; refreshGenomeView(); });
 
 const gGait = group(panel, 'gait drivers');
-const gaitSliders: [keyof typeof genome.gait, number, number, number][] = [
+const gaitSliders: [keyof Gait, number, number, number][] = [
   ['cadence', 0.2, 2.2, 0.01],
   ['stride', 0.2, 2.4, 0.01],
   ['stance', 0.5, 0.75, 0.01],
@@ -68,25 +94,15 @@ const gaitSliders: [keyof typeof genome.gait, number, number, number][] = [
   ['elbowAmp', 0, 1.2, 0.01],
   ['elbowLag', 0, 0.4, 0.005],
   ['headPitch', -0.4, 0.8, 0.01],
+  ['flapAmp', 0, 1.3, 0.01],
+  ['tailWave', 0, 1.2, 0.01],
 ];
 for (const [key, mn, mx, st] of gaitSliders) {
-  slider(gGait, key, mn, mx, st, genome.gait[key], v => { genome.gait[key] = v; refreshGenomeView(); });
-}
-
-const gBody = group(panel, 'body');
-const bodySliders: [keyof typeof genome.body, number, number, number][] = [
-  ['thigh', 0.2, 0.8, 0.005],
-  ['shin', 0.2, 0.8, 0.005],
-  ['upperArm', 0.15, 0.6, 0.005],
-  ['forearm', 0.15, 0.6, 0.005],
-  ['hipWidth', 0.1, 0.5, 0.005],
-  ['shoulderWidth', 0.15, 0.7, 0.005],
-  ['headR', 0.05, 0.3, 0.005],
-  ['torsoR', 0.05, 0.2, 0.005],
-  ['limbR', 0.02, 0.12, 0.002],
-];
-for (const [key, mn, mx, st] of bodySliders) {
-  slider(gBody, key, mn, mx, st, genome.body[key], v => { genome.body[key] = v; refreshGenomeView(); });
+  const set = slider(gGait, key, mn, mx, st, genome.gait[key], v => {
+    genome.gait[key] = v;
+    refreshGenomeView();
+  });
+  gaitSetters.push([key, set]);
 }
 
 const gCam = group(panel, 'camera — 3d, viewed flat');
