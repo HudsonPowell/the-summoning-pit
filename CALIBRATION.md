@@ -178,6 +178,19 @@ This file is the only thing that accumulates. Add, don't rewrite.
   0.55-0.7, thickness by bulk); shared pipeline lives in src/hatch.ts,
   CLI wrapper + CLIP reviewer in farm/hatch.ts.
 
+### Hatch repairs (2026-08-25, after "heavy set dwarf with axe" → 4 arms, no axe)
+- **Prose rules don't bind a 3B model; repairs must be code.** The validator now:
+  - forges a weapon from description words (axe/club/sword/spear/hammer/staff
+    each with authored length/r/colour) whenever the model forgets one;
+  - caps chains at one per role (legs: one per girdle) unless the description
+    asks for extra limbs (regex escape hatch: "four-armed", "six legs", …);
+  - strips leg@chest from upright creatures (dangling chest-legs), or
+    reattaches them to the hip when they're the only legs.
+- Genome names/slugs come from the DESCRIPTION, not the model's invented name —
+  rerolling the same words overwrites the dud in the pool instead of spamming it.
+- Reroll runs at temperature 0.9 (vs 0.7) for variety.
+- Effect: dwarf judge score 0.075 → 0.219, correct silhouette on next roll.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
