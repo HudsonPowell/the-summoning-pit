@@ -110,6 +110,24 @@ This file is the only thing that accumulates. Add, don't rewrite.
   standing right behind the player until recoloured. Distinct palette per
   bred genome is part of the genome, set at breed time.
 
+### Genome v2 — general body plans (verified 2026-08-25)
+- Skeleton = tagged chains (leg/arm/wing/tail) attached to girdles (hip/chest).
+  Layers claim roles; nothing counts limbs.
+- **The one gait rule: leg phase offset = girdleIndex×0.25 + (right? 0.5) +
+  chainIndexOnGirdle×0.125.** This alone produced a correct lateral-sequence
+  quadruped walk on the first run — the hound was never taught to walk. The
+  architecture's founding test passed.
+- Prone frame: pelvis at −0.45·spine, chest at +0.45·spine; front girdle's
+  bounce runs 0.25 cycle after the hind's.
+- Wings flap at 2× gait phase while moving, slow flutter at 0.6 Hz when idle.
+- Tails: per-segment yaw lag 0.9 rad, pitch folds −0.28/segment, droop rides
+  slump (so tired/dead creatures' tails fall).
+- Extra arm pairs stack downward 0.13 m/pair with 0.06-cycle phase lag.
+- v1 biped JSONs load through migrateGenome — bred creatures survived the
+  schema change untouched.
+- Perf: studio down to ~24 fps with multi-chain creatures. WebGPU port moves up
+  the list.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
