@@ -3,10 +3,9 @@ import {
   PRESETS, Skeleton, SkeletonScales, scaleSkeleton, Gait,
 } from './genome';
 import { solvePose, walkSpeed, Intent, slashWeight } from './pose';
-import { PixelRenderer, Camera } from './render';
+import { Camera } from './render';
+import { PixelView } from './view';
 import { group, slider, button, toggle, select } from './ui';
-
-const LOW = 176; // low-res buffer size; the pixel look is born here
 
 let genome = defaultBiped();
 let baseSkeleton: Skeleton = structuredClone(genome.skeleton);
@@ -15,15 +14,8 @@ const mood: Mood = { tired: 0, angry: 0 };
 const cam: Camera = { yaw: 0.5, pitch: 0.22, ppm: 72, cy: 0.95 };
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
-const ctx = canvas.getContext('2d')!;
-ctx.imageSmoothingEnabled = false;
-
-const low = document.createElement('canvas');
-low.width = LOW;
-low.height = LOW;
-const lowCtx = low.getContext('2d')!;
-const img = lowCtx.createImageData(LOW, LOW);
-const renderer = new PixelRenderer(LOW, LOW);
+const view = new PixelView(canvas, 176, 176);
+view.init();
 
 // --- controls -----------------------------------------------------------
 const panel = document.getElementById('panel')!;
@@ -110,6 +102,9 @@ slider(gCam, 'yaw', -Math.PI, Math.PI, 0.01, cam.yaw, v => { cam.yaw = v; });
 slider(gCam, 'pitch', -0.1, 0.9, 0.01, cam.pitch, v => { cam.pitch = v; });
 slider(gCam, 'zoom', 24, 140, 1, cam.ppm, v => { cam.ppm = v; });
 
+const gRender = group(panel, 'render');
+slider(gRender, 'resolution', 96, 400, 16, 176, v => { view.setSize(v, v); });
+
 document.getElementById('copy')!.addEventListener('click', () => {
   navigator.clipboard.writeText(genomeBox.value);
 });
@@ -146,15 +141,12 @@ function tick(dt: number) {
     : undefined;
 
   const caps = solvePose(genome, mood, phase, 1, 0, intent);
-  renderer.render(img.data, caps, cam, scroll);
-  lowCtx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(low, 0, 0, canvas.width, canvas.height);
+  view.render(caps, cam, scroll);
 
   speedOut.textContent = `${speed.toFixed(2)} m/s`;
   fpsAcc += dt; fpsN++; fpsT += dt;
   if (fpsT > 0.5) {
-    fpsOut.textContent = `${(fpsN / fpsAcc).toFixed(0)} fps`;
+    fpsOut.textContent = `${(fpsN / fpsAcc).toFixed(0)} fps · ${view.mode}`;
     fpsAcc = 0; fpsN = 0; fpsT = 0;
   }
 }

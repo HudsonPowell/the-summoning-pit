@@ -86,11 +86,11 @@ export class PixelRenderer {
             const wx = rx + ccx + scroll;
             const wz = rz + ccz;
             const dist = Math.hypot(rx, rz);
-            if (dist < 7) {
+            if (dist < 10) {
               const tile = cam.tile ?? 0.5;
               const check =
                 ((Math.floor(wx / tile + 0.5) + Math.floor(wz / tile + 0.5)) & 1) === 0;
-              const fade = clamp(1 - dist / 7, 0, 1);
+              const fade = clamp(1 - dist / 10, 0, 1);
               const base = check ? 34 : 26;
               r = 12 + (base - 4) * fade;
               g = 13 + base * fade;

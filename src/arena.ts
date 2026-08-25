@@ -9,7 +9,8 @@
 import { v3, V3, rotY, TAU, clamp } from './vec';
 import { defaultBiped, effectiveGait, migrateGenome, Genome, Mood, imp, hound, troll, ogre } from './genome';
 import { solvePose, walkSpeed, Capsule, Intent, slashWeight } from './pose';
-import { PixelRenderer, Camera } from './render';
+import { Camera } from './render';
+import { PixelView } from './view';
 
 // every genome the farm has bred is an enemy candidate, automatically —
 // plus the authored monsters
@@ -274,13 +275,18 @@ function strike(cr: Creature) {
 
 // --- rendering -----------------------------------------------------------
 const canvas = document.getElementById('view') as HTMLCanvasElement;
-const ctx = canvas.getContext('2d')!;
-const lowC = document.createElement('canvas');
-lowC.width = LOW_W; lowC.height = LOW_H;
-const lowCtx = lowC.getContext('2d')!;
-const img = lowCtx.createImageData(LOW_W, LOW_H);
-const renderer = new PixelRenderer(LOW_W, LOW_H);
-const cam: Camera = { yaw: 0.0, pitch: 0.62, ppm: 40, cy: 0.55, cx: player.x, cz: player.z, tile: 1 };
+const view = new PixelView(canvas, LOW_W, LOW_H);
+view.init();
+const cam: Camera = { yaw: 0.0, pitch: 0.62, ppm: 26, cy: 0.55, cx: player.x, cz: player.z, tile: 1 };
+
+// play-mode render controls
+const zoomInput = document.getElementById('zoom') as HTMLInputElement | null;
+const resInput = document.getElementById('res') as HTMLInputElement | null;
+zoomInput?.addEventListener('input', () => { cam.ppm = parseFloat(zoomInput.value); });
+resInput?.addEventListener('input', () => {
+  const w = parseInt(resInput.value, 10);
+  view.setSize(w, Math.round(w * 0.75));
+});
 
 const PILLAR: [number, number, number] = [72, 78, 96];
 const SOFT: [number, number, number] = [150, 106, 66];
@@ -290,12 +296,14 @@ const FLAME: [number, number, number] = [255, 176, 64];
 function worldCapsules(): Capsule[] {
   const caps: Capsule[] = [];
   const vx = cam.cx ?? 0, vz = cam.cz ?? 0;
+  const cullX = view.size.W / 2 / cam.ppm + 1.2;
+  const cullZ = view.size.H / 2 / cam.ppm / Math.cos(cam.pitch) + 1.2;
   for (let tz = 0; tz < GH; tz++)
     for (let tx = 0; tx < GW; tx++) {
       const g = grid[tz][tx];
       if (g === 0) continue;
       const x = tx2w(tx), z = tz2w(tz);
-      if (Math.abs(x - vx) > 5.5 || Math.abs(z - vz) > 4.5) continue;
+      if (Math.abs(x - vx) > cullX || Math.abs(z - vz) > cullZ) continue;
       if (g === 1)
         caps.push({ a: v3(x, 0.14, z), b: v3(x, 0.44, z), r: 0.33, color: PILLAR, part: 'wall' });
       else
@@ -412,14 +420,11 @@ function step(dt: number, t: number) {
   cam.cx! += (player.x - cam.cx!) * Math.min(1, 4 * dt);
   cam.cz! += (player.z + 0.4 - cam.cz!) * Math.min(1, 4 * dt);
 
-  renderer.render(img.data, caps, cam, 0);
-  lowCtx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(lowC, 0, 0, canvas.width, canvas.height);
+  view.render(caps, cam, 0);
 
   const hearts = '♥'.repeat(Math.max(0, player.hp)) + '·'.repeat(Math.max(0, PLAYER_HP - player.hp));
   hud.textContent =
-    `${hearts}  round ${round}  enemies ${enemies.length}   ` +
+    `${hearts}  round ${round}  enemies ${enemies.length}  ${view.mode}   ` +
     (manual ? 'wasd / arrows · space = bomb · x = slash' : 'wandering — press any key to take over');
 }
 requestAnimationFrame(frame);

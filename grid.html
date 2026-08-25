@@ -20,12 +20,19 @@
     }
     #hud b { color: #3aa7a0; }
     a { color: #3aa7a0; text-decoration: none; }
+    #controls { display: flex; gap: 18px; align-items: center; }
+    #controls label { display: flex; gap: 6px; align-items: center; }
+    input[type=range] { width: 110px; accent-color: #3aa7a0; }
   </style>
 </head>
 <body>
   <canvas id="view" width="960" height="720"></canvas>
   <div id="hud"></div>
-  <div><a href="/">← studio</a></div>
+  <div id="controls">
+    <label>zoom <input id="zoom" type="range" min="14" max="64" step="1" value="26" /></label>
+    <label>resolution <input id="res" type="range" min="160" max="512" step="16" value="240" /></label>
+    <a href="/">← studio</a>
+  </div>
   <script type="module" src="/src/arena.ts"></script>
 </body>
 </html>
