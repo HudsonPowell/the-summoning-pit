@@ -1,0 +1,78 @@
+# Calibration
+
+Once a value feels right it gets written down as verified and never re-derived.
+This file is the only thing that accumulates. Add, don't rewrite.
+
+## Verified 2026-08-25 (studio v1, eyeballed in browser)
+
+### Gait
+- `stance = 0.6` — fraction of cycle each foot is planted. From human gait data, reads right.
+- `elbowLag = 1/6` cycle — elbow flexion trails shoulder swing. Carried from 2D prototypes; still most of what reads as natural.
+- Elbow flexion only, never hyperextends: `beta = elbowBase + elbowAmp * 0.5 * (1 + sin(2π(p - lag)))` keeps it ≥ elbowBase ≥ 0.
+- Pelvis rides highest at mid-stance: `bounce * cos(2·2π(φ − 0.3))` with left-leg phase offset 0, right 0.5. The 0.3 centring is what stops it reading as bobbing on the wrong beat.
+- Shared foot track, half a cycle apart (offset 0.5) — legs pass each other correctly. Planted-foot travel relative to body = `stride × stance`, centred.
+- Swing-foot x eased with `(1 − cos(πu))/2`, lift with `sin(πu)`. Reads fine; no need for fancier easing yet.
+- Arms swing opposite their own-side leg (offset 0.5 from it).
+- Knee pole = +x (forward), fixed. Stable fold, no pole-vector fiddling needed at walk speeds.
+- Default biped: cadence 0.9 cyc/s, stride 1.35 m → 1.22 m/s. Human-plausible and reads right.
+
+### Mood re-weighting (adverbs)
+- `tired=1` verified reading as exhausted trudge; `angry=1` as aggressive charge. Formulas in `src/genome.ts effectiveGait()`. Key discoveries:
+  - Slump must bend only the *upper* spine segment — bending the whole spine reads as "leaning" not "tired".
+  - Angry needs elbowBase +0.5 (fists come up) more than it needs armSwing.
+
+### Rendering
+- Low-res buffer 176×176 at 72 px/m → figure ~130 px tall, well above the ~12-cell readability floor.
+- Threshold, not downscale (carried from prototypes, still true).
+- Cross-section shading `0.5 + 0.5·sqrt(1−q²)` quantised to 4 levels; depth dim 22% across the creature's z-range.
+- Outlines: silhouette ×0.35; interior edge where neighbour is >0.1 m nearer ×0.55. The interior edge is what separates near limbs from torso — without it the figure smears into one blob.
+- Far-side limbs tinted ×0.8 — cheap and does a lot of depth work.
+- Ortho floor rays: do NOT cull s<0; ortho ray origins sit mid-scene, half the floor is "behind" them.
+- Camera default yaw 0.5, pitch 0.22 (3/4 view). Pitch 0.85 verified as a working dungeon-crawler top-down view of the same skeleton.
+
+### The judge (farm)
+- Model: `Xenova/clip-vit-base-patch32` (local, ~quantised ONNX via transformers.js).
+- **Absolute scores are junk. Pairwise contrast is where the signal lives**: score = P(target description) vs its authored opposite, softmax over just those two. With three-way generic labels, a bland caption eats everything.
+- SigLIP (sigmoid scores) was tried first and abandoned: scores near zero, unusable ordering at reasonable precision.
+- Input: 2×2 contact sheet of phases 0, .25, .5, .75 at 176 px/frame. Sufficient for posture-level qualities.
+- Validation matrix (P(quality), diagonal must win):
+  neutral/tired/angry × tired-axis = 0.010 / **0.103** / 0.035; × angry-axis = 0.081 / 0.369 / **0.408**. Diagonal wins both.
+- Evolution: pop 12, 5 generations, elite 3, mutation rate 0.5, scale 0.25 of param range. Fitness on "slumped exhausted shuffling" went 0.024 → 0.655 and the winner visibly trudges. Overshoots theatrically — future runs likely want a plausibility regulariser (penalise distance from baseline, or a second "looks like a person walking" contrast).
+
+## Verified 2026-08-25 (arena v1)
+
+### Rendering, continued
+- **Depth convention: larger view-z = closer to camera.** The renderer originally
+  had this inverted; a single figure self-occludes subtly enough to mask it, a
+  pillar in front of a torso does not. If occlusion ever looks wrong again, check
+  the sign here first.
+- Arena camera: yaw 0, pitch 0.62, 40 px/m, follow-lerp 4/s. Creature must
+  visibly tower over walls — pillars capped at 0.44 m tall, r 0.33.
+- Floor checker aligned to logical tiles: `floor(w/tile + 0.5)` with tile = 1 m
+  (tile centres on integer coords).
+
+### Game feel
+- Flame lifetime 0.6 s. 0.35 s is physically fine and perceptually invisible.
+- Hurt is an adverb, not an animation: mood {tired 0.6, angry 0.4} + speed ×0.45
+  + 10 Hz white flash for 0.7 s. Reads instantly.
+- Lane assist: perpendicular axis drifts to tile centre at 6/s while moving.
+  Bomberman navigation feels broken without it.
+- Idle↔walk blend at 8/s on a single `move` weight scaling all locomotion
+  amplitudes; breathing (0.012 m at 0.35 Hz) fades in as it fades out.
+
+### The judge, continued
+- **Plausibility regulariser: fitness = target-contrast × plausibility-contrast**
+  ("a humanoid figure walking on two legs" vs "a broken contorted tangle of
+  limbs"). Unregularised evolution breeds expressive pretzels (fitness 0.655,
+  folded double); regularised winner (0.252) still visibly trudges but stands
+  like a person. Multiplication, not min — both qualities must be present.
+
+### Dev environment
+- The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
+  the sim. `window.rig.step(dt)` advances it manually — also the seed of the
+  model-drivable instrument: outside agents can pose the sim at any exact moment.
+
+## Not yet verified / open
+- Foot-ground slip vs floor scroll not exactly matched (treadmill approximation). Not noticeable yet.
+- 40 fps in the studio at 176² — fine for now, floor pass is the cost. WebGPU port is the real answer, not micro-optimisation.
+- Toe pitch during swing is a guess (0.5·sin(πu)); revisit with reference data.

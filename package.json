@@ -1,0 +1,23 @@
+{
+  "name": "rig",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port $PORT --strictPort",
+    "build": "vite build",
+    "farm:strip": "tsx farm/strip.ts",
+    "farm:judge": "tsx farm/judge.ts",
+    "farm:evolve": "tsx farm/evolve.ts"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "pngjs": "^7.0.0"
+  }
+}

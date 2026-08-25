@@ -1,0 +1,42 @@
+{
+  "name": "bred-tired",
+  "body": {
+    "hipWidth": 0.22,
+    "shoulderWidth": 0.36,
+    "thigh": 0.44,
+    "shin": 0.43,
+    "foot": 0.16,
+    "lowerSpine": 0.26,
+    "upperSpine": 0.24,
+    "neck": 0.09,
+    "headR": 0.115,
+    "upperArm": 0.3,
+    "forearm": 0.28,
+    "torsoR": 0.1,
+    "limbR": 0.055
+  },
+  "gait": {
+    "cadence": 0.2,
+    "stride": 1.2234916625838557,
+    "stance": 0.6366578490805981,
+    "lift": 0.10836105273986582,
+    "bounce": 0.015718156548437362,
+    "sway": 0.04177555250725194,
+    "lean": -0.03266635509657545,
+    "slump": 0.19857444358299714,
+    "crouch": 0.20090218001227356,
+    "pelvisTwist": 0.3,
+    "shoulderTwist": 0.026295601118047754,
+    "armSwing": 0.7466256724847486,
+    "elbowBase": 0,
+    "elbowAmp": 0,
+    "elbowLag": 0,
+    "headPitch": 0.765085924153196
+  },
+  "palette": {
+    "torso": "#3aa7a0",
+    "limbs": "#2b7f8f",
+    "head": "#e8c39a",
+    "accent": "#d5573b"
+  }
+}

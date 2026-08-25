@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>rig — studio</title>
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --panel: #14161c;
+      --ink: #c8cdd6;
+      --dim: #6b7280;
+      --accent: #3aa7a0;
+    }
+    * { margin: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font: 13px/1.5 'SF Mono', ui-monospace, Menlo, monospace;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    #view {
+      width: min(82vh, 60vw);
+      height: min(82vh, 60vw);
+      image-rendering: pixelated;
+      border: 1px solid #23252e;
+      background: #0c0d12;
+    }
+    #readouts { display: flex; gap: 18px; color: var(--dim); }
+    #readouts b { color: var(--accent); font-weight: 500; }
+    #panel {
+      width: 320px;
+      overflow-y: auto;
+      background: var(--panel);
+      border-left: 1px solid #23252e;
+      padding: 14px 16px 40px;
+    }
+    #panel h1 { font-size: 14px; color: var(--accent); font-weight: 600; letter-spacing: 0.08em; }
+    #panel .sub { color: var(--dim); font-size: 11px; margin-bottom: 10px; }
+    .group { margin-top: 14px; }
+    .group h2 {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--dim); font-weight: 600; margin-bottom: 6px;
+      border-bottom: 1px solid #23252e; padding-bottom: 4px;
+    }
+    .row { display: grid; grid-template-columns: 92px 1fr 44px; gap: 8px; align-items: center; padding: 2px 0; }
+    .row span { color: var(--ink); font-size: 11px; }
+    .row em { color: var(--dim); font-style: normal; font-size: 11px; text-align: right; }
+    input[type=range] { width: 100%; accent-color: var(--accent); height: 14px; }
+    #genome {
+      width: 100%; height: 150px; margin-top: 6px;
+      background: #0b0c10; color: #8a94a3; border: 1px solid #23252e;
+      font: 10px/1.4 ui-monospace, monospace; padding: 6px; resize: vertical;
+    }
+    #genomebar { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+    #bytes { color: var(--dim); font-size: 11px; }
+    #copy {
+      background: none; border: 1px solid #2c2f3a; color: var(--ink);
+      font: inherit; font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px;
+    }
+    #copy:hover { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="view" width="704" height="704"></canvas>
+    <div id="readouts">
+      <div>speed <b id="speed">—</b></div>
+      <div><b id="fps">—</b></div>
+    </div>
+  </div>
+  <div id="panel">
+    <h1>RIG</h1>
+    <div class="sub">one creature, moving, changeable while it moves</div>
+    <div class="group">
+      <h2>genome — the whole creature</h2>
+      <textarea id="genome" spellcheck="false" readonly></textarea>
+      <div id="genomebar"><span id="bytes"></span><button id="copy">copy</button></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
