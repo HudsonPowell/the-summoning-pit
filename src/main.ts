@@ -296,6 +296,13 @@ const gRender = group(panel, 'render');
 slider(gRender, 'resolution', 96, 400, 16, 176, v => { view.setSize(v, v); });
 toggle(gRender, 'CLASH flat look', false, v => { cam.flat = v; });
 
+// soft field: 0 keeps the hard nearest-capsule look; above that the parts
+// fuse at the joints and their inks cross-fade into each other
+slider(gRender, 'blend', 0, 8, 0.1, 0, v => { cam.blend = v; });
+slider(gRender, 'blend depth', 0.05, 1.5, 0.05, 0.35, v => { cam.blendDepth = v; });
+slider(gRender, 'colour mix', 0, 1, 0.02, 1, v => { cam.blendMix = v; });
+slider(gRender, 'shape fuse', 0, 1, 0.02, 1, v => { cam.blendShape = v; });
+
 // --- hatch --------------------------------------------------------------------
 
 const hatchBtn = document.getElementById('hatchbtn') as HTMLButtonElement;

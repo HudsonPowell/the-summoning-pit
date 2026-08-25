@@ -18,6 +18,15 @@ export interface Camera {
   tile?: number; // floor checker size in metres (default 0.5); centred on integer coords
   flat?: boolean;  // CLASH look: solid inks, no shading, no depth dim, no outlines
   floor?: boolean; // false = solid near-black ground plane (default true: checkered)
+  /**
+   * Soft-field blending. 0 = the hard nearest-capsule field. Above that the
+   * bone field is resolved with an exponential smooth-min, so silhouettes
+   * fuse at the joints and each part's ink cross-fades into its neighbours.
+   */
+  blend?: number;      // softness k, in pixels
+  blendDepth?: number; // max view-z gap (metres) a part may bleed across
+  blendMix?: number;   // 0 = keep the nearest ink, 1 = full weighted mix
+  blendShape?: number; // 0 = hard silhouette (colour still blends), 1 = fully fused
 }
 
 interface Proj {
@@ -38,6 +47,13 @@ export class PixelRenderer {
   private colG: Float32Array;
   private colB: Float32Array;
   private hit: Uint8Array;
+  // soft-field scratch (only touched when cam.blend > 0)
+  private minS: Float32Array;
+  private bestR: Float32Array;
+  private winR: Float32Array;
+  private winG: Float32Array;
+  private winB: Float32Array;
+  private sumW: Float32Array;
 
   constructor(W: number, H: number) {
     this.W = W;
@@ -49,6 +65,107 @@ export class PixelRenderer {
     this.colG = new Float32Array(n);
     this.colB = new Float32Array(n);
     this.hit = new Uint8Array(n);
+    this.minS = new Float32Array(n);
+    this.bestR = new Float32Array(n);
+    this.winR = new Float32Array(n);
+    this.winG = new Float32Array(n);
+    this.winB = new Float32Array(n);
+    this.sumW = new Float32Array(n);
+  }
+
+  /**
+   * Two sweeps over the capsules. The first finds, per pixel, the nearest
+   * surface (signed distance, depth, radius, ink). The second accumulates
+   * exp(-(s - minS)/k) from every part close enough in depth, which gives
+   * both the smooth-min silhouette and the colour cross-fade for free:
+   *   smin = minS - k·ln(ΣW)   and   q = 1 + smin/r
+   * With k → 0 this collapses exactly onto the hard nearest-capsule field.
+   */
+  private blendedField(
+    projs: Proj[], cam: Camera, minZ: number, maxZ: number, zRange: number,
+  ): void {
+    const { W, H } = this;
+    const k = cam.blend ?? 0;
+    const depthGate = cam.blendDepth ?? 0.35;
+    const mix = cam.blendMix ?? 1;
+    const shapeAmt = cam.blendShape ?? 1;
+    const margin = k * 6; // beyond this the weight is numerically nothing
+    void minZ;
+
+    this.minS.fill(1e9);
+    this.sumW.fill(0);
+    this.colR.fill(0);
+    this.colG.fill(0);
+    this.colB.fill(0);
+
+    const sweep = (accumulate: boolean) => {
+      for (const p of projs) {
+        const pad = p.r + margin + 1;
+        const x0 = Math.max(0, Math.floor(Math.min(p.ax, p.bx) - pad));
+        const x1 = Math.min(W - 1, Math.ceil(Math.max(p.ax, p.bx) + pad));
+        const y0 = Math.max(0, Math.floor(Math.min(p.ay, p.by) - pad));
+        const y1 = Math.min(H - 1, Math.ceil(Math.max(p.ay, p.by) + pad));
+        const dx = p.bx - p.ax, dy = p.by - p.ay;
+        const segLen2 = dx * dx + dy * dy;
+        for (let py = y0; py <= y1; py++) {
+          for (let px = x0; px <= x1; px++) {
+            const rx = px + 0.5 - p.ax, ry = py + 0.5 - p.ay;
+            const t = segLen2 > 1e-9 ? clamp((rx * dx + ry * dy) / segLen2, 0, 1) : 0;
+            const ex = rx - t * dx, ey = ry - t * dy;
+            const s = Math.hypot(ex, ey) - p.r; // signed: <0 inside
+            if (s > margin) continue;
+            const i = py * W + px;
+            const z = p.az + (p.bz - p.az) * t;
+            if (!accumulate) {
+              // nearest surface wins the depth, radius and base ink
+              if (s < this.minS[i] || (s === this.minS[i] && z > this.depth[i])) {
+                this.minS[i] = s;
+                this.depth[i] = z;
+                this.bestR[i] = p.r;
+                this.winR[i] = p.color[0];
+                this.winG[i] = p.color[1];
+                this.winB[i] = p.color[2];
+              }
+            } else {
+              if (Math.abs(z - this.depth[i]) > depthGate) continue;
+              const w = Math.exp(-(s - this.minS[i]) / k);
+              this.sumW[i] += w;
+              this.colR[i] += p.color[0] * w;
+              this.colG[i] += p.color[1] * w;
+              this.colB[i] += p.color[2] * w;
+            }
+          }
+        }
+      }
+    };
+    sweep(false);
+    sweep(true);
+
+    for (let i = 0; i < W * H; i++) {
+      const w = this.sumW[i];
+      if (w <= 0) { this.hit[i] = 0; continue; }
+      const sminFull = this.minS[i] - k * Math.log(w);
+      // fusing inflates the surface; shapeAmt dials that back toward the
+      // original hard silhouette while leaving the colour blend alone
+      const smin = this.minS[i] + (sminFull - this.minS[i]) * shapeAmt;
+      if (smin >= 0) { this.hit[i] = 0; continue; }
+      this.hit[i] = 1;
+      this.q[i] = clamp(1 + smin / Math.max(0.5, this.bestR[i]), 0, 1);
+      const mr = this.colR[i] / w, mg = this.colG[i] / w, mb = this.colB[i] / w;
+      let cr = this.winR[i] + (mr - this.winR[i]) * mix;
+      let cg = this.winG[i] + (mg - this.winG[i]) * mix;
+      let cb = this.winB[i] + (mb - this.winB[i]) * mix;
+      if (!cam.flat) {
+        const depthDim = 1 - 0.22 * ((maxZ - this.depth[i]) / zRange);
+        let shade = 0.5 + 0.5 * Math.sqrt(Math.max(0, 1 - this.q[i] * this.q[i]));
+        shade = Math.ceil(shade * SHADE_LEVELS) / SHADE_LEVELS;
+        const sh = shade * depthDim;
+        cr *= sh; cg *= sh; cb *= sh;
+      }
+      this.colR[i] = cr;
+      this.colG[i] = cg;
+      this.colB[i] = cb;
+    }
   }
 
   render(out: Uint8ClampedArray, caps: Capsule[], cam: Camera, scroll: number): void {
@@ -118,6 +235,9 @@ export class PixelRenderer {
     }
     const zRange = Math.max(1e-4, maxZ - minZ);
 
+    if ((cam.blend ?? 0) > 0.01) {
+      this.blendedField(projs, cam, minZ, maxZ, zRange);
+    } else
     for (const p of projs) {
       const x0 = Math.max(0, Math.floor(Math.min(p.ax, p.bx) - p.r - 1));
       const x1 = Math.min(W - 1, Math.ceil(Math.max(p.ax, p.bx) + p.r + 1));

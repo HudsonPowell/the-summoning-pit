@@ -18,8 +18,9 @@ export const NATIVE_H = GH * TILE;
 export interface RenderSettings {
   figureStyle: 'flat' | 'shaded';
   boardTone: number; // 0.6 .. 1.5 multiplier on board inks
+  blend: number;     // soft-field softness for figures, px
 }
-export const DEFAULT_SETTINGS: RenderSettings = { figureStyle: 'flat', boardTone: 1 };
+export const DEFAULT_SETTINGS: RenderSettings = { figureStyle: 'flat', boardTone: 1, blend: 0 };
 
 const INK = {
   bg: '#050508',
@@ -339,6 +340,7 @@ export class ClashDraw {
       cam: {
         yaw, pitch: 0.28, ppm, cy: h * 0.47,
         flat: this.settings.figureStyle === 'flat', floor: false,
+        blend: this.settings.blend, blendDepth: 0.35, blendMix: 1, blendShape: 0.5,
       },
       flip,
     };

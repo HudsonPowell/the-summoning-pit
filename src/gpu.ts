@@ -19,6 +19,7 @@ struct U {
   rayDy: vec4f,
   world: vec4f, // ccx, ccz, scroll, 0
   zr:   vec4f,  // minZ, maxZ, flags (1=flat, 2=nofloor), 0
+  blend: vec4f, // softness k (px), depth gate, colour mix, shape fuse
 };
 struct Cap { a: vec4f, b: vec4f, color: vec4f }; // a.xyz screen+depth, a.w r
 
@@ -50,6 +51,60 @@ fn bestHit(p: vec2f) -> vec3f { // (z, q, index) — z stays -1e9 on miss
   return best;
 }
 
+var<private> softCol: vec3f;
+
+// Soft field: smooth-min silhouette + weighted ink, matching render.ts.
+// Returns (smin, q, filled) in .xyz and the blended colour via the out param.
+fn softHit(p: vec2f, k: f32, gate: f32, mixAmt: f32, shapeAmt: f32) -> vec4f {
+  var minS = 1e9;
+  var bestZ = -1e9;
+  var bestR = 1.0;
+  var winCol = vec3f(0.0);
+  let n = u32(u.res.z);
+  let margin = k * 6.0;
+  for (var i = 0u; i < n; i++) {
+    let c = caps[i];
+    let ab = c.b.xy - c.a.xy;
+    let ap = p - c.a.xy;
+    let l2 = dot(ab, ab);
+    var t = 0.0;
+    if (l2 > 1e-9) { t = clamp(dot(ap, ab) / l2, 0.0, 1.0); }
+    let s = length(ap - t * ab) - c.a.w;
+    if (s > margin) { continue; }
+    let z = c.a.z + (c.b.z - c.a.z) * t;
+    if (s < minS || (s == minS && z > bestZ)) {
+      minS = s;
+      bestZ = z;
+      bestR = c.a.w;
+      winCol = c.color.rgb;
+    }
+  }
+  if (minS > margin) { return vec4f(1.0, 0.0, 0.0, -1e9); }
+  var sumW = 0.0;
+  var acc = vec3f(0.0);
+  for (var i = 0u; i < n; i++) {
+    let c = caps[i];
+    let ab = c.b.xy - c.a.xy;
+    let ap = p - c.a.xy;
+    let l2 = dot(ab, ab);
+    var t = 0.0;
+    if (l2 > 1e-9) { t = clamp(dot(ap, ab) / l2, 0.0, 1.0); }
+    let s = length(ap - t * ab) - c.a.w;
+    if (s > margin) { continue; }
+    let z = c.a.z + (c.b.z - c.a.z) * t;
+    if (abs(z - bestZ) > gate) { continue; }
+    let w = exp(-(s - minS) / k);
+    sumW += w;
+    acc += c.color.rgb * w;
+  }
+  if (sumW <= 0.0) { return vec4f(1.0, 0.0, 0.0, -1e9); }
+  let sminFull = minS - k * log(sumW);
+  let smin = minS + (sminFull - minS) * shapeAmt;
+  let q = clamp(1.0 + smin / max(0.5, bestR), 0.0, 1.0);
+  softCol = mix(winCol, acc / sumW, mixAmt);
+  return vec4f(smin, q, 1.0, bestZ);
+}
+
 @fragment
 fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let p = pos.xy;
@@ -75,6 +130,33 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     }
   }
   // bone field
+  let k = u.blend.x;
+  if (k > 0.01) {
+    let sh = softHit(p, k, u.blend.y, u.blend.z, u.blend.w);
+    if (sh.z > 0.0 && sh.x < 0.0) {
+      var col2 = softCol;
+      if ((flags & 1u) == 0u) {
+        var shade = 0.5 + 0.5 * sqrt(max(0.0, 1.0 - sh.y * sh.y));
+        shade = ceil(shade * 4.0) / 4.0;
+        let dim = 1.0 - 0.22 * ((u.zr.y - sh.w) / max(1e-4, u.zr.y - u.zr.x));
+        var m = 1.0;
+        for (var kk = 0; kk < 4; kk++) {
+          var off = vec2f(1.0, 0.0);
+          if (kk == 1) { off = vec2f(-1.0, 0.0); }
+          if (kk == 2) { off = vec2f(0.0, 1.0); }
+          if (kk == 3) { off = vec2f(0.0, -1.0); }
+          let q2 = p + off;
+          if (q2.x < 0.0 || q2.y < 0.0 || q2.x >= u.res.x || q2.y >= u.res.y) { m = 0.35; break; }
+          let nh = softHit(q2, k, u.blend.y, u.blend.z, u.blend.w);
+          if (nh.z <= 0.0 || nh.x >= 0.0) { m = 0.35; break; }
+          if (nh.w > sh.w + 0.1) { m = min(m, 0.55); }
+        }
+        col2 = col2 * shade * dim * m;
+      }
+      return vec4f(col2 / 255.0, 1.0);
+    }
+    return vec4f(col / 255.0, 1.0);
+  }
   let h = bestHit(p);
   if (h.z >= 0.0) {
     let c = caps[u32(h.z)];
@@ -110,7 +192,7 @@ export class GpuRenderer {
   private ubuf: any;
   private cbuf: any;
   private bindGroup: any;
-  private uData = new Float32Array(28);
+  private uData = new Float32Array(32);
   private cData = new Float32Array(MAX_CAPS * 12);
   W: number;
   H: number;
@@ -204,6 +286,7 @@ export class GpuRenderer {
     u.set([ccx, ccz, scroll, 0], 20);
     const flags = (cam.flat ? 1 : 0) | (cam.floor === false ? 2 : 0);
     u.set([minZ, maxZ, flags, 0], 24);
+    u.set([cam.blend ?? 0, cam.blendDepth ?? 0.35, cam.blendMix ?? 1, cam.blendShape ?? 1], 28);
 
     this.device.queue.writeBuffer(this.ubuf, 0, u);
     this.device.queue.writeBuffer(this.cbuf, 0, this.cData, 0, n * 12);

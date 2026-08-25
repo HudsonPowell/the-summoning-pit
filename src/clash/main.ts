@@ -180,6 +180,14 @@ async function boot() {
     saved.settings.figureStyle = styleSel.value as RenderSettings['figureStyle'];
     persist();
   });
+  const blendInput = document.getElementById('figblend') as HTMLInputElement | null;
+  if (blendInput) {
+    blendInput.value = String(saved.settings.blend);
+    blendInput.addEventListener('input', () => {
+      saved.settings.blend = parseFloat(blendInput.value);
+      persist();
+    });
+  }
   const toneInput = document.getElementById('tone') as HTMLInputElement;
   toneInput.value = String(saved.settings.boardTone);
   toneInput.addEventListener('input', () => {
