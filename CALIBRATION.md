@@ -128,6 +128,21 @@ This file is the only thing that accumulates. Add, don't rewrite.
 - Perf: studio down to ~24 fps with multi-chain creatures. WebGPU port moves up
   the list.
 
+### GPU renderer (verified 2026-08-25)
+- WebGPU fragment shader replicates the CPU bone field exactly: same
+  projection, quantised shading, depth dim, outline rules (outline = 4
+  neighbour re-evaluations per pixel — GPUs eat the 5× loop happily).
+- **The CPU renderer in render.ts is the reference implementation** (and the
+  farm's headless path). If GPU and CPU ever disagree, the CPU one is right.
+  The math is duplicated in gpu.ts — change both or the pictures drift.
+- Resolution is now nearly free on GPU: 512×384 arena renders without strain.
+- Floor fade radius raised 7 → 10 m for the zoomed-out play camera.
+- Arena defaults: ppm 26 (was 40) at 240×180 — half the arena in frame reads
+  much better as a play view. Live controls: zoom 14–64 ppm, resolution
+  160–512 wide (×0.75 tall). Studio: resolution 96–400 square.
+- Wall culling must derive from viewport size (`W/2/ppm`, with pitch
+  correction on z) — fixed cull distances vanish walls when the player zooms out.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
