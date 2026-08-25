@@ -20,7 +20,15 @@ One creature, moving, changeable while it moves. No play button — it never sto
 Mood sliders are adverbs: they re-weight the same drivers, they are not new animations.
 The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same genome.
 
-## Run the arena
+## Play CLASH (arena mode)
+
+Open `/clash.html`. The game per `ReadMe_MDs/CLASH.md`: 2 players, one
+keyboard (P1 wasd+f, P2 arrows+enter), one class. Deterministic 60Hz integer
+sim in `src/clash/sim.ts` (no DOM, no floats); figures are rig genomes
+rendered flat — there are no sprites. `window.clash.step(n, inputs)` drives
+the sim deterministically for tests.
+
+## Run the arena (rig demo)
 
 Open `/grid.html` from the dev server. Bomberman tiles: WASD/arrows to move,
 space to bomb, **x to slash** — the sword cuts soft blocks and enemies. Left

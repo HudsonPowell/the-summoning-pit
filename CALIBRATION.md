@@ -204,6 +204,27 @@ This file is the only thing that accumulates. Add, don't rewrite.
   on every adopt and restores it on load — no reload of any cause can eat a
   hatch again.
 
+### CLASH ARENA sim (verified 2026-08-25, /clash.html)
+- 60Hz fixed tick, integers only: positions in sub-px (4/px), timers in ticks,
+  seeded LCG the sole randomness. Constants: box 12px in a 16px corridor,
+  ASSIST 5px (spec's number — feel-tune pending), speed 3 sub/tick (~2.8
+  tiles/s, boots to 6), fuse 150, flame 30, radius 2.
+- **Solid-tiles-you-overlap never block you** — you can walk out of anything,
+  never back in. This one rule replaces the owner-pass flag AND fixes the
+  freeze-on-own-candle death (the box still straddles the candle tile after
+  the centre leaves it; a centre-based flag glues the player to the blast).
+- 32x22 with the (even,even) lattice is NOT 180-degree symmetric: mirrors of
+  odd-odd tiles are pillars. Spawns must be odd-odd ((1,1)/(29,19) — the
+  corner (30,20) IS a pillar), and mirrored block placement needs a
+  mirror-is-floor check; odd-odd tiles roll independently at the same rate.
+- Resolution queue verified: two candles 44 ticks apart resolved on the same
+  tick when the first's cross touched the second (8-tile merged cross).
+- Round flow verified: kill -> winner -> win pip -> 2.5s -> full reset, wins
+  persist. Draws possible by design.
+- Figures are rig genomes rendered flat at 13 px/m (~22px tall) with bulk
+  x1.7 — unscaled limbs are 1px and vanish. Facing: profile yaw 0.45,
+  mirrored via canvas flip for left; back -1.1; front 2.4.
+
 ### Dev environment
 - The sim clock is rAF-driven; a hidden browser pane suspends rAF and freezes
   the sim. `window.rig.step(dt)` advances it manually — also the seed of the
