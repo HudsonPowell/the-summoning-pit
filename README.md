@@ -41,23 +41,39 @@ one keeps its distance; long legs and a quick cadence make it fast. The words
 nudge those numbers once at hatch (savage, timid, swift, lumbering) and are then
 discarded, so a savage thing stays savage without anything remembering why.
 
-## The pit (multiplayer)
+## The pit — a place that is still there tomorrow
 
+```bash
+npm run pit      # the pit itself: owns the world, keeps it, narrates it
+PORT=5180 npm run dev
 ```
-npm run pit      # the server: owns the void, narrates it
-npm run dev      # the client
-```
 
-Then open `/void.html?live` in as many browsers as you like — everyone watches
-the same creatures. `npm run pit:test` proves two clients agree.
+Open `/void.html?live`. Everyone is in the same pit; there are no rooms.
 
-The server owns the sim; clients only render. Two things cross the wire:
-POSITIONS at 12Hz (~5 KB/s per watcher) and EVENTS the moment they happen.
-Genomes travel once, by id, because the expensive data never changes. The
-event stream is deliberately rich — who struck whom, with what, at what range
-— because one record feeds sound, camera, the feed, records and clips.
+**No accounts. The URL is the account.** The pit mints you a key the first time
+you arrive and writes it into your address bar — bookmark that and you are you.
+Lose it and your creatures carry on without anyone able to claim them. The
+server stores a *hash* of your key, never the key, so the state file cannot be
+used to claim anything.
 
-## Play CLASH (arena mode)
+**Your prompt never reaches the pit.** Creatures are hatched in your browser and
+only the finished body crosses the wire. The server renames whatever arrives
+after its own skeleton, so a name cannot smuggle the words back out either.
+Everything inbound is clamped (`server/sanitise.ts`) because a socket is not a
+friend: three living creatures per key, one summon every twenty seconds.
+
+**Pacts are links.** Send someone `?pact=<your owner id>` and their creatures
+will spare yours. Send `?feud=<id>` and they will come for you. One-way — they
+need not reciprocate and nothing tells you whether they have — and not
+transitive, so the pit fills with a web rather than two blocs. Nothing is ever
+announced on screen. You find out who is in by messaging them.
+
+**It keeps running.** The pit saves every five seconds and on shutdown; on boot
+it reopens with everyone still standing, still carrying their kills and still
+wearing what they took. `/health` reports how long it has been open and the age
+of its oldest creature.
+
+## Play CLASH (arena mode)## Play CLASH (arena mode)
 
 `npm test` runs the sim suite: a 900-tick replay must hash identically
 (determinism is what netcode will rest on) plus one assertion per class rule.

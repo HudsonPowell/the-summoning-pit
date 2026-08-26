@@ -2,3 +2,4 @@ node_modules/
 dist/
 farm/out/
 .DS_Store
+pit-state.json

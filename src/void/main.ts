@@ -146,12 +146,28 @@ async function loadRoster(): Promise<Character[]> {
 // No account, no name, no handle. An id that lives as long as the tab does,
 // which is enough to know which creatures are yours and to be the thing a
 // pact link points at.
-const ME = (() => {
-  const k = 'void-me';
-  let v = sessionStorage.getItem(k);
-  if (!v) { v = Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, v); }
-  return v;
-})();
+// The URL is the account. `?k=` is a secret the pit minted for you and the
+// only proof any creature is yours — bookmark it and you are you, lose it and
+// your creatures carry on without anyone able to claim them. The OWNER id is a
+// hash of it: safe to hand out, and what a pact link points at.
+const KEY_STORE = 'pit-key';
+let myKey = new URLSearchParams(location.search).get('k')
+  ?? localStorage.getItem(KEY_STORE)
+  ?? '';
+let ME = 'local';
+
+function keepKey(key: string, owner: string): void {
+  myKey = key;
+  ME = owner;
+  try { localStorage.setItem(KEY_STORE, key); } catch { /* private window */ }
+  // put it in the address bar without a reload, so the URL IS the account and
+  // bookmarking is the whole of signing up
+  const u = new URL(location.href);
+  u.searchParams.set('k', key);
+  u.searchParams.delete('pact');
+  u.searchParams.delete('feud');
+  history.replaceState(null, '', u.toString());
+}
 
 let yours: Agent | null = null;
 const orbit = { yaw: 0, zoom: 0, idle: 99 };
@@ -188,7 +204,7 @@ function yourAgent(sim: VoidSim): Agent | null {
 // The words are yours and stay yours — nothing keeps them, and the creature is
 // named by its body, not by what you typed (see src/naming.ts).
 
-function buildSummon(sim: VoidSim): void {
+function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
   const box = document.getElementById('summonBox') as HTMLInputElement;
   const status = document.getElementById('summonStatus')!;
 
@@ -203,10 +219,17 @@ function buildSummon(sim: VoidSim): void {
       const g = await hatchGenome(desc, undefined, undefined, chars => {
         status.textContent = `summoning… ${chars}`;
       });
-      const a = spawnChar(sim, makeCharacter(g, 'beast'), ME);
-      yours = a;
-      status.textContent = `${a.ch.name} answers`;
-      director.punch(0.7);
+      if (live) {
+        // The words are hatched HERE and thrown away here. Only the body goes
+        // over the wire — the pit never learns what anyone typed.
+        live.send({ t: 'summon', key: myKey, genome: g });
+        status.textContent = 'sending…';
+      } else {
+        const a = spawnChar(sim, makeCharacter(g, 'beast'), ME);
+        yours = a;
+        status.textContent = `${a.ch.name} answers`;
+        director.punch(0.7);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       status.textContent = msg.includes('fetch')
@@ -452,8 +475,37 @@ async function boot() {
   const sim = live ? live.sim : createVoid(roster, look.population);
   sim.peace = look.peace;
 
+  if (live) {
+    live.onKey = keepKey;
+    live.onYours = (id, name) => {
+      const status = document.getElementById('summonStatus');
+      if (status) status.textContent = `${name} answers`;
+      const a = sim.agents.find(x => x.id === id);
+      if (a) yours = a;
+      director.punch(0.7);
+    };
+    live.onNope = why => {
+      const status = document.getElementById('summonStatus');
+      if (status) status.textContent = why;
+    };
+    live.onSworn = (to, stance) => {
+      const status = document.getElementById('summonStatus');
+      if (status) status.textContent = stance === 'feud' ? `you have sworn against ${to}` : `you have sworn to ${to}`;
+    };
+    live.send({ t: 'key', key: myKey || undefined });
+    // a pact link is spent the moment it is opened, and leaves no trace in
+    // the address bar — see keepKey
+    const q = new URLSearchParams(location.search);
+    const ally = q.get('pact'), feud = q.get('feud');
+    if (ally || feud) {
+      setTimeout(() => live.send({
+        t: 'pact', key: myKey, to: ally ?? feud, stance: ally ? 'ally' : 'feud',
+      }), 700);
+    }
+  }
+
   buildPanel(sim, live);
-  buildSummon(sim);
+  buildSummon(sim, live);
 
   let last = performance.now();
   function tick(dt: number) {

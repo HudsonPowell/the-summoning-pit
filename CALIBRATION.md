@@ -737,3 +737,37 @@ Champions reach 2-3 kills and wear their trophies.
 carry the kind of attachment that makes someone care. "How many days it has
 survived" needs a pit that keeps running when the tab is closed — that is the
 server, not a constant.
+
+## the pit persists, and the URL is the account (2026-08-26)
+
+No accounts, no logins, no identity service. The pit mints a key, the client
+keeps it in `?k=`, and that is the whole of signing up. The server stores
+`ownerOf(key) = sha256('pit:' + key)[0..10]` — a hash — so the state file on
+disk cannot be used to claim anyone's creatures.
+
+- **The prompt never reaches the server.** The client hatches and sends only
+  the genome; the server renames it off its own skeleton, so the words cannot
+  come back out through a name either. This falls out of Ollama being local,
+  and it is worth keeping even when a hosted pit has to hatch server-side.
+- **Everything inbound is clamped** (`server/sanitise.ts`): 14 chains, 8 body
+  segments, 8 weapon parts, every number bounded. Three living creatures per
+  key, one summon per 20s.
+- **The cast grows.** Characters used to be a fixed roster addressed by index.
+  Every summon adds one, so a new entry is broadcast the moment it exists and
+  before any agent referring to it can arrive.
+- **Save beside, then rename** — a crash mid-write must not eat the pit. Saves
+  every 5s and on SIGINT/SIGTERM.
+
+Two bugs worth remembering:
+
+- `castId()` broadcasts, and the roster is registered while the module is still
+  loading — before `const wss` exists. `ReferenceError: Cannot access 'wss'
+  before initialization`. Broadcast through a nullable ref that starts null.
+- `send()` dropped anything sent before the socket opened, silently. The first
+  thing a client ever sends is its key request, so every client got no key and
+  could not summon at all. Queue until open.
+
+Verified end to end: browser hatches "a brass-plated siege beetle with a spike"
+→ genome over the wire → server names it Skimaech the Many-Legged → saved to
+disk → server killed → reopened with it still standing. Pacts survive the same
+trip.

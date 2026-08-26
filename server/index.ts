@@ -11,12 +11,21 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Character, migrateCharacter, makeCharacter } from '../src/character';
 import { defaultBiped } from '../src/genome';
-import { createVoid, stepVoid, spawnOne, VoidSim, VoidEvent } from '../src/void/sim';
+import { createVoid, stepVoid, spawnOne, spawnChar, makeAgent, VoidSim, VoidEvent, Agent } from '../src/void/sim';
+import { declare } from '../src/void/pacts';
+import { titleFor } from '../src/naming';
+import { mintKey, ownerOf, looksLikeKey } from './keys';
+import { sanitiseGenome } from './sanitise';
+import { load as loadPit, save as savePit, SavedPit } from './persist';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_HZ = 30;
 const SNAP_HZ = 12;
 const POPULATION = Number(process.env.PIT_POPULATION ?? 5);
+const STATE_FILE = process.env.PIT_STATE ?? 'pit-state.json';
+const SAVE_EVERY = 5;                 // seconds
+const MAX_PER_OWNER = 3;              // living creatures one key may hold
+const SUMMON_COOLDOWN = 20;           // seconds between summons from one key
 
 // --- the cast ---------------------------------------------------------------
 
@@ -41,11 +50,80 @@ function loadRoster(): Character[] {
 }
 
 const roster = loadRoster();
-/** Characters are addressed by index; clients cache them on join. */
+
+let wssRef: WebSocketServer | null = null;
+
+/**
+ * Characters are addressed by index and cached by clients. The cast GROWS now
+ * — every summon adds one — so a new entry is broadcast the moment it appears
+ * and before any agent referring to it can arrive.
+ */
+const cast: Character[] = [];
 const catalogue = new Map<Character, number>();
-roster.forEach((c, i) => catalogue.set(c, i));
+function castId(ch: Character): number {
+  const known = catalogue.get(ch);
+  if (known !== undefined) return known;
+  const id = cast.length;
+  cast.push(ch);
+  catalogue.set(ch, id);
+  broadcast({ t: 'cast', id, ch });
+  return id;
+}
+roster.forEach(c => castId(c));
 
 const sim: VoidSim = createVoid(roster, POPULATION);
+
+// --- the pit remembers ------------------------------------------------------
+
+/** Wall-clock the pit has been running, across every restart it has had. */
+let wallBase = Date.now();
+
+function restore(): void {
+  const saved = loadPit(STATE_FILE);
+  if (!saved) { console.log('[pit] a fresh pit'); return; }
+  sim.agents.length = 0;
+  sim.t = saved.t;
+  wallBase = saved.wall - saved.t * 1000;
+  for (const s of saved.agents) {
+    const g = sanitiseGenome(s.genome);
+    if (!g) continue;
+    const a = makeAgent(makeCharacter(g, 'beast'), s.x, s.z, s.by);
+    castId(a.ch);
+    a.hp = s.hp; a.maxHp = s.maxHp;
+    a.deeds = { kills: s.kills, spoils: s.spoils, born: s.born };
+    sim.agents.push(a);
+  }
+  for (const p of saved.pacts) declare(sim.pacts, p.from, p.to, p.stance);
+  console.log(`[pit] reopened with ${sim.agents.length} standing, clock at ${(sim.t / 60).toFixed(0)}m`);
+}
+
+function snapshotState(): SavedPit {
+  const pacts: SavedPit['pacts'] = [];
+  for (const [from, row] of sim.pacts.by) {
+    for (const [to, stance] of row) pacts.push({ from, to, stance });
+  }
+  return {
+    v: 1,
+    t: sim.t,
+    wall: Date.now(),
+    agents: sim.agents.filter(a => a.deadT < 0).map(a => ({
+      genome: a.genome, by: a.by,
+      x: a.x, z: a.z, hp: a.hp, maxHp: a.maxHp,
+      kills: a.deeds.kills, spoils: a.deeds.spoils, born: a.deeds.born,
+    })),
+    pacts,
+  };
+}
+
+restore();
+
+// --- who is here ------------------------------------------------------------
+
+const lastSummon = new Map<string, number>();   // owner id -> sim time
+
+function livingOf(owner: string): Agent[] {
+  return sim.agents.filter(a => a.by === owner && a.deadT < 0);
+}
 
 // --- wire format ------------------------------------------------------------
 
@@ -57,13 +135,15 @@ function snapshot() {
     time: r2(sim.t),
     agents: sim.agents.map(a => ({
       i: a.id,
-      c: catalogue.get(a.ch) ?? 0,
+      c: castId(a.ch),
       x: r2(a.x), z: r2(a.z), h: r2(a.heading),
       mv: r2(a.move), hp: a.hp, st: a.state,
       d: a.deadT >= 0 ? r2(a.deadT) : -1,
       tr: r2(a.turnRate),
       tg: a.target?.id ?? 0,
       by: a.by,
+      k: a.deeds.kills,
+      sp: a.deeds.spoils.length,
     })),
     shots: sim.shots.map(s => ({
       x: r2(s.x), z: r2(s.z), y: r2(s.y),
@@ -79,7 +159,7 @@ function hello() {
   return {
     ...snapshot(),
     t: 'hello',
-    cast: roster.map((c, i) => ({ id: i, ch: c })),
+    cast: cast.map((c, i) => ({ id: i, ch: c })),
   };
 }
 
@@ -88,30 +168,89 @@ function hello() {
 const http = createServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, agents: sim.agents.length, watchers: wss.clients.size }));
+    res.end(JSON.stringify({
+      ok: true,
+      agents: sim.agents.filter(a => a.deadT < 0).length,
+      watchers: wss.clients.size,
+      openFor: Math.round((Date.now() - wallBase) / 1000),
+      oldest: Math.round(Math.max(0, ...sim.agents.filter(a => a.deadT < 0).map(a => sim.t - a.deeds.born))),
+    }));
     return;
   }
   res.writeHead(404).end();
 });
 
 const wss = new WebSocketServer({ server: http });
+wssRef = wss;
 
 function broadcast(msg: unknown): void {
+  // the cast is registered while the module is still loading, before there is
+  // a socket server to shout at, let alone anyone listening
+  if (!wssRef) return;
   const text = JSON.stringify(msg);
-  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(text);
+  for (const c of wssRef.clients) if (c.readyState === WebSocket.OPEN) c.send(text);
 }
 
 wss.on('connection', ws => {
   ws.send(JSON.stringify(hello()));
+
   ws.on('message', raw => {
-    try {
-      const m = JSON.parse(String(raw));
-      // summoning arrives here; for now a nudge is all a watcher may do
-      if (m?.t === 'stir') {
-        for (const a of sim.agents) { a.target = null; a.state = 'wander'; a.stateT = 0; }
-        spawnOne(sim);
+    let m: any;
+    try { m = JSON.parse(String(raw)); } catch { return; }
+    if (!m || typeof m !== 'object') return;
+
+    // A key is minted here and sent back exactly once. It is the only proof
+    // of ownership that will ever exist, and the client's job is to keep it
+    // in a URL. We store the hash, never the key.
+    if (m.t === 'key') {
+      const key = looksLikeKey(m.key) ? m.key : mintKey();
+      ws.send(JSON.stringify({ t: 'key', key, owner: ownerOf(key) }));
+      return;
+    }
+
+    if (m.t === 'summon') {
+      if (!looksLikeKey(m.key)) return;
+      const owner = ownerOf(m.key);
+      const since = sim.t - (lastSummon.get(owner) ?? -1e9);
+      if (since < SUMMON_COOLDOWN) {
+        ws.send(JSON.stringify({ t: 'nope', why: `wait ${Math.ceil(SUMMON_COOLDOWN - since)}s` }));
+        return;
       }
-    } catch { /* ignore malformed */ }
+      if (livingOf(owner).length >= MAX_PER_OWNER) {
+        ws.send(JSON.stringify({ t: 'nope', why: 'you already have three in the pit' }));
+        return;
+      }
+      const g = sanitiseGenome(m.genome);
+      if (!g) {
+        ws.send(JSON.stringify({ t: 'nope', why: 'that is not a creature' }));
+        return;
+      }
+      // the body names itself here too — whatever the client called it is
+      // discarded, so a name cannot smuggle in the words that made it
+      g.name = titleFor(g.skeleton);
+      const ch = makeCharacter(g, 'beast');
+      castId(ch);
+      const a = spawnChar(sim, ch, owner);
+      lastSummon.set(owner, sim.t);
+      ws.send(JSON.stringify({ t: 'yours', id: a.id, name: g.name, owner }));
+      broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
+      return;
+    }
+
+    if (m.t === 'pact') {
+      if (!looksLikeKey(m.key)) return;
+      const to = typeof m.to === 'string' ? m.to.slice(0, 16) : '';
+      const stance = m.stance === 'feud' ? 'feud' : m.stance === 'none' ? 'none' : 'ally';
+      if (!to) return;
+      declare(sim.pacts, ownerOf(m.key), to, stance);
+      ws.send(JSON.stringify({ t: 'sworn', to, stance }));
+      return;
+    }
+
+    if (m.t === 'stir') {
+      for (const a of sim.agents) { a.target = null; a.state = 'wander'; a.stateT = 0; }
+      spawnOne(sim);
+    }
   });
 });
 
@@ -119,6 +258,7 @@ wss.on('connection', ws => {
 
 let last = Date.now();
 let sinceSnap = 0;
+let sinceSave = 0;
 
 setInterval(() => {
   const now = Date.now();
@@ -126,6 +266,12 @@ setInterval(() => {
   last = now;
 
   stepVoid(sim, dt);
+
+  sinceSave += dt;
+  if (sinceSave >= SAVE_EVERY) {
+    sinceSave = 0;
+    savePit(STATE_FILE, snapshotState());
+  }
 
   // events go out the instant they happen — they are sparse and they carry
   // the story, so they must not wait for the next position tick
@@ -154,3 +300,12 @@ function log(e: VoidEvent): void {
 http.listen(PORT, () => {
   console.log(`the pit is open on :${PORT} — ${roster.length} creatures in the catalogue`);
 });
+
+// A pit that loses the last few seconds on every deploy is a pit nobody trusts
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    savePit(STATE_FILE, snapshotState());
+    console.log('[pit] saved and closed');
+    process.exit(0);
+  });
+}

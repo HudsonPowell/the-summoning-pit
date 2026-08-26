@@ -27,6 +27,12 @@ export class LiveVoid {
   watchers = 0;
   private ws?: WebSocket;
   private cast: Character[] = [];
+
+  /** The pit answers about keys, summons and pacts through these. */
+  onKey?: (key: string, owner: string) => void;
+  onYours?: (id: number, name: string) => void;
+  onNope?: (why: string) => void;
+  onSworn?: (to: string, stance: string) => void;
   private prev?: Snap;
   private next?: Snap;
   private clock = 0;
@@ -43,7 +49,14 @@ export class LiveVoid {
   connect(url: string): void {
     const ws = new WebSocket(url);
     this.ws = ws;
-    ws.onopen = () => { this.connected = true; };
+    ws.onopen = () => {
+      this.connected = true;
+      // anything said while the socket was still opening is said now — the
+      // first thing the client ever sends is its key, and dropping that
+      // silently means it never gets one
+      const queued = this.outbox.splice(0);
+      for (const m of queued) ws.send(JSON.stringify(m));
+    };
     ws.onclose = () => {
       this.connected = false;
       // the pit outlives any one connection; keep trying to get back in
@@ -52,8 +65,11 @@ export class LiveVoid {
     ws.onmessage = e => this.receive(JSON.parse(e.data as string));
   }
 
+  private outbox: unknown[] = [];
+
   send(msg: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    else if (this.outbox.length < 16) this.outbox.push(msg);
   }
 
   private receive(m: any): void {
@@ -65,6 +81,17 @@ export class LiveVoid {
       this.take(m);
       return;
     }
+    // the cast grows: every summon anyone makes adds one, and it arrives
+    // before any agent that refers to it
+    if (m.t === 'cast') {
+      try { this.cast[m.id] = migrateCharacter(m.ch); this.sim.roster = this.cast.filter(Boolean); }
+      catch { /* a creature we cannot read is one we do not draw */ }
+      return;
+    }
+    if (m.t === 'key')   { this.onKey?.(m.key, m.owner); return; }
+    if (m.t === 'yours') { this.onYours?.(m.id, m.name); return; }
+    if (m.t === 'nope')  { this.onNope?.(m.why); return; }
+    if (m.t === 'sworn') { this.onSworn?.(m.to, m.stance); return; }
     if (m.t === 'snap') { this.take(m); return; }
     if (m.t === 'ev') {
       for (const ev of m.list as VoidEvent[]) this.applyEvent(ev);
@@ -100,6 +127,7 @@ export class LiveVoid {
       if (!ch) return null; // roster not in yet — skip until hello lands
       a = makeAgent(ch, row.x, row.z, row.by);
       a.id = row.i;
+      a.by = row.by;
       this.byId.set(row.i, a);
       this.sim.agents.push(a);
     }
@@ -135,6 +163,8 @@ export class LiveVoid {
       a.move = p.mv + (row.mv - p.mv) * u;
       a.turnRate = row.tr;
       a.hp = row.hp;
+      // deeds cross the wire so a veteran reads as one on every screen
+      if (typeof row.k === 'number') a.deeds.kills = row.k;
       a.state = row.st;
       a.deadT = row.d;
       a.by = row.by;

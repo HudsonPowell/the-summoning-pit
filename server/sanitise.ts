@@ -1,0 +1,79 @@
+// Anything arriving over a socket is hostile until proven otherwise. The client
+// hatches its own creature — which is how the prompt never reaches this
+// machine at all — but that also means the genome is whatever the client felt
+// like sending. Clamp it into something the renderer and the sim can survive.
+
+import { Genome, migrateGenome } from '../src/genome';
+
+const num = (v: unknown, lo: number, hi: number, fb: number): number =>
+  typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fb;
+const hex = (c: unknown, fb: string) =>
+  typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fb;
+
+const ROLES = new Set(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin']);
+
+export function sanitiseGenome(raw: unknown): Genome | null {
+  if (!raw || typeof raw !== 'object') return null;
+  let g: Genome;
+  try {
+    g = migrateGenome(JSON.parse(JSON.stringify(raw)));
+  } catch {
+    return null;
+  }
+  const sk = g?.skeleton;
+  if (!sk || !Array.isArray(sk.body) || !Array.isArray(sk.chains)) return null;
+
+  sk.body = sk.body.slice(0, 8).map(v => num(v, 0.05, 0.8, 0.25));
+  if (!sk.body.length) sk.body = [0.26, 0.24];
+  sk.girth = (Array.isArray(sk.girth) ? sk.girth : []).slice(0, 10).map(v => num(v, 0.02, 0.4, 0.1));
+  if (!sk.girth.length) sk.girth = [0.1];
+  sk.upright = !!sk.upright;
+  if (!['walk', 'slither', 'fly', 'hop'].includes(sk.locomotion)) sk.locomotion = 'walk';
+
+  sk.chains = sk.chains
+    .filter((c: any) => c && ROLES.has(c.role))
+    .slice(0, 14)
+    .map((c: any) => ({
+      role: c.role,
+      at: num(c.at, 0, 1, 0.5),
+      seg: (Array.isArray(c.seg) && c.seg.length ? c.seg : [0.3, 0.3])
+        .slice(0, 4).map((v: unknown) => num(v, 0.03, 0.9, 0.25)),
+      r: num(c.r, 0.01, 0.15, 0.05),
+      spread: num(c.spread, 0, 0.5, 0.1),
+      ...(typeof c.mirror === 'boolean' ? { mirror: c.mirror } : {}),
+      ...(typeof c.ink === 'number' ? { ink: Math.min(9, Math.max(0, Math.round(c.ink))) } : {}),
+      ...(typeof c.angle === 'number' ? { angle: num(c.angle, -1.6, 1.6, 0) } : {}),
+    }));
+  if (!sk.chains.length) return null;
+
+  const p: any = g.palette ?? {};
+  g.palette = {
+    torso: hex(p.torso, '#3aa7a0'), limbs: hex(p.limbs, '#2b7f8f'),
+    head: hex(p.head, '#e8c39a'), accent: hex(p.accent, '#d5573b'),
+    extra: Array.isArray(p.extra) ? p.extra.slice(0, 6).map((c: unknown) => hex(c, '#888888')) : undefined,
+  };
+
+  // the name is decorative here; the server renames it off the body anyway
+  g.name = typeof g.name === 'string' ? g.name.slice(0, 40) : 'a thing';
+
+  if (g.weapon && typeof g.weapon === 'object') {
+    const w: any = g.weapon;
+    if (Array.isArray(w.parts)) {
+      w.parts = w.parts.slice(0, 8).map((q: any) => ({
+        a: [num(q?.a?.[0], -0.4, 1.2, 0), num(q?.a?.[1], -0.4, 0.4, 0), num(q?.a?.[2], -0.4, 0.4, 0)],
+        b: [num(q?.b?.[0], -0.4, 1.2, 0.4), num(q?.b?.[1], -0.4, 0.4, 0), num(q?.b?.[2], -0.4, 0.4, 0)],
+        r: num(q?.r, 0.01, 0.1, 0.03),
+        color: hex(q?.color, '#9aa1ab'),
+      }));
+      if (typeof w.name === 'string') w.name = w.name.slice(0, 24);
+    }
+  }
+  if (g.temper) {
+    g.temper = {
+      aggression: num(g.temper.aggression, 0, 1, 0.4),
+      bravery: num(g.temper.bravery, 0, 1, 0.4),
+      speed: num(g.temper.speed, 0, 1, 0.5),
+    };
+  }
+  return g;
+}
