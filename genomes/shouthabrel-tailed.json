@@ -1,39 +1,50 @@
 {
-  "name": "hatched-heavy-set-dwarf-with-axe",
+  "name": "Shouthabrel the Tailed",
   "skeleton": {
     "prone": false,
-    "spine": 0.3,
-    "neck": 0.06,
-    "headR": 0.12,
+    "spine": 0.5,
+    "neck": 0.09,
+    "headR": 0.115,
     "hipW": 0.22,
     "chestW": 0.38,
-    "torsoR": 0.14,
+    "torsoR": 0.09,
     "chains": [
       {
         "role": "arm",
         "attach": "chest",
         "seg": [
-          0.25,
-          0.25
+          0.35,
+          0.35
         ],
-        "r": 0.08,
+        "r": 0.045,
         "spread": 0.16
       },
       {
         "role": "leg",
         "attach": "hip",
         "seg": [
-          0.25,
-          0.25
+          0.19,
+          0.19
         ],
-        "r": 0.08,
-        "spread": 0.08
+        "r": 0.035,
+        "spread": 0.12
+      },
+      {
+        "role": "tail",
+        "attach": "hip",
+        "seg": [
+          0.11,
+          0.11,
+          0.11
+        ],
+        "r": 0.035,
+        "spread": 0
       }
     ]
   },
   "gait": {
-    "cadence": 0.9,
-    "stride": 0.55,
+    "cadence": 1.2,
+    "stride": 1.1,
     "stance": 0.6,
     "lift": 0.09,
     "bounce": 0.02,
@@ -48,18 +59,18 @@
     "elbowAmp": 0.5,
     "elbowLag": 0.16666666666666666,
     "headPitch": 0,
-    "flapAmp": 0,
-    "tailWave": 0
+    "flapAmp": 0.5,
+    "tailWave": 0.5
   },
   "palette": {
-    "torso": "#964b00",
-    "limbs": "#786c3b",
+    "torso": "#6e7276",
+    "limbs": "#5a5963",
     "head": "#8a8f94",
     "accent": "#c14b4b"
   },
   "weapon": {
-    "length": 0.42,
-    "r": 0.055,
-    "color": "#9aa1ab"
+    "length": 0.75,
+    "r": 0.026,
+    "color": "#8a6d3f"
   }
 }

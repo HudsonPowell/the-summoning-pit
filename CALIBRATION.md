@@ -606,3 +606,33 @@ three runs, every creature rendered with its prompt burned in. Kept in
 - **Open: bodies come back as planks.** Long span, wide girth, running off
   frame. Needs a span-to-girth discipline. Run-to-run variance on the same
   prompt is still large — the floors stop disasters, they don't buy consistency.
+
+## the prompt never leaves the summoner (2026-08-26)
+
+The words that summoned a creature are not part of it. `genome.name` used to be
+`'hatched-' + slug(desc)`, which put the prompt on the genome, over the wire to
+every watcher, into the kill feed, and into a filename on disk — sixteen of them
+were sitting in `genomes/`. Three reasons that's wrong: it turns summoning into
+a message board someone has to moderate, it hands every player the trick, and it
+is nobody else's business.
+
+Creatures are now named by their own body — `src/naming.ts` hashes the
+skeleton's numbers to pick syllables and reads an epithet off the body plan
+("Kastoum the Many-Legged"). Text never touches it, so there is nothing to leak
+rather than a rule about not leaking it. Identical bodies share a name, which is
+correct: they are the same beast.
+
+Prompts survive in `farm/out/roster/*/\_report.md` only — the local farm, so the
+hatcher can still be judged. Nothing else keeps them.
+
+## roster run 001 — 50 real fantasy summons
+
+50/50 stood. Quadrupeds are the strength: the dire wolf, griffin, minotaur,
+sabre-tooth and rhinoceros read as animals without help. Armed bipeds work when
+the body stays compact.
+
+The dominant defect is now body ASPECT, and it goes both ways: planks (the siege
+engineer is a slab on legs, so are the basilisk, hydra and crab-beast) and pins
+(the golem knight and the desert nomad are vertical lines). Nothing in the
+schema says a torso has a sane span-to-girth ratio, so the model spends its
+budget at either extreme. That is the next floor.

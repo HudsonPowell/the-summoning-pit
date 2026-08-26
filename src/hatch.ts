@@ -10,6 +10,7 @@ import {
   defaultBiped, imp, hound, troll, ogre, hippo, serpent, raptor, spider, hydra,
   Genome, Skeleton, Gait, ChainSpec, ChainRole, Locomotion, Palette,
 } from './genome';
+import { titleFor } from './naming';
 
 export const HATCH_MODEL =
   (typeof process !== 'undefined' && process.env?.HATCH_MODEL) || 'llama3.2:3b';
@@ -368,10 +369,11 @@ export function validateGenome(raw: any, desc: string): Genome {
     accent: hexOk(p.accent, base.palette.accent),
   };
 
-  const name = 'hatched-' +
-    desc.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32);
-
-  const genome: Genome = { name, skeleton, gait, palette };
+  // The prompt does NOT become the name. It was the summoner's words; it is not
+  // the creature's identity, it should not travel to other players in a kill
+  // feed, and it should not sit in a filename on a disk somewhere. The body
+  // names itself — see src/naming.ts.
+  const genome: Genome = { name: titleFor(skeleton), skeleton, gait, palette };
 
   // if the words name a weapon, the creature gets one even when the model forgets
   const canHold = chains.some(c => c.role === 'arm');
