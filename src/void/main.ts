@@ -414,6 +414,8 @@ function narrate(e: import('./sim').VoidEvent): string | null {
   const whom = e.target?.name ?? 'something';
   const at = e.range ? ` at ${e.range.toFixed(1)}m` : '';
   switch (e.kind) {
+    // the drama was happening and nothing said so
+    case 'spoil': return `${who} takes the ${e.how} of ${whom}`;
     case 'kill': return `${who} felled ${whom} — ${e.how ?? 'a blow'}${at}`;
     case 'spawn': return `${who} enters the pit`;
     case 'flee': return `${who} breaks and runs`;

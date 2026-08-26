@@ -8,6 +8,7 @@ import { Genome, effectiveGait, heightOf } from '../genome';
 import { Temper, temperOf } from '../temper';
 import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
 import { Pacts, newPacts, stanceOf } from './pacts';
+import { Record as Deeds, takeSpoil } from './spoils';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
 
@@ -35,6 +36,8 @@ export interface Agent {
   nerve: number;             // aggression, kept under its old name for the AI
   temper: Temper;            // what it is like, read off what it is made of
   sec: Secondary;            // the parts of the body that are late
+  deeds: Deeds;              // what it has done, and what it took for doing it
+  calm: number;              // seconds since anything happened to it
   lookAt: number;            // world angle the head is resting on
   scanT: number;             // seconds until it looks somewhere else
   turnRate: number;          // radians/sec, for secondary motion
@@ -43,7 +46,8 @@ export interface Agent {
 }
 
 export type EventKind =
-  | 'spawn' | 'notice' | 'flee' | 'strike' | 'loose' | 'hit' | 'kill' | 'despawn';
+  | 'spawn' | 'notice' | 'flee' | 'strike' | 'loose' | 'hit' | 'kill' | 'despawn'
+  | 'spoil';
 
 /** Who did the thing. Enough to name it in a feed without the sim attached. */
 export interface EventWho { id: number; name: string; by?: string }
@@ -96,14 +100,19 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 let nextAgentId = 1;
 
 export function makeAgent(ch: Character, x: number, z: number, by?: string): Agent {
-  const g = ch.genome;
+  // Its OWN copy of the body. An agent's genome gets rewritten when it takes a
+  // trophy, and the character it came from is the shelf everything else spawns
+  // off — grafting a stolen horn onto that would give it to every hound that
+  // ever spawns again.
+  const g: Genome = JSON.parse(JSON.stringify(ch.genome));
   const eff = effectiveGait(g.gait, { tired: 0, angry: 0 });
   const h = heightOf(g);
   const temper = temperOf(g);
   return {
     id: nextAgentId++,
     by,
-    ch, genome: g,
+    ch: { ...ch, genome: g },
+    genome: g,
     x, z,
     heading: rnd(-Math.PI, Math.PI),
     aim: rnd(-Math.PI, Math.PI),
@@ -125,6 +134,8 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     nerve: temper.aggression,
     temper,
     sec: newSecondary(),
+    deeds: { kills: 0, spoils: [], born: 0 },
+    calm: 0,
     lookAt: rnd(-Math.PI, Math.PI),
     scanT: rnd(0, 0.8),
     turnRate: 0,
@@ -161,6 +172,7 @@ export function spawnChar(sim: VoidSim, ch: Character, by?: string): Agent {
   const { x, z } = spawnSpot(sim);
   const a = makeAgent(ch, x, z);
   a.by = by;
+  a.deeds.born = sim.t;
   sim.agents.push(a);
   sim.events.push({ kind: 'spawn', t: sim.t, x, z, actor: whoOf(a) });
   return a;
@@ -171,6 +183,7 @@ export function spawnOne(sim: VoidSim, quiet = false): Agent | null {
   const ch = sim.roster[Math.floor(Math.random() * sim.roster.length)];
   const { x, z } = spawnSpot(sim);
   const a = makeAgent(ch, x, z);
+  a.deeds.born = sim.t;
   sim.agents.push(a);
   if (!quiet) sim.events.push({ kind: 'spawn', t: sim.t, x, z, actor: whoOf(a) });
   return a;
@@ -263,6 +276,9 @@ function pickTarget(sim: VoidSim, a: Agent, maxR: number): Agent | null {
     let score = 1 - d / maxR;                       // close is easy
     // a feud outweighs sense: you came here for them
     if (stance === 'feud') score += 1.4;
+    // GLORY. Whatever has been killing things is the thing worth killing, and
+    // this is the only reason the pit does not simply crown its first winner.
+    score += Math.min(0.9, o.deeds.kills * 0.3);
     score += (1 - o.hp / Math.max(1, o.maxHp)) * 0.55;  // wounded is easier
     // size it up: a big thing is only appealing if you have the nerve
     const odds = (a.bulk - o.bulk) * 0.5 + (a.temper.bravery - 0.5) * 0.8;
@@ -281,6 +297,17 @@ function pickTarget(sim: VoidSim, a: Agent, maxR: number): Agent | null {
 
 function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, how?: string): void {
   if (a.hurtT > 0 || a.deadT >= 0) return;
+
+  // Not every blow is a wound. A quick thing rolls with it — it still gets
+  // knocked about, it just does not bleed for it. Without this every exchange
+  // was a countdown and nothing in the pit ever lived long enough to have a
+  // history worth watching.
+  if (Math.random() < 0.22 + a.temper.speed * 0.28) {
+    a.hurtT = 0.3;
+    const graze = Math.atan2(fromZ - a.z, fromX - a.x) - a.heading;
+    jolt(a.sec, 0.16, graze, a.bulk);
+    return;
+  }
   a.hp--;
   a.hurtT = 0.55;
   // the blow goes into the body, not just into the hit points
@@ -319,7 +346,23 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
     a.strikeT = -1;
     a.target = null;
     sim.events.push({ kind: 'kill', ...common });
-  } else if (a.hp <= 1 && Math.random() > a.temper.bravery) {
+    if (by && by.deadT < 0) {
+      by.deeds.kills++;
+      // it takes something off the body. The graft is on the agent's own copy
+      // of the genome, so it shows on the next frame — you watch it change.
+      const took = takeSpoil(by.genome, a.genome, by.deeds);
+      // whatever it has taken has made it harder to put down
+      by.maxHp = Math.min(12, by.maxHp + 1);
+      by.hp = Math.min(by.maxHp, by.hp + 1);
+      by.bulk = heightOf(by.genome);
+      if (took) {
+        sim.events.push({
+          kind: 'spoil', t: sim.t, x: by.x, z: by.z,
+          actor: whoOf(by), target: whoOf(a), how: took,
+        });
+      }
+    }
+  } else if (a.hp <= Math.max(1, a.maxHp * 0.4) && Math.random() > a.temper.bravery + 0.25) {
     // losing and not brave enough for this
     a.state = 'flee';
     a.stateT = 0;
@@ -339,6 +382,16 @@ export function stepVoid(sim: VoidSim, dt: number): void {
   for (const a of sim.agents) {
     a.stateT += dt;
     a.idleT += dt;
+
+    // Nothing healed, ever. Every creature was on a one-way trip from spawn to
+    // death, which is why the pit was all churn and no history: it does not
+    // matter what a thing has done if it cannot live long enough to have done
+    // anything. Left alone, it gets its wind back.
+    if (a.state === 'wander' || a.state === 'think') a.calm += dt; else a.calm = 0;
+    if (a.calm > 7 && a.hp < a.maxHp && a.deadT < 0) {
+      a.hp++;
+      a.calm = 3.5;   // the next one comes quicker, but never for free
+    }
     if (a.hurtT > 0) a.hurtT -= dt;
 
     if (a.deadT >= 0) {
@@ -429,6 +482,9 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         } else {
           setState(a, 'fight');
         }
+        // give up on something that will not stand and fight — a chase that
+        // never ends is a death sentence for whichever tires first
+        if (a.stateT > 5 && t.state === 'flee') { a.target = null; setState(a, 'wander'); }
         if (a.stateT > 12) { a.target = null; setState(a, 'wander'); }
         break;
       }
@@ -466,7 +522,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         if (t) a.aim = Math.atan2(a.z - t.z, a.x - t.x);
         a.move += (1 - a.move) * Math.min(1, 6 * dt);
         walk(a, dt, 1.4);
-        if (a.stateT > rnd(2.5, 4.5)) { a.target = null; setState(a, 'wander'); }
+        if (a.stateT > rnd(4, 7)) { a.target = null; setState(a, 'wander'); }
         break;
       }
       default:
@@ -566,7 +622,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     sim.spawnT -= dt;
     if (sim.spawnT <= 0) {
       spawnOne(sim);
-      sim.spawnT = rnd(2, 5);
+      sim.spawnT = rnd(9, 18);
     }
   }
 }

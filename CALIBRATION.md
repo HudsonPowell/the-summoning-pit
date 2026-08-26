@@ -705,3 +705,35 @@ had been 26,000.
 
 Cold start snaps to the first frame instead of damping up from nothing —
 otherwise the first second is a black screen.
+
+## why nothing in the pit was worth watching (2026-08-26)
+
+Everything died and nothing carried forward, so a kill earned nothing and a
+death cost nothing. Three changes, measured at default peace 0.35, cast 4:
+
+- **Spoils.** The victor takes a chain off the loser — horn, arm, tail, wing,
+  fin, or a spare head — grafted onto ITS OWN copy of the genome, worn smaller,
+  unmirrored, angled, riding high on the back, in the dead thing's accent
+  colour so it never matches. Take an arm that was holding something and you
+  get the weapon too. Max 4. A veteran is visibly a chimera of what it killed,
+  and its career is readable off its silhouette with no numbers on screen.
+- **Glory.** `score += min(0.9, kills*0.3)` in pickTarget. Whatever has been
+  killing is the thing worth killing, which is the only reason the pit does not
+  crown its first winner.
+- **Recovery.** Nothing healed, ever — every creature was on a one-way trip
+  from spawn to death. Seven quiet seconds buys a hit point, then 3.5s for each
+  after. And not every blow wounds: `0.22 + speed*0.28` of them are grazes that
+  knock a creature about without bleeding it, so a nimble thing can survive a
+  fight it would otherwise have lost on arithmetic.
+
+An agent's genome is now DEEP COPIED at spawn. It was shared by reference with
+the roster Character, so the first grafted horn would have been inherited by
+every hound that ever spawned afterwards.
+
+Result: 86 kills per 10 minutes became 39. Median lifetime 45s, longest 185s.
+Champions reach 2-3 kills and wear their trophies.
+
+**Still unsolved, and it is not a tuning problem.** A 45-second life cannot
+carry the kind of attachment that makes someone care. "How many days it has
+survived" needs a pit that keeps running when the tab is closed — that is the
+server, not a constant.
