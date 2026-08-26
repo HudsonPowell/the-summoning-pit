@@ -576,3 +576,33 @@ per snapshot ≈ 5 KB/s per watcher**.
   Spread first, label after. (2) Clearing `sim.events` at the START of the
   client update destroyed events that arrived between frames, unread — the
   caller drains them after reading instead.
+
+## hatching: what 50 hostile summons taught (2026-08-26)
+
+50 prompts — plain, power-user, absurd, meme, confused, and hostile (empty
+string, prompt injection, XSS, SQL, emoji, 70 letter As) — through the hatcher,
+three runs, every creature rendered with its prompt burned in. Kept in
+`farm/out/stress/`. `npm run stress <label>` adds a run; nothing overwrites.
+
+- **50/50 survive, in every run.** No crash, no NaN joint, no infinite height.
+  No injection, XSS or SQL string escaped the validator — they hatch as
+  creatures, which is the correct answer to a prompt. Structural safety is real.
+- **Survival was measuring the wrong thing.** In the baseline nine prompts
+  hatched as a floating head on a sausage. Legal genome, no creature.
+- **A fast hatch is a bad hatch.** Every degenerate one came back in 1.2–1.7s
+  against 2.5–5s for a real one. The model wasn't failing, it was bailing —
+  minimal JSON, almost no chains. Time is a usable quality signal.
+- **The validator read silence as "snake".** Legless → slither was the rule, so
+  every shrug became a worm. Leglessness now has to be earned by the words
+  (`SERPENTINE`); flying has to be earned by wings; a head with fewer than two
+  limbs gets arms or a tail. The model's own `locomotion: "slither"` is NOT
+  evidence — it reaches for it whenever the prompt gives it nothing.
+- **The exemplars were the actual cause.** `pickExemplars` always appended the
+  serpent as contrast. On a prompt that matched no keywords it was the only
+  shape in the pack with any character, so the model copied it. No signal, no
+  serpent.
+- **Injected legs scale off girth, not span.** `max(girth) * 3.6`, clamped
+  0.14–0.55. Scaling off body length put long creatures on stilts.
+- **Open: bodies come back as planks.** Long span, wide girth, running off
+  frame. Needs a span-to-girth discipline. Run-to-run variance on the same
+  prompt is still large — the floors stop disasters, they don't buy consistency.

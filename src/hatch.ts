@@ -86,10 +86,16 @@ export function pickExemplars(desc: string, n = 3): Genome[] {
     if (picked.length >= n - 1) break;
     if (s.score > 0) picked.push(s.e.make());
   }
-  // a legless serpent is the strongest reminder that not everything is a biped
-  const contrast = picked.some(p => p.skeleton.locomotion === 'slither')
-    ? hound() : serpent();
-  picked.push(contrast);
+  // A legless serpent is the strongest reminder that not everything is a biped
+  // — but only worth showing a prompt that carried some signal. Handed to a
+  // prompt that matched nothing ("idk", "yes", an empty string) it becomes the
+  // only shape in the pack with any character, and the model copies it: every
+  // shrug hatched as a snake. No signal, no serpent.
+  if (picked.length) {
+    picked.push(picked.some(p => p.skeleton.locomotion === 'slither') ? hound() : serpent());
+  } else {
+    picked.push(hound());
+  }
   while (picked.length < n) picked.push(picked.length === 1 ? defaultBiped() : hound());
   return picked.slice(0, n);
 }
@@ -207,6 +213,7 @@ const hexOk = (c: unknown, fb: string) =>
 
 const ROLES = new Set<ChainRole>(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin']);
 const MANY_LEGGED = /spider|insect|bug|crab|centipede|arachnid|beetle|ant|six|eight|many legs|scuttl/i;
+const SERPENTINE = /snake|serpent|worm|eel|naga|slither|legless|python|viper|cobra|adder|boa|anaconda|mamba|asp\b|wyrm|slug|noodle|tentacle|centipede|leech|lamprey/i;
 const MANY_HEADED = /two[- ]head|three[- ]head|multi[- ]head|hydra|heads\b/i;
 const MANY_ARMED = /four[- ]arm|six[- ]arm|multi[- ]arm|extra arm|many arms/i;
 
@@ -282,17 +289,51 @@ export function validateGenome(raw: any, desc: string): Genome {
     chains.push({ role: 'head', at: 1, seg: [0.09, 0.12], r: 0.11, spread: 0, ink: 2 });
   }
 
-  // legless is a legitimate creature — it slithers, it doesn't grow legs
-  const hasLegs = chains.some(c => c.role === 'leg');
+  // Legless is a legitimate creature ONLY when something asked for it. A model
+  // that bails on a prompt returns almost no chains, and the old rule read that
+  // silence as "a snake" — so vague and hostile prompts all hatched as sausages.
+  // Silence is not a body plan. Evidence for leglessness is the words, wings,
+  // or a genuinely long tapering body; absent that, the thing gets legs.
   let locomotion: Locomotion =
     ['walk', 'slither', 'fly', 'hop'].includes(sk.locomotion) ? sk.locomotion : 'walk';
-  if (!hasLegs && locomotion !== 'fly') locomotion = 'slither';
-  if (hasLegs && locomotion === 'slither') locomotion = 'walk';
+  const upright = typeof sk.upright === 'boolean' ? sk.upright : !MANY_LEGGED.test(desc);
 
-  const skeleton: Skeleton = {
-    upright: typeof sk.upright === 'boolean' ? sk.upright : !MANY_LEGGED.test(desc),
-    body, girth, locomotion, chains,
-  };
+  // Flying is a claim wings have to back. Without them it's just a hovering
+  // blob, which is the same failure wearing a different word.
+  if (locomotion === 'fly' && !chains.some(c => c.role === 'wing')) locomotion = 'walk';
+
+  if (!chains.some(c => c.role === 'leg') && locomotion !== 'fly') {
+    // Leglessness has to be earned by the words. Trusting the model's own
+    // `locomotion: slither` is not enough — it reaches for it whenever the
+    // prompt gives it nothing, and a shrug is not a body plan.
+    const serpentine = SERPENTINE.test(desc);
+    if (serpentine) {
+      locomotion = 'slither';
+    } else {
+      // A pair under the hips; low-slung bodies get a front pair too, so a
+      // four-legged silhouette rather than a wheelbarrow. Length follows GIRTH,
+      // not body span — scaling off span gave long creatures stilts, because a
+      // wolf's leg is about as long as it is thick, not as long as it is.
+      const len = clampN(Math.max(...girth) * 3.6, 0.14, 0.55, 0.4);
+      chains.push({ role: 'leg', at: upright ? 0 : 0.08, seg: [len, len * 0.98], r: 0.055, spread: 0.11 });
+      if (!upright) {
+        chains.push({ role: 'leg', at: 0.72, seg: [len * 0.95, len * 0.9], r: 0.052, spread: 0.11 });
+      }
+      locomotion = 'walk';
+    }
+  }
+  if (chains.some(c => c.role === 'leg') && locomotion === 'slither') locomotion = 'walk';
+
+  // A head on a body with nothing else is a lollipop, not a creature. Anything
+  // that stands up gets arms; anything that doesn't gets a tail to steer with.
+  const limbs = chains.filter(c => c.role !== 'head').length;
+  if (limbs < 2) {
+    chains.push(upright
+      ? { role: 'arm', at: 1, seg: [0.3, 0.28], r: 0.05, spread: 0.18 }
+      : { role: 'tail', at: 0, seg: [0.22, 0.18, 0.13], r: 0.04, spread: 0 });
+  }
+
+  const skeleton: Skeleton = { upright, body, girth, locomotion, chains };
 
   const gs = raw?.gait ?? {};
   const gait: Gait = {

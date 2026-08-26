@@ -12,7 +12,8 @@
     "hatch": "tsx farm/hatch.ts",
     "test": "tsx farm/sim_test.ts && tsx farm/render_test.ts && tsx farm/migrate_check.ts && tsx farm/ranged_test.ts",
     "pit": "tsx server/index.ts",
-    "pit:test": "tsx farm/pit_test.ts"
+    "pit:test": "tsx farm/pit_test.ts",
+    "stress": "tsx farm/stress.ts"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
