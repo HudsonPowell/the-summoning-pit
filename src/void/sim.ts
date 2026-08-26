@@ -149,6 +149,16 @@ function spawnSpot(sim: VoidSim): { x: number; z: number } {
 
 export const whoOf = (a: Agent): EventWho => ({ id: a.id, name: a.ch.name, by: a.by });
 
+/** Put a specific creature into the pit — what summoning actually does. */
+export function spawnChar(sim: VoidSim, ch: Character, by?: string): Agent {
+  const { x, z } = spawnSpot(sim);
+  const a = makeAgent(ch, x, z);
+  a.by = by;
+  sim.agents.push(a);
+  sim.events.push({ kind: 'spawn', t: sim.t, x, z, actor: whoOf(a) });
+  return a;
+}
+
 export function spawnOne(sim: VoidSim, quiet = false): Agent | null {
   if (sim.roster.length === 0) return null;
   const ch = sim.roster[Math.floor(Math.random() * sim.roster.length)];

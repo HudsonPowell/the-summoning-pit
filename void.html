@@ -29,6 +29,15 @@
       border-bottom: 1px solid var(--line); padding-bottom: 4px;
     }
     #panel h2:first-child { margin-top: 0; }
+    .summon { margin: 0 0 14px; }
+    .summon input {
+      width: 100%; box-sizing: border-box; padding: 9px 10px;
+      background: #0d1014; border: 1px solid #2a3138; border-radius: 3px;
+      color: #d8e0ea; font: inherit; font-size: 12px; letter-spacing: .04em;
+    }
+    .summon input:focus { outline: none; border-color: #4bb3a6; }
+    .summon input::placeholder { color: #4a545e; }
+    .summonStatus { margin-top: 5px; min-height: 12px; font-size: 10px; color: var(--dim); letter-spacing: .04em; }
     .row { display: grid; grid-template-columns: 76px 1fr 32px; gap: 8px; align-items: center; padding: 1px 0; }
     .row span { font-size: 10px; color: var(--ink); }
     .row em { font-style: normal; font-size: 10px; color: var(--dim); text-align: right; }

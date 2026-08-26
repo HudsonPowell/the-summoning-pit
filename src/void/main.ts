@@ -3,11 +3,12 @@
 
 import { Character, makeCharacter, migrateCharacter } from '../character';
 import { defaultBiped, Genome } from '../genome';
+import { hatchGenome } from '../hatch';
 import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { PixelView } from '../view';
-import { createVoid, stepVoid, spawnOne, Agent, VoidSim, Shot, PlayerInput } from './sim';
+import { createVoid, stepVoid, spawnOne, spawnChar, Agent, VoidSim, Shot, PlayerInput } from './sim';
 import { Director } from './director';
 import { LiveVoid } from './live';
 
@@ -155,6 +156,61 @@ function readInput() {
   const c = Math.cos(cam.yaw), sn = Math.sin(cam.yaw);
   input.mx = ix * c + iz * sn;
   input.mz = -ix * sn + iz * c;
+}
+
+// --- the summoning box ------------------------------------------------------
+// The one verb. You type, something that has never existed walks into the pit.
+// The words are yours and stay yours — nothing keeps them, and the creature is
+// named by its body, not by what you typed (see src/naming.ts).
+
+function buildSummon(sim: VoidSim, panel: HTMLElement): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'summon';
+  const box = document.createElement('input');
+  box.type = 'text';
+  box.placeholder = 'summon…';
+  box.autocomplete = 'off';
+  box.spellcheck = false;
+  const status = document.createElement('div');
+  status.className = 'summonStatus';
+  wrap.append(box, status);
+  panel.prepend(wrap);
+
+  let busy = false;
+  async function summon() {
+    const desc = box.value.trim();
+    if (!desc || busy) return;
+    busy = true;
+    box.value = '';
+    status.textContent = 'summoning…';
+    try {
+      const g = await hatchGenome(desc, undefined, undefined, chars => {
+        status.textContent = `summoning… ${chars}`;
+      });
+      const a = spawnChar(sim, makeCharacter(g, 'beast'), 'you');
+      status.textContent = `${a.ch.name} answers`;
+      director.punch(0.7);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      status.textContent = msg.includes('fetch')
+        ? 'nothing answered — is ollama running?'
+        : 'nothing answered';
+    }
+    busy = false;
+  }
+
+  box.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') summon();
+    if (e.key === 'Escape') box.blur();
+  });
+  // `/` reaches for the box from anywhere, the way a chat box does
+  addEventListener('keydown', e => {
+    if (e.key !== '/' || e.target instanceof HTMLInputElement) return;
+    e.preventDefault();
+    if (!look.panel) setPanel(true);
+    box.focus();
+  });
 }
 
 function takeOver(a: Agent | null): void {
@@ -332,6 +388,7 @@ async function boot() {
   }
 
   buildPanel(sim, live);
+  buildSummon(sim, document.getElementById('panelInner')!);
 
   let last = performance.now();
   function tick(dt: number) {

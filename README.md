@@ -23,11 +23,16 @@ The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same g
 ## Play the void
 
 ```bash
-PORT=5173 npm run dev
+PORT=5180 npm run dev
 ```
 
 Then open `/void.html?play`. Arrows or WASD to move, **space** to strike,
 **shift+space** for the heavy one, **c** for the controls, **p** to grab a PNG.
+
+**Press `/` to summon.** Type anything; a creature that has never existed walks
+into the pit and is marked as yours. Your words are not kept — not on the
+genome, not in a filename, not over the wire. The thing that answers is named
+by its body (`src/naming.ts`), so nobody can read your prompt back off it.
 
 You are handed one of the creatures on the shelf and dropped into the pit with
 five others. Nothing else changes: the beasts notice you, close on you and run
