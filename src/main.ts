@@ -554,7 +554,7 @@ let fpsAcc = 0, fpsN = 0, fpsT = 0;
 function tick(dt: number) {
   orbitTick(dt);
   const b = currentBehavior();
-  const extras: PoseExtras = { weapon: character.weapon };
+  const extras: PoseExtras = { weapon: character.weapon, offhand: character.offhand };
   let caps: Capsule[];
   let speed = 0;
 

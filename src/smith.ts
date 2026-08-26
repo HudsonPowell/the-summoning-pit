@@ -128,3 +128,125 @@ export async function forgeWeapon(
   }
   return validateWeapon(JSON.parse(out), desc);
 }
+
+// --- the wider armoury ------------------------------------------------------
+// A hero at this size is read by silhouette, and most of that silhouette is
+// what they are holding. A greatsword, a scimitar and a crossbow being "a stick
+// of length 0.6" is why every hatched hero looked like the same person.
+
+const A2: Record<string, WeaponSpec> = {
+  greatsword: { name: 'greatsword', parts: [
+    { a: [0.05, 0, 0], b: [1.0, 0, 0], r: 0.036, color: '#cfd6e4' },
+    { a: [0.08, 0.11, 0], b: [0.08, -0.11, 0], r: 0.022, color: '#8f5540' },
+    { a: [-0.12, 0, 0], b: [0.04, 0, 0], r: 0.026, color: '#4a3a2c' },
+  ]},
+  dagger: { name: 'dagger', parts: [
+    { a: [0.05, 0, 0], b: [0.3, 0, 0], r: 0.022, color: '#d7dde8' },
+    { a: [0.05, 0.05, 0], b: [0.05, -0.05, 0], r: 0.016, color: '#4a3a2c' },
+  ]},
+  // a curve is two segments that disagree about where forward is
+  scimitar: { name: 'scimitar', parts: [
+    { a: [0.06, -0.02, 0], b: [0.42, 0.06, 0], r: 0.028, color: '#e2d6b0' },
+    { a: [0.42, 0.06, 0], b: [0.7, 0.2, 0], r: 0.022, color: '#e8dfc4' },
+    { a: [0.06, 0.06, 0], b: [0.06, -0.06, 0], r: 0.018, color: '#7a5a3a' },
+  ]},
+  rapier: { name: 'rapier', parts: [
+    { a: [0.06, 0, 0], b: [0.92, 0, 0], r: 0.014, color: '#e4e9f2' },
+    { a: [0.1, 0.05, 0.05], b: [0.1, -0.05, -0.05], r: 0.022, color: '#b9a06a' },
+  ]},
+  mace: { name: 'mace', parts: [
+    { a: [0, 0, 0], b: [0.4, 0, 0], r: 0.024, color: '#4a3a2c' },
+    { a: [0.44, 0, 0], b: [0.5, 0, 0], r: 0.075, color: '#8a8f99' },
+  ]},
+  maul: { name: 'maul', parts: [
+    { a: [-0.1, 0, 0], b: [0.5, 0, 0], r: 0.03, color: '#5a4433' },
+    { a: [0.5, 0.11, 0], b: [0.5, -0.11, 0], r: 0.075, color: '#6f747e' },
+  ]},
+  scythe: { name: 'scythe', parts: [
+    { a: [-0.2, 0, 0], b: [0.8, 0, 0], r: 0.022, color: '#6b4a2f' },
+    { a: [0.8, 0, 0], b: [0.86, 0.34, 0], r: 0.02, color: '#c9d2de' },
+    { a: [0.86, 0.34, 0], b: [0.52, 0.46, 0], r: 0.016, color: '#dbe2ec' },
+  ]},
+  trident: { name: 'trident', parts: [
+    { a: [-0.2, 0, 0], b: [0.78, 0, 0], r: 0.02, color: '#6b5a3f' },
+    { a: [0.78, 0, 0], b: [1.0, 0, 0], r: 0.022, color: '#cfd6e4' },
+    { a: [0.78, 0, -0.09], b: [0.96, 0, -0.11], r: 0.018, color: '#cfd6e4' },
+    { a: [0.78, 0, 0.09], b: [0.96, 0, 0.11], r: 0.018, color: '#cfd6e4' },
+  ]},
+  wand: { name: 'wand', parts: [
+    { a: [0.02, 0, 0], b: [0.3, 0, 0], r: 0.016, color: '#e6e0d0' },
+    { a: [0.3, 0, 0], b: [0.3, 0, 0], r: 0.035, color: '#9fe6d2' },
+  ]},
+  cane: { name: 'cane', parts: [
+    { a: [-0.05, 0, 0], b: [0.72, 0, 0], r: 0.018, color: '#3a2f26' },
+    { a: [-0.05, 0, 0], b: [-0.05, 0.09, 0], r: 0.024, color: '#8a8f99' },
+  ]},
+  // the bow is held across the hand: its limbs run in y, not x
+  bow: { name: 'bow', parts: [
+    { a: [0.06, 0, 0], b: [0.1, 0.34, 0], r: 0.018, color: '#7a5a34' },
+    { a: [0.06, 0, 0], b: [0.1, -0.34, 0], r: 0.018, color: '#7a5a34' },
+    { a: [0.1, 0.34, 0], b: [0.02, 0.46, 0], r: 0.014, color: '#6b4a2f' },
+    { a: [0.1, -0.34, 0], b: [0.02, -0.46, 0], r: 0.014, color: '#6b4a2f' },
+  ]},
+  crossbow: { name: 'crossbow', parts: [
+    { a: [-0.12, 0, 0], b: [0.5, 0, 0], r: 0.026, color: '#5a4433' },
+    { a: [0.34, 0, -0.3], b: [0.34, 0, 0.3], r: 0.017, color: '#4a3a2c' },
+    { a: [0.34, 0.06, 0], b: [0.5, 0.06, 0], r: 0.014, color: '#9aa1ab' },
+  ]},
+};
+
+/** Held in the off hand. A shield is most of a knight. */
+const OFFHAND: Record<string, WeaponSpec> = {
+  shield: { name: 'shield', parts: [
+    { a: [0.04, -0.26, 0], b: [0.04, 0.26, 0], r: 0.1, color: '#6b7280' },
+    { a: [0.04, 0, -0.2], b: [0.04, 0, 0.2], r: 0.1, color: '#6b7280' },
+    { a: [0.09, 0, 0], b: [0.09, 0, 0], r: 0.06, color: '#b9a06a' },
+  ]},
+  buckler: { name: 'buckler', parts: [
+    { a: [0.04, -0.12, 0], b: [0.04, 0.12, 0], r: 0.075, color: '#7a818c' },
+    { a: [0.08, 0, 0], b: [0.08, 0, 0], r: 0.045, color: '#c2ab74' },
+  ]},
+  torch: { name: 'torch', parts: [
+    { a: [0, 0, 0], b: [0.34, 0, 0], r: 0.02, color: '#4a3a2c' },
+    { a: [0.36, 0, 0], b: [0.44, 0, 0], r: 0.055, color: '#ffb257' },
+  ]},
+};
+
+/**
+ * Longest match wins, so "greatsword" never resolves to "sword" and
+ * "crossbow" never resolves to "bow". Returns what each hand holds.
+ */
+export function weaponsFromWords(desc: string): { main?: WeaponSpec; off?: WeaponSpec } {
+  const d = desc.toLowerCase();
+  const SYNONYM: [RegExp, WeaponSpec][] = [
+    [/greatsword|claymore|zweihander|great sword/, A2.greatsword],
+    [/crossbow|arbalest/, A2.crossbow],
+    [/longbow|shortbow|\bbow\b|archer/, A2.bow],
+    [/scimitar|cutlass|sabre|saber|falchion/, A2.scimitar],
+    [/rapier|estoc|foil\b/, A2.rapier],
+    [/dagger|knive|knife|dirk|shiv|stiletto/, A2.dagger],
+    [/scythe|sickle/, A2.scythe],
+    [/trident|glaive|halberd|polearm/, A2.trident],
+    [/warhammer|war hammer|maul|sledge/, A2.maul],
+    [/\bmace\b|morningstar|flail/, A2.mace],
+    [/\bwand\b|rod\b|sceptre|scepter/, A2.wand],
+    [/staff|stave|quarterstaff/, ARMOURY.staff],
+    [/\bcane\b|walking stick|\bcrook\b/, A2.cane],
+    [/\bhammer\b/, ARMOURY.hammer],
+    [/\bsword\b|blade|longsword|shortsword/, ARMOURY.sword],
+    [/\baxe\b|hatchet|axeman|axemaster|cleaver/, ARMOURY.axe],
+    [/spear|pike|lance|javelin/, ARMOURY.spear],
+    [/tome|orb\b/, ARMOURY.staff],
+    [/\bclub\b|cudgel|bludgeon/, ARMOURY.club],
+  ];
+  let main: WeaponSpec | undefined;
+  for (const [re, w] of SYNONYM) if (re.test(d)) { main = w; break; }
+
+  let off: WeaponSpec | undefined;
+  if (/\bshield\b|shielded|shieldmaiden|slab shield/.test(d)) off = OFFHAND.shield;
+  else if (/buckler/.test(d)) off = OFFHAND.buckler;
+  else if (/torch|lantern/.test(d)) off = OFFHAND.torch;
+  // twin blades: the off hand gets the same weapon back
+  if (!off && main && /twin|dual|two (daggers|blades|swords)|paired/.test(d)) off = main;
+  return { main, off };
+}

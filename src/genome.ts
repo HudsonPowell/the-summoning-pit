@@ -58,9 +58,13 @@ export interface Mood {
 }
 
 export interface Weapon {
-  length: number;
-  r: number;
-  color: string;
+  // the old single capsule — still what the presets carry
+  length?: number;
+  r?: number;
+  color?: string;
+  // what the smith makes: named, several parts, an actual silhouette
+  name?: string;
+  parts?: { a: [number, number, number]; b: [number, number, number]; r: number; color: string }[];
 }
 
 export interface Palette {
@@ -77,6 +81,7 @@ export interface Genome {
   gait: Gait;
   palette: Palette;
   weapon?: Weapon;
+  offhand?: Weapon;   // shield, buckler, torch, or a second blade
 }
 
 // --- palette helpers -------------------------------------------------------
@@ -405,6 +410,7 @@ export function migrateGenome(raw: any): Genome {
       gait: { bodyWave: 0, ...raw.gait },
       palette: raw.palette,
       weapon: raw.weapon,
+      offhand: raw.offhand,
     };
   }
 
@@ -429,6 +435,7 @@ export function migrateGenome(raw: any): Genome {
     gait: { ...base.gait, ...raw.gait },
     palette: raw.palette ?? base.palette,
     weapon: raw.weapon,
+    offhand: raw.offhand,
   };
 }
 

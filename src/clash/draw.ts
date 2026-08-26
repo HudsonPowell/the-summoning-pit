@@ -411,6 +411,7 @@ export class ClashDraw {
     }
     const caps = solvePose(genome, mood, f.phase, p.moving ? 1 : 0, g.tick / 60, intent, collapse, {
       weapon: hero?.weapon,
+      offhand: hero?.offhand,
     });
     if (hurtFlash)
       for (const cp of caps) cp.color = [255, 235, 235];
@@ -457,7 +458,7 @@ export class ClashDraw {
       g.tick / 60,
       intent,
       collapse,
-      { weapon: ch?.weapon },
+      { weapon: ch?.weapon, offhand: ch?.offhand },
     );
     if (hurtFlash)
       for (const cp of caps) cp.color = [255, 235, 235];

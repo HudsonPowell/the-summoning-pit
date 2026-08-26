@@ -15,6 +15,7 @@ import { makeCharacter } from '../src/character';
 import { solvePose } from '../src/pose';
 import { PixelRenderer, Camera } from '../src/render';
 import { drawText, wrap } from './font';
+import { fileNameFor } from '../src/naming';
 
 const HEROES = [
   'a knight in heavy plate with a greatsword',
@@ -106,7 +107,7 @@ for (let i = 0; i < PROMPTS.length; i++) {
   try {
     const g: Genome = migrateGenome(await hatchGenome(prompt));
     const caps = solvePose(g, { tired: 0, angry: 0 }, 0.2, 1, 0, undefined, 0,
-      { weapon: makeCharacter(g).weapon });
+      { weapon: makeCharacter(g).weapon, offhand: makeCharacter(g).offhand });
     height = heightOf(g);
     name = g.name;
     if (!caps.length) throw new Error('no body');
@@ -117,15 +118,29 @@ for (let i = 0; i < PROMPTS.length; i++) {
     if (!Number.isFinite(height) || height <= 0.05) throw new Error('degenerate height');
     chains = g.skeleton.chains.map(c => c.role[0]).join('');
     locomotion = g.skeleton.locomotion;
+    // Frame the creature we actually got, not the one we assumed. Zooming by
+    // height alone made every long animal overflow sideways and read as a
+    // plank — a framing bug that looked exactly like a modelling bug. Measured
+    // as a radius in the ground plane, so the fit holds at any yaw.
+    let reach = 0.2, minY = Infinity, maxY = -Infinity;
+    for (const c of caps) for (const pt of [c.a, c.b]) {
+      reach = Math.max(reach, Math.hypot(pt.x, pt.z) + c.r);
+      minY = Math.min(minY, pt.y - c.r); maxY = Math.max(maxY, pt.y + c.r);
+    }
     const cam: Camera = {
-      yaw: 0.5, pitch: 0.22, ppm: (CELL * 0.46) / Math.max(height, 0.6),
-      cy: height * 0.45, floor: false, blend: 1.1, blendShape: 0.5, blendMix: 1,
+      yaw: 0.5, pitch: 0.22,
+      ppm: (CELL * 0.86) / Math.max(reach * 2, maxY - minY),
+      cy: (minY + maxY) / 2,
+      floor: false, blend: 1.1, blendShape: 0.5, blendMix: 1,
       voidColor: [10, 8, 14],
     };
     renderer.render(buf, caps, cam, 0);
     cell = new Uint8ClampedArray(buf);
     ok = true;
     note = `${g.skeleton.chains.length} chains`;
+    // the creatures themselves are kept — a shelf, not just a picture of one
+    writeFileSync(`${OUT}/${String(i+1).padStart(2,'0')}-${fileNameFor(g)}.json`,
+      JSON.stringify(g, null, 2));
   } catch (e) {
     note = (e as Error).message.slice(0, 60);
   }

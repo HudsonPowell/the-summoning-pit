@@ -11,6 +11,7 @@ import {
   Genome, Skeleton, Gait, ChainSpec, ChainRole, Locomotion, Palette,
 } from './genome';
 import { titleFor } from './naming';
+import { weaponsFromWords } from './smith';
 
 export const HATCH_MODEL =
   (typeof process !== 'undefined' && process.env?.HATCH_MODEL) || 'llama3.2:3b';
@@ -213,6 +214,16 @@ const hexOk = (c: unknown, fb: string) =>
   typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fb;
 
 const ROLES = new Set<ChainRole>(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin']);
+// Words that name a PERSON. A knight, a dwarf, a pirate captain is a body plan
+// before it is anything else, and the model loses that constantly: six of the
+// twenty heroes in roster run 001 came back as `llth` — a mirrored leg pair, a
+// tail and a head. A dog. And an armless creature routes to STRIKE_BITE, so the
+// witch-hunter with a crossbow bit people.
+const HUMANOID = /\b(knight|squire|paladin|priest|priestess|cleric|monk|nun|ranger|hunter|huntress|archer|assassin|rogue|thief|bandit|duell?ist|swordsman|swordswoman|axemaster|spearman|warrior|soldier|guard|captain|pirate|sailor|nomad|wanderer|traveller|traveler|doctor|surgeon|smith|engineer|scholar|sorcerer|sorceress|wizard|witch|warlock|mage|necromancer|shaman|druid|bard|king|queen|prince|princess|lord|lady|noble|peasant|farmer|miner|dwarf|dwarven|elf|elven|elvish|halfling|gnome|human|man\b|woman\b|girl|boy|hag|crone|maiden|shieldmaiden|chieftain|barbarian|berserker|gladiator|mercenary|marauder|raider|cultist|acolyte|inquisitor|templar|samurai|ronin|ninja|monkish|celestial|angel|aasimar|tiefling|orc|goblin|hobgoblin|troll|ogre|giant|lich|vampire|ghoul|zombie|skeleton|wraith|revenant|mummy|golem|automaton)\b/i;
+// "giant", "troll" and "beast" pull toward a person; the animal in the same
+// sentence has the final say. A giant cave spider is a spider.
+const NOT_A_PERSON = /wolf|hound|\bdog\b|\bcat\b|lion|horse|steed|bull\b|boar|deer|stag|\bbear\b|rhino|hippo|elephant|\box\b|goat|\bram\b|chimera|griffin|gryphon|drake|wyvern|dragon|scorpion|crab|toad|frog|newt|gorilla|\bape\b|beetle|spider|worm|slug|whale|shark|\beel\b|\bbat\b|\bowl\b|moth|bird|crawler|mound/i;
+const TAILED_HUMANOID = /lizard|dragon|demon|devil|imp|tiefling|serpent|naga|rat|beast-|kobold|draconic|tailed/i;
 const MANY_LEGGED = /spider|insect|bug|crab|centipede|arachnid|beetle|ant|six|eight|many legs|scuttl/i;
 const SERPENTINE = /snake|serpent|worm|eel|naga|slither|legless|python|viper|cobra|adder|boa|anaconda|mamba|asp\b|wyrm|slug|noodle|tentacle|centipede|leech|lamprey/i;
 const MANY_HEADED = /two[- ]head|three[- ]head|multi[- ]head|hydra|heads\b/i;
@@ -285,6 +296,35 @@ export function validateGenome(raw: any, desc: string): Genome {
     if (heads.length === 2) chains = chains.filter(c => c !== heads[1]);
   }
 
+  // A person is a person. The words won this argument before the model was
+  // asked: two legs, arms that can hold the thing they were described holding,
+  // upright, head on top. Anything else the model drew is kept.
+  const humanoid = HUMANOID.test(desc) &&
+    !NOT_A_PERSON.test(desc) && !MANY_LEGGED.test(desc) && !SERPENTINE.test(desc);
+  if (humanoid) {
+    const legs = chains.filter(c => c.role === 'leg');
+    const arms = chains.filter(c => c.role === 'arm');
+    // one mirrored pair of legs, never a quadruped's two girdles
+    if (legs.length !== 1) {
+      chains = chains.filter(c => c.role !== 'leg');
+      const keep = legs[0];
+      chains.push(keep
+        ? { ...keep, at: 0, mirror: true }
+        : { role: 'leg', at: 0, seg: [0.44, 0.43], r: 0.055, spread: 0.11, mirror: true });
+    } else {
+      legs[0].at = Math.min(legs[0].at, 0.12);
+      legs[0].mirror = true;
+    }
+    // a person has two arms — and without the left one there is no hand for
+    // the shield to be in
+    for (const a of arms) a.mirror = true;
+    if (!arms.length) {
+      chains.push({ role: 'arm', at: 1, seg: [0.3, 0.28], r: 0.05, spread: 0.18, mirror: true });
+    }
+    // a knight has no tail; a lizardfolk does. The words say which.
+    if (!TAILED_HUMANOID.test(desc)) chains = chains.filter(c => c.role !== 'tail');
+  }
+
   // every creature needs a head to read as a creature
   if (!chains.some(c => c.role === 'head')) {
     chains.push({ role: 'head', at: 1, seg: [0.09, 0.12], r: 0.11, spread: 0, ink: 2 });
@@ -297,7 +337,8 @@ export function validateGenome(raw: any, desc: string): Genome {
   // or a genuinely long tapering body; absent that, the thing gets legs.
   let locomotion: Locomotion =
     ['walk', 'slither', 'fly', 'hop'].includes(sk.locomotion) ? sk.locomotion : 'walk';
-  const upright = typeof sk.upright === 'boolean' ? sk.upright : !MANY_LEGGED.test(desc);
+  const upright = humanoid ? true
+    : typeof sk.upright === 'boolean' ? sk.upright : !MANY_LEGGED.test(desc);
 
   // Flying is a claim wings have to back. Without them it's just a hovering
   // blob, which is the same failure wearing a different word.
@@ -307,7 +348,7 @@ export function validateGenome(raw: any, desc: string): Genome {
     // Leglessness has to be earned by the words. Trusting the model's own
     // `locomotion: slither` is not enough — it reaches for it whenever the
     // prompt gives it nothing, and a shrug is not a body plan.
-    const serpentine = SERPENTINE.test(desc);
+    const serpentine = SERPENTINE.test(desc) && !humanoid;
     if (serpentine) {
       locomotion = 'slither';
     } else {
@@ -332,6 +373,37 @@ export function validateGenome(raw: any, desc: string): Genome {
     chains.push(upright
       ? { role: 'arm', at: 1, seg: [0.3, 0.28], r: 0.05, spread: 0.18 }
       : { role: 'tail', at: 0, seg: [0.22, 0.18, 0.13], r: 0.04, spread: 0 });
+  }
+
+  // --- proportion ---------------------------------------------------------
+  // The schema never said a torso has a sane shape, so the model spends its
+  // budget at the extremes: pills (girth as wide as the body is long) and
+  // planks (a slab running off the edge of the frame). Both stop it reading as
+  // a creature. Ratios, not absolutes, so a wolf and a giant are both allowed.
+  const span = body.reduce((a, b) => a + b, 0);
+  const fattest = Math.max(...girth);
+
+  // a person is taller than they are wide, and stands on legs not stumps
+  const maxGirth = humanoid ? span * 0.34 : span * 0.55;
+  if (fattest > maxGirth) {
+    const k = maxGirth / fattest;
+    for (let i = 0; i < girth.length; i++) girth[i] = Math.max(0.02, girth[i] * k);
+  }
+  if (humanoid) {
+    const minLeg = span * 0.85;
+    for (const c of chains) {
+      if (c.role !== 'leg') continue;
+      const total = c.seg.reduce((a, b) => a + b, 0);
+      if (total < minLeg && total > 0) {
+        const k = minLeg / total;
+        c.seg = c.seg.map(v => Math.min(0.9, v * k));
+      }
+    }
+  }
+  // and nothing is longer than the room it stands in, unless it's a snake
+  if (locomotion !== 'slither' && span > 1.8) {
+    const k = 1.8 / span;
+    for (let i = 0; i < body.length; i++) body[i] *= k;
   }
 
   const skeleton: Skeleton = { upright, body, girth, locomotion, chains };
@@ -375,18 +447,14 @@ export function validateGenome(raw: any, desc: string): Genome {
   // names itself — see src/naming.ts.
   const genome: Genome = { name: titleFor(skeleton), skeleton, gait, palette };
 
-  // if the words name a weapon, the creature gets one even when the model forgets
-  const canHold = chains.some(c => c.role === 'arm');
-  if (canHold) {
-    const FORGE: [RegExp, Genome['weapon']][] = [
-      [/axe|hatchet/i, { length: 0.42, r: 0.055, color: '#9aa1ab' }],
-      [/club|cudgel/i, { length: 0.5, r: 0.07, color: '#6b4a2f' }],
-      [/sword|blade|sabre|saber/i, { length: 0.6, r: 0.032, color: '#cfd6e4' }],
-      [/spear|pike|lance|trident/i, { length: 0.85, r: 0.024, color: '#a08a63' }],
-      [/hammer|maul|mace/i, { length: 0.4, r: 0.065, color: '#7a7f8a' }],
-      [/staff|stave|wand|crossbow|bow/i, { length: 0.75, r: 0.026, color: '#8a6d3f' }],
-    ];
-    for (const [re, w] of FORGE) if (re.test(desc)) { genome.weapon = w; break; }
+  // The words name the weapon, and the armoury builds a real one — a crossbow
+  // with limbs, a scimitar that curves, a shield in the off hand. This used to
+  // be a table of lengths and radii, which is why every armed hero was holding
+  // the same grey stick.
+  if (chains.some(c => c.role === 'arm')) {
+    const { main, off } = weaponsFromWords(desc);
+    if (main) genome.weapon = main;
+    if (off) genome.offhand = off;
   }
   return genome;
 }

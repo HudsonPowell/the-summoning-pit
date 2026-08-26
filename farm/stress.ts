@@ -108,7 +108,7 @@ for (let i = 0; i < PROMPTS.length; i++) {
     const g: Genome = migrateGenome(await hatchGenome(prompt || ' '));
     // the physical check: does it stand up and pose without falling apart?
     const caps = solvePose(g, { tired: 0, angry: 0 }, 0.2, 1, 0, undefined, 0,
-      { weapon: makeCharacter(g).weapon });
+      { weapon: makeCharacter(g).weapon, offhand: makeCharacter(g).offhand });
     height = heightOf(g);
     if (!caps.length) throw new Error('no body');
     for (const c of caps) {

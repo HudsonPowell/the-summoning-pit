@@ -20,6 +20,23 @@ One creature, moving, changeable while it moves. No play button — it never sto
 Mood sliders are adverbs: they re-weight the same drivers, they are not new animations.
 The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same genome.
 
+## Play the void
+
+```bash
+PORT=5173 npm run dev
+```
+
+Then open `/void.html?play`. Arrows or WASD to move, **space** to strike,
+**shift+space** for the heavy one, **c** for the controls, **p** to grab a PNG.
+
+You are handed one of the creatures on the shelf and dropped into the pit with
+five others. Nothing else changes: the beasts notice you, close on you and run
+from you exactly as they do each other, because your creature IS one of them —
+the only difference is that its intent comes from a keyboard instead of the
+state machine. Swing near something and you turn to face it. Die and you come
+back after a beat as whatever the pit hands you next, which is also how you
+meet the bestiary.
+
 ## The pit (multiplayer)
 
 ```

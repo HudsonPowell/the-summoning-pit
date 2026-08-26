@@ -27,6 +27,7 @@ export interface Intent {
 
 export interface PoseExtras {
   weapon?: WeaponSpec;
+  offhand?: WeaponSpec;
   breatheAmp?: number;
   breatheRate?: number;
   /**
@@ -325,24 +326,31 @@ export function solvePose(
       caps.push({ a: elbow, b: hand, r: chain.r * 0.9, color: mul(ink, shade * 0.95), part: 'forearm' });
       caps.push({ a: hand, b: hand, r: chain.r * 1.05, color: mul(inks[2], shade * 0.95), part: 'hand' });
 
-      if (pair === 0 && s > 0) {
-        const w = extras?.weapon;
+      // the right hand holds the weapon, the left holds the shield
+      if (pair === 0) {
+        const w = s > 0 ? extras?.weapon : extras?.offhand;
         if (w) {
           const ex = norm(sub(hand, elbow));
           let ez = cross(ex, v3(0, 1, 0));
           if (len(ez) < 1e-3) ez = v3(0, 0, 1);
-          ez = norm(ez);
+          // mirror the grip for the off hand, so a shield faces out and a
+          // second blade curves the other way
+          ez = scale(norm(ez), s > 0 ? 1 : -1);
           const ey = cross(ez, ex);
+          // Grip space is authored for an average arm. A 1 m greatsword on a
+          // 0.6 m imp is a lance, so the weapon scales with the arm holding it.
+          const armLen = chain.seg[0] + (chain.seg[1] ?? chain.seg[0]);
+          const ws = Math.min(1.5, Math.max(0.45, armLen / 0.58));
           const grip = (p: [number, number, number]): V3 =>
-            add(hand, add(scale(ex, p[0]), add(scale(ey, p[1]), scale(ez, p[2]))));
+            add(hand, add(scale(ex, p[0] * ws), add(scale(ey, p[1] * ws), scale(ez, p[2] * ws))));
           for (const part of w.parts) {
-            caps.push({ a: grip(part.a), b: grip(part.b), r: part.r, color: hex(part.color), part: 'weapon' });
+            caps.push({ a: grip(part.a), b: grip(part.b), r: part.r * ws, color: hex(part.color), part: 'weapon' });
           }
-        } else if (genome.weapon) {
+        } else if (s > 0 && genome.weapon?.length) {
           const bladeDir = norm(sub(hand, elbow));
           const tip = add(hand, scale(bladeDir, genome.weapon.length));
-          caps.push({ a: add(hand, scale(bladeDir, 0.06)), b: tip, r: genome.weapon.r,
-            color: hex(genome.weapon.color), part: 'blade' });
+          caps.push({ a: add(hand, scale(bladeDir, 0.06)), b: tip, r: genome.weapon.r ?? 0.03,
+            color: hex(genome.weapon.color ?? '#cfd6e4'), part: 'blade' });
         }
       }
     }

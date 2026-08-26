@@ -99,6 +99,7 @@ export interface Character {
   genome: Genome;                       // skeleton + palette + canonical walk gait
   behaviors: Record<string, Behavior>;
   weapon?: WeaponSpec;
+  offhand?: WeaponSpec;                 // shield / buckler / torch / second blade
   blast: BlastSpec;
 }
 
@@ -213,7 +214,7 @@ export function defaultBehaviors(walk: Gait, style?: { light: StrikeSpec; heavy:
 /** Old single-capsule weapons become one-part specs. */
 export function migrateWeapon(w: any): WeaponSpec | undefined {
   if (!w) return undefined;
-  if (Array.isArray(w.parts)) return w as WeaponSpec;
+  if (Array.isArray(w.parts)) return { name: w.name ?? 'weapon', parts: w.parts };
   return {
     name: 'blade',
     parts: [
@@ -232,6 +233,7 @@ export function makeCharacter(genome: Genome, kind: 'hero' | 'beast' = 'beast'):
     genome,
     behaviors: defaultBehaviors(genome.gait, styleFor(weapon?.name ?? genome.name, hasArms, hasTail)),
     weapon: migrateWeapon(genome.weapon),
+    offhand: migrateWeapon(genome.offhand),
     blast: { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame', delay: 2.5, radius: 2 },
   };
 }
@@ -242,6 +244,7 @@ export function migrateCharacter(raw: any): Character {
     const c = raw as Character;
     c.genome = migrateGenome(c.genome);
     c.weapon = migrateWeapon(c.weapon);
+    c.offhand = migrateWeapon(c.offhand);
     c.blast ??= { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame', delay: 2.5, radius: 2 };
     c.blast.delay ??= 2.5;
     c.blast.radius ??= 2;

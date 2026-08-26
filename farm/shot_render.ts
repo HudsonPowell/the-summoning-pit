@@ -31,7 +31,7 @@ const caps: Capsule[] = [];
 for (const ag2 of sim.agents) {
   const local = solvePose(ag2.genome, { tired: 0, angry: 0.6 }, ag2.phase, ag2.move, ag2.idleT,
     ag2.strikeT >= 0 ? { slash: { t: Math.min(1, ag2.strikeT / 0.6), weight: slashWeight(Math.min(1, ag2.strikeT / 0.6)),
-      spec: (ag2.ch.behaviors['attack-light'] as any).strike } } : undefined, 0, { weapon: ag2.ch.weapon });
+      spec: (ag2.ch.behaviors['attack-light'] as any).strike } } : undefined, 0, { weapon: ag2.ch.weapon, offhand: ag2.ch.offhand });
   for (const c of local) {
     const p = rotY(c.a, -ag2.heading), q = rotY(c.b, -ag2.heading);
     caps.push({ ...c, a: v3(p.x + ag2.x, p.y, p.z + ag2.z), b: v3(q.x + ag2.x, q.y, q.z + ag2.z) });

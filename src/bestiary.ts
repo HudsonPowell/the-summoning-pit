@@ -114,6 +114,7 @@ function frame(now: number) {
     };
     const caps = solvePose(card.ch.genome, { tired: 0, angry: 0 }, card.phase, 1, 0, undefined, 0, {
       weapon: card.ch.weapon,
+      offhand: card.ch.offhand,
     });
     card.renderer.render(card.img.data, caps, cam, 0);
     card.ctx.putImageData(card.img, 0, 0);
