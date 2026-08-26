@@ -8,6 +8,7 @@
 // smooth however sparse the wire is.
 
 import { newPacts } from './pacts';
+import { scatterProps } from '../props';
 import { Character, migrateCharacter } from '../character';
 import { effectiveGait } from '../genome';
 import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
@@ -40,7 +41,9 @@ export class LiveVoid {
 
   constructor() {
     this.sim = {
-      pacts: newPacts(),
+      seed: 1337,
+    props: scatterProps(1337, 18),
+    pacts: newPacts(),
     agents: [], shots: [], roster: [], events: [],
       t: 0, spawnT: 0, population: 0, peace: 0.35,
     };

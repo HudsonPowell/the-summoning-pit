@@ -8,6 +8,7 @@ import { Genome, effectiveGait, heightOf } from '../genome';
 import { Temper, temperOf } from '../temper';
 import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
 import { Pacts, newPacts, stanceOf } from './pacts';
+import { Prop, scatterProps } from '../props';
 import { Record as Deeds, takeSpoil } from './spoils';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
@@ -78,6 +79,8 @@ export interface Shot {
 }
 
 export interface VoidSim {
+  props: Prop[];             // the scenery, grown from sim.seed
+  seed: number;              // the whole pit's layout is this number
   pacts: Pacts;              // who spares whom, and who is owed a killing
   agents: Agent[];
   shots: Shot[];
@@ -149,6 +152,8 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
 
 export function createVoid(roster: Character[], population = 4): VoidSim {
   const sim: VoidSim = {
+    seed: 1337,
+    props: scatterProps(1337, 18),
     pacts: newPacts(),
     agents: [], shots: [], roster, events: [], t: 0, spawnT: 0, population, peace: 0.35,
   };
@@ -646,6 +651,25 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       phase: a.phase,
       dead: a.deadT >= 0,
     });
+
+    // the scenery is in the way. A rock you can walk through is set dressing;
+    // a rock you have to go round is a place.
+    for (const pr of sim.props) {
+      if (pr.radius <= 0) continue;
+      const dx = a.x - pr.x, dz = a.z - pr.z;
+      const d = Math.hypot(dx, dz);
+      const min = pr.radius + a.bulk * 0.22;
+      if (d > 0.0001 && d < min) {
+        const push = min - d;
+        a.x += (dx / d) * push;
+        a.z += (dz / d) * push;
+        if (push > 0.01) {
+          // walking into a boulder should be felt, not silently corrected
+          jolt(a.sec, Math.min(0.18, push * 2.2), Math.atan2(-dz, -dx) - a.heading, a.bulk);
+          if (a.state === 'wander') a.aim = Math.atan2(dz, dx) + rnd(-0.7, 0.7);
+        }
+      }
+    }
 
     // soft separation so bodies do not occupy each other
     for (const o of sim.agents) {

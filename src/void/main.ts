@@ -310,16 +310,19 @@ function driveCamera(sim: VoidSim, dt: number) {
   for (const a of live) { cx += a.x; cz += a.z; }
   if (live.length) { cx /= live.length; cz /= live.length; }
 
-  // far enough out that everything in the pit is inside the frame
-  let reach = 3.2;
-  for (const a of live) reach = Math.max(reach, Math.hypot(a.x - cx, a.z - cz) + a.bulk);
+  // Far enough out to take the pit in, but one creature wandering to the edge
+  // should not shrink everyone else to specks: frame the bulk of the cast and
+  // let a stray sit outside the frame until it comes back.
+  const spread = live.map(a => Math.hypot(a.x - cx, a.z - cz)).sort((p, q) => p - q);
+  const most = spread.length ? spread[Math.floor(spread.length * 0.7)] : 3;
+  const reach = Math.max(2.6, Math.min(5.4, most + 1.6));
 
   watchYaw = (watchYaw + dt * 0.045) % (Math.PI * 2);   // a turn every 2.3 min
 
   cam.cx = smoothDamp(cam.cx ?? cx, cx, rig.vx, 2.2, dt);
   cam.cz = smoothDamp(cam.cz ?? cz, cz, rig.vz, 2.2, dt);
   cam.cy = smoothDamp(cam.cy, 0.9, rig.vy, 1.6, dt);
-  const wide = (view.size.H * 0.34 / Math.max(3.2, reach)) * look.zoom * Math.exp(orbit.zoom);
+  const wide = (view.size.H * 0.46 / reach) * look.zoom * Math.exp(orbit.zoom);
   cam.ppm = smoothDamp(cam.ppm, wide, rig.vppm, 1.8, dt);
   cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), wrapAngle(watchYaw + orbit.yaw), rig.vyaw, 1.2, dt);
   rig.ax = cam.cx;
@@ -432,6 +435,48 @@ function sigilCapsules(a: Agent, t: number): Capsule[] {
   ];
 }
 
+/**
+ * Health, built out of the same thing everything else is built out of: two
+ * capsules in the world, so it sits in the blend field and blobs at its ends
+ * like a body does. No overlay, no canvas text, nothing that would break if
+ * you moved the camera.
+ *
+ * It is laid along the camera's right, so it reads as a bar from wherever you
+ * are standing rather than foreshortening into a dot.
+ */
+function healthCapsules(a: Agent, mine: boolean): Capsule[] {
+  if (a.deadT >= 0) return [];
+  const frac = Math.max(0, Math.min(1, a.hp / Math.max(1, a.maxHp)));
+  // yours is always legible; everything else earns its bar by bleeding
+  const wounded = frac < 1 || a.hurtT > 0;
+  if (!mine && !wounded) return [];
+
+  const w = Math.max(0.34, Math.min(0.78, a.bulk * 0.46));
+  const y = a.bulk * 1.16 + (mine ? 0.26 : 0.1);
+  // the camera's right, in world terms
+  const rx = Math.cos(-cam.yaw), rz = Math.sin(-cam.yaw);
+  const half = w / 2;
+  const lx = a.x - rx * half, lz = a.z - rz * half;
+  const r = Math.max(0.022, a.bulk * 0.026);
+
+  const out: Capsule[] = [{
+    a: v3(lx, y, lz), b: v3(a.x + rx * half, y, a.z + rz * half),
+    r, color: [26, 22, 30], part: 'hpTrack',
+  }];
+  if (frac > 0.001) {
+    // red when it is nearly over, and it does not change hue before then
+    const col: [number, number, number] = frac > 0.34
+      ? (mine ? [110, 232, 214] : [206, 214, 224])
+      : [226, 96, 78];
+    out.push({
+      a: v3(lx, y, lz),
+      b: v3(lx + rx * w * frac, y, lz + rz * w * frac),
+      r: r * 0.72, color: col, part: 'hpFill',
+    });
+  }
+  return out;
+}
+
 // --- the feed: the same event stream, read aloud ----------------------------
 
 const feedLines: string[] = [];
@@ -522,9 +567,12 @@ async function boot() {
     driveCamera(sim, dt);
 
     const caps: Capsule[] = [];
+    // scenery first: it never moves, so it is the same list every frame
+    for (const pr of sim.props) caps.push(...pr.caps);
     for (const a of sim.agents) {
       caps.push(...agentCapsules(a, sim.t));
       caps.push(...sigilCapsules(a, sim.t));
+      caps.push(...healthCapsules(a, a.by === ME));
     }
     for (const s of sim.shots) caps.push(...shotCapsules(s));
     view.render(caps, cam, 0);

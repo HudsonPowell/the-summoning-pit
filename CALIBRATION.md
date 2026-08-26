@@ -840,3 +840,31 @@ which I would have found by reasoning:
 The live client rolls its own swing variation from `(event time, agent id)`
 rather than putting a spec on the wire: damage was settled on the server, so
 the arc is cosmetic and does not need to agree.
+
+## scenery, made of the same stuff (2026-08-27)
+
+`src/props.ts` — rocks, boulders, ferns, fungus, crystal shards, bones, stumps.
+Built the way creatures are: points and radii, no meshes, no sprites, so they go
+through the same capsule field and blob into themselves and into each other
+exactly like a body does. `npm run props` renders the sheet.
+
+- **Grown from a seed**, so the pit's layout is a NUMBER: it costs nothing to
+  send and comes back identical after a restart.
+- **A plain LCG fed consecutive seeds returns nearly the same first value**, and
+  the first value drawn is the colour — which is why three crystals in a row
+  came out identical gold. The seed is scrambled (xorshift-multiply) before the
+  stream starts. Anything seeded per-instance needs this.
+- **Only solid things block**: rocks, boulders and stumps have a radius and push
+  creatures out, and a real push jolts the springs and makes a wanderer pick a
+  new heading. Ferns and bones are walked through.
+- Two shapes needed rework after looking at them: a crystal that leans as far as
+  it rises is a gold blob with spikes in it (now mostly vertical, thin base), and
+  a stump taller than it is wide is a post — and its roots must clear the trunk's
+  own radius or the blend swallows them whole.
+
+## a health bar with no UI in it
+
+Two capsules in the world, laid along the camera's right so they read as a bar
+from any angle instead of foreshortening to a dot. Being in the field means it
+blobs at its ends like everything else, and nothing breaks when the camera
+moves. Yours is always shown; everything else earns its bar by bleeding.
