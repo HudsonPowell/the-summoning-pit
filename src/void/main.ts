@@ -142,13 +142,23 @@ async function loadRoster(): Promise<Character[]> {
 // it — drag to orbit, wheel to zoom — but it drifts back, because losing your
 // own summon in a crowd is the one thing that must not happen.
 
+// No account, no name, no handle. An id that lives as long as the tab does,
+// which is enough to know which creatures are yours and to be the thing a
+// pact link points at.
+const ME = (() => {
+  const k = 'void-me';
+  let v = sessionStorage.getItem(k);
+  if (!v) { v = Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, v); }
+  return v;
+})();
+
 let yours: Agent | null = null;
 const orbit = { yaw: 0, zoom: 0, idle: 99 };
 
 /** The most recent thing you summoned that is still standing. */
 function yourAgent(sim: VoidSim): Agent | null {
   if (yours && yours.deadT < 0 && sim.agents.includes(yours)) return yours;
-  const mine = sim.agents.filter(a => a.by === 'you' && a.deadT < 0);
+  const mine = sim.agents.filter(a => a.by === ME && a.deadT < 0);
   yours = mine.length ? mine[mine.length - 1] : null;
   return yours;
 }
@@ -173,7 +183,7 @@ function buildSummon(sim: VoidSim): void {
       const g = await hatchGenome(desc, undefined, undefined, chars => {
         status.textContent = `summoning… ${chars}`;
       });
-      const a = spawnChar(sim, makeCharacter(g, 'beast'), 'you');
+      const a = spawnChar(sim, makeCharacter(g, 'beast'), ME);
       yours = a;
       status.textContent = `${a.ch.name} answers`;
       director.punch(0.7);
@@ -316,10 +326,9 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
  * being a two-headed blob in a scrum of six others — which a name floating in
  * 5px type would not.
  */
-const SIGIL: Record<string, [number, number, number]> = {
-  you: [110, 232, 214],
-};
+const SIGIL: Record<string, [number, number, number]> = {};
 function sigilColor(by: string): [number, number, number] {
+  if (by === ME) return [110, 232, 214];
   if (SIGIL[by]) return SIGIL[by];
   // a stable colour per owner, so a friend is the same colour every session
   let h = 0;

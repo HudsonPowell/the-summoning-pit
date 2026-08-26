@@ -7,6 +7,7 @@ import { Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT } from '../char
 import { Genome, effectiveGait, heightOf } from '../genome';
 import { Temper, temperOf } from '../temper';
 import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
+import { Pacts, newPacts, stanceOf } from './pacts';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
 
@@ -72,6 +73,7 @@ export interface Shot {
 }
 
 export interface VoidSim {
+  pacts: Pacts;              // who spares whom, and who is owed a killing
   agents: Agent[];
   shots: Shot[];
   roster: Character[];
@@ -134,6 +136,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
 
 export function createVoid(roster: Character[], population = 4): VoidSim {
   const sim: VoidSim = {
+    pacts: newPacts(),
     agents: [], shots: [], roster, events: [], t: 0, spawnT: 0, population, peace: 0.35,
   };
   for (let i = 0; i < population; i++) spawnOne(sim, true);
@@ -253,7 +256,13 @@ function pickTarget(sim: VoidSim, a: Agent, maxR: number): Agent | null {
     const d = Math.hypot(o.x - a.x, o.z - a.z);
     if (d > maxR) continue;
 
+    // an ally is not a target, whatever else is true of it
+    const stance = stanceOf(sim.pacts, a.by, o.by);
+    if (stance === 'ally') continue;
+
     let score = 1 - d / maxR;                       // close is easy
+    // a feud outweighs sense: you came here for them
+    if (stance === 'feud') score += 1.4;
     score += (1 - o.hp / Math.max(1, o.maxHp)) * 0.55;  // wounded is easier
     // size it up: a big thing is only appealing if you have the nerve
     const odds = (a.bulk - o.bulk) * 0.5 + (a.temper.bravery - 0.5) * 0.8;
@@ -277,6 +286,21 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
   // the blow goes into the body, not just into the hit points
   const fromYaw = Math.atan2(fromZ - a.z, fromX - a.x) - a.heading;
   jolt(a.sec, a.hp <= 0 ? 0.55 : 0.3, fromYaw, a.bulk);
+
+  // Anything that has sworn to this one comes running. This is the only way a
+  // pact is ever visible: nothing is announced, you just watch two creatures
+  // that have no reason to help each other converge on whoever swung.
+  if (by && a.by) {
+    for (const o of sim.agents) {
+      if (o === a || o === by || o.deadT >= 0) continue;
+      if (stanceOf(sim.pacts, o.by, a.by) !== 'ally') continue;
+      if (stanceOf(sim.pacts, o.by, by.by) === 'ally') continue;  // torn — stays out
+      if (o.state === 'fight' || o.state === 'flee') continue;
+      if (Math.hypot(o.x - a.x, o.z - a.z) > NOTICE_R * 1.5) continue;
+      o.target = by;
+      setState(o, 'approach');
+    }
+  }
   // knocked back along the blow
   const d = Math.hypot(a.x - fromX, a.z - fromZ) || 1;
   a.x += ((a.x - fromX) / d) * 0.35;
@@ -453,10 +477,17 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         a.target = other;
         setState(a, 'approach');
         sim.events.push({ kind: 'notice', t: sim.t, x: a.x, z: a.z, actor: whoOf(a), target: whoOf(other) });
-        // being stalked is worth reacting to
+        // Being stalked is worth reacting to — unless you have sworn to spare
+        // them, in which case you do not raise a hand even now. That is what
+        // makes a one-way pact cost something: your creatures will stand there
+        // and take it from someone who never swore anything back.
         if (other.state === 'wander' || other.state === 'think') {
-          other.target = a;
-          setState(other, Math.random() < other.temper.bravery ? 'approach' : 'flee');
+          if (stanceOf(sim.pacts, other.by, a.by) === 'ally') {
+            setState(other, 'flee');
+          } else {
+            other.target = a;
+            setState(other, Math.random() < other.temper.bravery ? 'approach' : 'flee');
+          }
         }
       }
     }

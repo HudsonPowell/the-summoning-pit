@@ -7,6 +7,7 @@
 // own cadence, and strikes are started by events — so the animation stays
 // smooth however sparse the wire is.
 
+import { newPacts } from './pacts';
 import { Character, migrateCharacter } from '../character';
 import { effectiveGait } from '../genome';
 import { Agent, VoidSim, VoidEvent, Shot, makeAgent } from './sim';
@@ -33,7 +34,8 @@ export class LiveVoid {
 
   constructor() {
     this.sim = {
-      agents: [], shots: [], roster: [], events: [],
+      pacts: newPacts(),
+    agents: [], shots: [], roster: [], events: [],
       t: 0, spawnT: 0, population: 0, peace: 0.35,
     };
   }
