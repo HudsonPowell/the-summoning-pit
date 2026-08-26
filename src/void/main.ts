@@ -7,7 +7,8 @@ import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { PixelView } from '../view';
-import { createVoid, stepVoid, focusOf, spawnOne, Agent, VoidSim } from './sim';
+import { createVoid, stepVoid, spawnOne, Agent, VoidSim } from './sim';
+import { Director } from './director';
 
 const KEY = 'void-look';
 
@@ -22,6 +23,9 @@ interface Look {
   floorLift: number;
   tile: number;
   round: number;       // 0 = true circle on the ground, 1 = circle on screen
+  closeness: number;
+  response: number;
+  lead: number;
   voidCol: string;
   floorColA: string;
   floorColB: string;
@@ -37,8 +41,9 @@ const DEFAULT_LOOK: Look = {
   res: 480, zoom: 1, blend: 0.9, blendShape: 0.5, blendMix: 1,
   floorRadius: 12, floorPower: 2.4, floorLift: 1, tile: 1,
   round: 1,
+  closeness: 0.72, response: 0.5, lead: 0.5,
   voidCol: '#000000', floorColA: '#2a2f3a', floorColB: '#22262f',
-  flat: false, pitch: 0.34, orbit: 0.05, population: 4, peace: 0.35,
+  flat: false, pitch: 0.34, orbit: 0.16, population: 4, peace: 0.35,
   panel: true,
 };
 
@@ -132,35 +137,21 @@ async function loadRoster(): Promise<Character[]> {
 
 // --- camera: a operator who likes the action centred and slightly circled ---
 
-const camState = { x: 0, z: 0, ppm: 40, yaw: 0.6, shake: 0 };
+const director = new Director();
 
 function driveCamera(sim: VoidSim, dt: number) {
-  const f = focusOf(sim);
-  // ease toward the action, faster when something is kicking off
-  const follow = 1 - Math.exp(-(0.9 + f.tension * 1.6) * dt);
-  camState.x += (f.x - camState.x) * follow;
-  camState.z += (f.z - camState.z) * follow;
-
-  // FRAME the cast rather than sitting at a fixed magnification: work out how
-  // many metres need to be on screen, then set px-per-metre from the buffer
-  // width. Resolution therefore still only changes density, never framing.
-  // fit BOTH axes: the cast spreads across the ground, but the pitch squashes
-  // that spread vertically while the creatures themselves stand up into it
-  const acrossM = Math.max(3.4, f.radius * 2 + 2.6);
-  const upM = f.radius * 2 * Math.sin(look.pitch) + 2.6;
-  const bufW = view.size.W, bufH = view.size.H;
-  const fit = Math.min(bufW / acrossM, bufH / upM);
-  const wantPpm = Math.min(fit * look.zoom, 60 * look.zoom);
-  camState.ppm += (wantPpm - camState.ppm) * (1 - Math.exp(-1.1 * dt));
-
-  camState.yaw += look.orbit * (1 + f.tension) * dt;
-  camState.shake *= Math.exp(-6 * dt);
-  cam.cx = camState.x;
-  cam.cz = camState.z;
-  cam.ppm = camState.ppm;
-  cam.yaw = camState.yaw;
-  // sit the eye near chest height of whatever is biggest on screen
-  cam.cy = 0.9;
+  const f = director.update(sim, dt, {
+    closeness: look.closeness,
+    response: look.response,
+    lead: look.lead,
+    sway: look.orbit,
+    pitch: look.pitch,
+  }, view.size.W, view.size.H);
+  cam.cx = f.x;
+  cam.cz = f.z;
+  cam.ppm = f.ppm * look.zoom;
+  cam.yaw = f.yaw;
+  cam.cy = f.cy;
 }
 
 // --- drawing ----------------------------------------------------------------
@@ -210,7 +201,10 @@ async function boot() {
   let last = performance.now();
   function tick(dt: number) {
     stepVoid(sim, dt);
-    for (const e of sim.events) if (e.type === 'die') camState.shake = 1;
+    for (const e of sim.events) {
+      if (e.type === 'die') director.punch(1);
+      else if (e.type === 'hit') director.punch(0.45);
+    }
     driveCamera(sim, dt);
 
     const caps: Capsule[] = [];
@@ -229,7 +223,7 @@ async function boot() {
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
-    sim, cam, look,
+    sim, cam, look, director,
     tick,
     refit: fitCanvas,
     run: (seconds: number, dt = 1 / 60) => {
@@ -290,9 +284,12 @@ function buildPanel(sim: VoidSim) {
   sl('peace', 0, 1, 0.05, () => look.peace, v => { look.peace = v; sim.peace = v; });
 
   head('camera');
+  sl('closeness', 0, 1, 0.02, () => look.closeness, v => { look.closeness = v; });
   sl('zoom', 0.4, 2.4, 0.05, () => look.zoom, v => { look.zoom = v; });
   sl('pitch', 0, 0.9, 0.01, () => look.pitch, v => { look.pitch = v; });
-  sl('orbit', -0.3, 0.3, 0.01, () => look.orbit, v => { look.orbit = v; });
+  sl('smoothing', 0.12, 1.6, 0.02, () => look.response, v => { look.response = v; });
+  sl('anticipate', 0, 1.4, 0.05, () => look.lead, v => { look.lead = v; });
+  sl('sway', 0, 0.8, 0.02, () => look.orbit, v => { look.orbit = v; });
 
   head('the pool of light');
   sl('radius', 3, 25, 0.5, () => look.floorRadius, v => { look.floorRadius = v; });

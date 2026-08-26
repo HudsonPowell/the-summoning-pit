@@ -456,3 +456,28 @@ no typography anywhere, colour control over the dark, higher resolution.
   spread times `sin(pitch)` plus creature height against buffer height —
   otherwise portrait and ultrawide windows frame badly.
 - `c` toggles the drawer, `p` captures a PNG. Resolution runs to 1600.
+
+### The void's camera operator (2026-08-25)
+Replaced "average everyone and zoom to fit" with a director in
+`src/void/director.ts`, split into two jobs that must stay apart: DECIDE the
+shot, then MOVE to it.
+- **Shot selection** scores candidates each frame — kill 130, brawl 110,
+  duel 100 + drama (rises as the pair's HP falls), stalk 70, solo 30+size —
+  but only cuts when the subject is gone, the score beats the current by 25,
+  or the shot is 11 s stale. `MIN_HOLD` 2.2 s stops it twitching between
+  subjects. Measured over 20 s: duel 22 samples, brawl 10, stalk 4, solo 4.
+- **Movement is a critically damped spring** (Unity-style `smoothDamp` with a
+  velocity term), not an exponential lerp: it eases in *and* out, never
+  overshoots, and handles a target jump gracefully. Angles use the same
+  spring on the wrapped delta. After a cut, `settle` runs the spring at 45%
+  of its usual time for 0.7 s so the move is decisive rather than drifty.
+- **Anticipation**: for a single subject the look-at is pushed ahead by
+  `speed × move × lead` seconds, so the camera leads instead of trailing.
+- **Angle is chosen to read the action**: a pair sets yaw to
+  `atan2(dz, dx)` so both are across the screen; a lone creature gets
+  `heading + 0.75 − π/2`, a three-quarter FRONT view rather than its back.
+  `sway` then drifts either side of that ideal instead of orbiting blindly.
+- Framing: duels and kills get an extra 0.82 tightness multiplier. Closeness
+  0.72 with the new margins reaches 73–164 px/m where the old camera sat
+  near 46 — it actually comes close now.
+- Hits punch the shake 0.45, deaths 1.0.
