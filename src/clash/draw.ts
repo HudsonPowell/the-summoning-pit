@@ -7,7 +7,7 @@ import {
   Game, GW, GH, TILE, SUB, T, Pickup, Candle, Beast, Pattern,
   STRIKE_TICKS, BITE_TOTAL, BITE_WINDUP,
 } from './sim';
-import { Genome, Mood, scaleSkeleton } from '../genome';
+import { Genome, Mood, scaleSkeleton, heightOf } from '../genome';
 import { Character, StrikeSpec, DEFAULT_STRIKE_LIGHT } from '../character';
 import { solvePose, slashWeight, Intent, Capsule } from '../pose';
 import { rotY, TAU } from '../vec';
@@ -100,12 +100,6 @@ export class ClashDraw {
     return { ...g, skeleton: scaleSkeleton(g.skeleton, { legs: 1, arms: 1, head: 1.1, bulk: 1.6, width: 1 }) };
   }
 
-  private heightOf(g: Genome): number {
-    const sk = g.skeleton;
-    const legs = sk.chains.filter(c => c.role === 'leg' && c.attach === 'hip');
-    const legLen = legs.length ? Math.max(...legs.map(c => c.seg[0] + c.seg[1])) : 0.8;
-    return sk.prone ? legLen + sk.torsoR + sk.headR * 2 : legLen + sk.spine + sk.neck + sk.headR * 2;
-  }
 
   private tileHash(x: number, y: number): number {
     let h = (x * 374761393 + y * 668265263) >>> 0;
@@ -341,7 +335,7 @@ export class ClashDraw {
    * works, so diagonals orient properly and turns read as turns.
    */
   private figCam(g: Genome): Camera {
-    const h = this.heightOf(g);
+    const h = heightOf(g);
     const ppm = Math.min(15, 24 / h);
     return {
       yaw: 0, pitch: 0.3, ppm, cy: h * 0.47,

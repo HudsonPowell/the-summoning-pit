@@ -481,3 +481,40 @@ shot, then MOVE to it.
   0.72 with the new margins reaches 73–164 px/m where the old camera sat
   near 46 — it actually comes close now.
 - Hits punch the shake 0.45, deaths 1.0.
+
+### Genome v3 — a vocabulary wide enough to be worth conjuring (2026-08-25)
+Jody: "if everything gives you approximately the same beast, there's no point
+conjuring." The diagnosis was NOT the model — **the schema had no words for a
+hippo.** v2 could say: one spine (a single number), one hardcoded head on a
+hardcoded neck, limbs at exactly two girdles, everything mirrored, four inks.
+A 70B model would have produced the same sameness.
+- **The body is now a curve**: `body[]` segment lengths rear→front with
+  `girth[]` radii along it, and every chain attaches at `at` ∈ 0..1 ALONG that
+  curve. One abstraction yields snakes (long body, no legs), hippos (short fat
+  body, stumpy legs), spiders (four leg chains at 0.6-1.0), hydras (two head
+  chains) and horns/fins. `girth` is where bulk lives — it does more for
+  silhouette than any other field.
+- New roles `head | horn | fin`; `mirror` per chain (asymmetry — one huge arm);
+  `ink` index per chain; `locomotion: walk|slither|fly|hop`.
+- **The gait rule generalises**: few legs offset by `at * 0.25` (the old
+  lateral-sequence walk, preserved); three or more leg chains offset by index
+  so a wave runs down the body instead of all legs marching together.
+- **Exemplar retrieval beats prompt prose.** `pickExemplars()` scores the ten
+  presets against the words and shows the model the two nearest PLUS a
+  deliberate contrast (a legless serpent, or a hound if it already has one).
+  Asking for a hippo now shows it a hippo. This mattered more than model size.
+- `format` now takes the full JSON **schema**, not `'json'` — shape is
+  constrained at the token level, so structural repair barely fires.
+- Repairs that must stay code, because a 3B still gets them wrong: `at` has a
+  meaning (heads clamped ≥0.78, tails ≤0.22, wings 0.55-0.95 — a head at 0 is
+  a misread axis, not a new creature); stacked heads get pushed apart into a
+  leaning pair; a legless creature becomes `slither` rather than having legs
+  forced onto it (the old bug); slither enforces `bodyWave ≥ 0.6` or it renders
+  as a stick.
+- Wing elevation must stay lateral (`0.2 + flap*0.55`). Reaching vertical
+  projects to a spike, not a wing.
+- Verified: "a hippo" → quadruped, "a giant serpent" → legless slitherer,
+  "a scuttling crab beast" → three leg pairs, "a two-headed ogre" → two heads.
+  Four unmistakably different silhouettes from four prompts.
+- `farm/migrate_check.ts` loads and poses every saved creature (v1/v2/v3) and
+  runs in `npm test` — 20/20 clean.

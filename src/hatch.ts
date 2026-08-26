@@ -1,52 +1,159 @@
 // Text -> genome, shared by the studio (browser) and the farm CLI (node).
-// A local model writes the genome; the clamps are the type-checker; the
-// structural repairs guarantee it can stand. Everything stays on-machine.
+//
+// Three things carry the quality: a vocabulary rich enough to describe a
+// hippo, EXEMPLARS chosen to match the prompt (a snake request should be
+// shown a snake, not three bipeds), and a JSON schema that constrains
+// generation at the token level so the shape is right by construction.
+// The clamps are the type-checker; the solver is the physics check.
 
 import {
-  defaultBiped, imp, hound, Genome, Skeleton, Gait, ChainSpec,
+  defaultBiped, imp, hound, troll, ogre, hippo, serpent, raptor, spider, hydra,
+  Genome, Skeleton, Gait, ChainSpec, ChainRole, Locomotion, Palette,
 } from './genome';
 
-export const HATCH_MODEL = 'llama3.2:3b';
-export const OLLAMA_URL = 'http://localhost:11434';
+export const HATCH_MODEL =
+  (typeof process !== 'undefined' && process.env?.HATCH_MODEL) || 'llama3.2:3b';
+export const OLLAMA_URL =
+  (typeof process !== 'undefined' && process.env?.OLLAMA_URL) || 'http://localhost:11434';
+
+// --- the vocabulary --------------------------------------------------------
 
 const SCHEMA_NOTES = `
-You design creatures for a game as JSON "genomes". Skeleton rules:
-- "prone": true = quadruped (horizontal spine), false = upright biped-like.
-- "chains" is a list of limbs. role: "leg" | "arm" | "wing" | "tail".
-  attach: "hip" (rear/lower girdle) or "chest" (front/upper girdle).
-  Every leg/arm/wing chain is automatically mirrored left+right, so ONE
-  arm chain means TWO arms. A tail is single. seg = segment lengths in
-  metres (use exactly 2 for legs/arms/wings; 2-3 for tails).
-  spread = sideways offset of the pair. r = limb thickness.
-- A creature MUST have at least one leg chain. Upright creatures need hip legs.
-  Quadrupeds (prone: true) need BOTH a hip leg chain and a chest leg chain,
-  and should have NO arm chains.
-- SIZE MATTERS. Leg seg lengths set the height: tiny creature legs 0.1-0.18
-  each, small/dwarf/stocky 0.2-0.3, human-sized 0.4-0.5, huge/towering
-  0.55-0.7. Match thickness r to bulk: wiry 0.02-0.04, average 0.05,
-  massive/heavy-set 0.08-0.12. Stocky = short legs + wide hipW/chestW + big r.
-- Use exactly ONE arm chain and ONE hip leg chain unless the description
-  explicitly asks for extra limbs (four arms, six legs, etc.).
-- If the description mentions a held weapon (axe, club, sword, spear, hammer),
-  you MUST include the "weapon" object.
-- gait numbers: cadence 0.2-2.2 (steps tempo; small quick things high, heavy
-  things low), stride 0.2-2.4 (metres per cycle, roughly leg length x 1.5),
-  lean/slump = forward hunch, armSwing 0-1, headPitch = head droop,
-  flapAmp = wing beat, tailWave = tail wag. All same units as the examples.
-- palette: hex colours that match the description's material and mood.
-  weapon: optional, held in the first arm pair.
-Respond with ONLY a JSON object shaped exactly like the examples, with keys
-name, skeleton, gait, palette, and optionally weapon. Make the numbers and
-shapes express the personality in the description.`;
+You design creatures for a game as JSON "genomes". A creature is a BODY CURVE
+with limbs hanging off it. Get the body right first — it is most of the shape.
+
+skeleton.body: segment lengths from TAIL end to HEAD end. Few short segments =
+  compact (ape, dwarf). Many segments = long (snake, lizard, dragon, worm).
+skeleton.girth: radius at each point down that body — THIS is where bulk lives.
+  A hippo is [0.16, 0.29, 0.30, 0.22] (a barrel). A snake tapers
+  [0.04, 0.10, 0.08, 0.05]. A wiry imp is [0.07, 0.075].
+skeleton.upright: true = stands like a person, false = body runs level like an
+  animal. Most beasts are false.
+skeleton.locomotion: "walk" | "slither" | "fly" | "hop". Legless things MUST be
+  "slither". Winged things that stay airborne are "fly".
+
+skeleton.chains: everything that hangs off the body. Each has:
+  role: "leg" | "arm" | "wing" | "tail" | "head" | "horn" | "fin"
+  at:   WHERE along the body, 0 = tail end, 1 = head end. A quadruped puts legs
+        at about 0.1 and 0.9. A spider puts four leg chains at 0.6-1.0. Wings
+        belong near 0.7-0.9. A head is at 1.
+  seg:  segment lengths. For a head this is the neck, then the skull/snout —
+        a long snout is a long second segment. 1-4 numbers.
+  r:    thickness. spread: how far out to the side the pair sits.
+  mirror: legs/arms/wings/horns are mirrored into a PAIR automatically. Set
+        mirror:false for a single limb (one huge arm). Tails and heads are
+        single by default — set mirror:true on a head chain for TWO HEADS.
+  ink:  0 torso colour, 1 limb colour, 2 head colour, 3 accent.
+  angle: pitch. Head carriage, horn rake, fin lean.
+
+Ideas the vocabulary can express, so use it: barrel-bodied beasts, long
+serpents with no legs at all, many-legged scuttlers, two-headed things, horns
+and back fins, one oversized arm, stubby legs under a huge body, long necks.
+
+gait: cadence 0.2-2.2 (small things quick, heavy things slow), stride 0.2-2.4,
+lean/slump = hunch, armSwing, headPitch, flapAmp = wingbeat, tailWave,
+bodyWave = how much the body itself undulates (high for snakes, 0 for people).
+palette: hex colours suiting the description.
+Return ONLY the JSON object.`;
+
+// --- exemplars: show the model things LIKE what was asked for --------------
+
+interface Exemplar { make: () => Genome; keys: string[] }
+
+const LIBRARY: Exemplar[] = [
+  { make: defaultBiped, keys: ['human', 'person', 'knight', 'elf', 'dwarf', 'warrior', 'hero', 'man', 'woman', 'soldier', 'mage', 'wizard'] },
+  { make: imp, keys: ['imp', 'gremlin', 'demon', 'devil', 'small', 'tiny', 'fairy', 'sprite', 'bat'] },
+  { make: hound, keys: ['dog', 'hound', 'wolf', 'cat', 'lion', 'horse', 'deer', 'beast', 'quadruped', 'four legs', 'fox', 'boar'] },
+  { make: troll, keys: ['troll', 'arms', 'four-armed', 'multi', 'brute'] },
+  { make: ogre, keys: ['ogre', 'giant', 'huge', 'massive', 'titan', 'golem', 'colossus'] },
+  { make: hippo, keys: ['hippo', 'fat', 'bloated', 'barrel', 'rhino', 'bear', 'heavy', 'round', 'tank', 'thick', 'obese', 'toad', 'frog'] },
+  { make: serpent, keys: ['snake', 'serpent', 'worm', 'eel', 'naga', 'slither', 'legless', 'python', 'viper', 'dragon', 'wyrm', 'centipede'] },
+  { make: raptor, keys: ['bird', 'wing', 'fly', 'flying', 'eagle', 'raven', 'crow', 'hawk', 'winged', 'harpy', 'moth'] },
+  { make: spider, keys: ['spider', 'insect', 'bug', 'crab', 'scuttle', 'arachnid', 'many legs', 'six legs', 'eight', 'beetle', 'ant'] },
+  { make: hydra, keys: ['hydra', 'two heads', 'two-headed', 'multi-headed', 'heads', 'chimera'] },
+];
+
+/** Pick the exemplars nearest the words, always with something contrasting. */
+export function pickExemplars(desc: string, n = 3): Genome[] {
+  const d = desc.toLowerCase();
+  const scored = LIBRARY.map(e => ({
+    e,
+    score: e.keys.reduce((s, k) => s + (d.includes(k) ? k.length : 0), 0),
+  })).sort((a, b) => b.score - a.score);
+
+  const picked: Genome[] = [];
+  for (const s of scored) {
+    if (picked.length >= n - 1) break;
+    if (s.score > 0) picked.push(s.e.make());
+  }
+  // a legless serpent is the strongest reminder that not everything is a biped
+  const contrast = picked.some(p => p.skeleton.locomotion === 'slither')
+    ? hound() : serpent();
+  picked.push(contrast);
+  while (picked.length < n) picked.push(picked.length === 1 ? defaultBiped() : hound());
+  return picked.slice(0, n);
+}
+
+// --- the schema the model must fill ----------------------------------------
+
+const num = (min: number, max: number) => ({ type: 'number', minimum: min, maximum: max });
+
+export const GENOME_SCHEMA = {
+  type: 'object',
+  required: ['name', 'skeleton', 'gait', 'palette'],
+  properties: {
+    name: { type: 'string' },
+    skeleton: {
+      type: 'object',
+      required: ['upright', 'body', 'girth', 'locomotion', 'chains'],
+      properties: {
+        upright: { type: 'boolean' },
+        locomotion: { type: 'string', enum: ['walk', 'slither', 'fly', 'hop'] },
+        body: { type: 'array', minItems: 1, maxItems: 8, items: num(0.05, 0.8) },
+        girth: { type: 'array', minItems: 1, maxItems: 10, items: num(0.02, 0.4) },
+        chains: {
+          type: 'array', minItems: 1, maxItems: 12,
+          items: {
+            type: 'object',
+            required: ['role', 'at', 'seg', 'r', 'spread'],
+            properties: {
+              role: { type: 'string', enum: ['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin'] },
+              at: num(0, 1),
+              seg: { type: 'array', minItems: 1, maxItems: 4, items: num(0.03, 0.9) },
+              r: num(0.01, 0.15),
+              spread: num(0, 0.5),
+              mirror: { type: 'boolean' },
+              ink: { type: 'integer', minimum: 0, maximum: 3 },
+              angle: num(-1.6, 1.6),
+            },
+          },
+        },
+      },
+    },
+    gait: {
+      type: 'object',
+      properties: {
+        cadence: num(0.2, 2.2), stride: num(0.2, 2.4), lift: num(0, 0.3),
+        bounce: num(0, 0.08), sway: num(0, 0.09), lean: num(-0.2, 0.5),
+        slump: num(0, 0.8), armSwing: num(0, 1), headPitch: num(-0.4, 0.8),
+        flapAmp: num(0, 1.3), tailWave: num(0, 1.2), bodyWave: num(0, 1.2),
+      },
+    },
+    palette: {
+      type: 'object',
+      required: ['torso', 'limbs', 'head', 'accent'],
+      properties: {
+        torso: { type: 'string' }, limbs: { type: 'string' },
+        head: { type: 'string' }, accent: { type: 'string' },
+      },
+    },
+  },
+} as const;
 
 export function buildPrompt(desc: string): string {
-  return (
-    SCHEMA_NOTES +
-    `\n\nExample biped:\n${JSON.stringify(defaultBiped())}` +
-    `\n\nExample small winged creature:\n${JSON.stringify(imp())}` +
-    `\n\nExample quadruped:\n${JSON.stringify(hound())}` +
-    `\n\nNow write the genome for: "${desc}"\nJSON:`
-  );
+  const ex = pickExemplars(desc);
+  const shown = ex.map(g => `${g.name}:\n${JSON.stringify(g)}`).join('\n\n');
+  return `${SCHEMA_NOTES}\n\nExamples:\n\n${shown}\n\nNow write the genome for: "${desc}"\nJSON:`;
 }
 
 export async function askOllama(
@@ -54,18 +161,16 @@ export async function askOllama(
   model = HATCH_MODEL,
   url = OLLAMA_URL,
   onProgress?: (chars: number) => void,
-  temperature = 0.7,
+  temperature = 0.8,
 ): Promise<string> {
-  // streamed, not buffered: a silent 20s connection gets culled by some
-  // environments, and streaming gives live progress for free
   const res = await fetch(`${url}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
       stream: true,
-      format: 'json',
-      options: { temperature, num_predict: 1400 },
+      format: GENOME_SCHEMA,   // token-level shape guarantee, not just "json"
+      options: { temperature, num_predict: 2000 },
       prompt: buildPrompt(desc),
     }),
   });
@@ -91,135 +196,154 @@ export async function askOllama(
   return out;
 }
 
-const clampN = (x: unknown, lo: number, hi: number, fallback: number): number => {
-  const v = typeof x === 'number' && isFinite(x) ? x : fallback;
+// --- validation: clamps are the type-checker -------------------------------
+
+const clampN = (x: unknown, lo: number, hi: number, fb: number): number => {
+  const v = typeof x === 'number' && isFinite(x) ? x : fb;
   return Math.min(hi, Math.max(lo, v));
 };
+const hexOk = (c: unknown, fb: string) =>
+  typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fb;
+
+const ROLES = new Set<ChainRole>(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin']);
+const MANY_LEGGED = /spider|insect|bug|crab|centipede|arachnid|beetle|ant|six|eight|many legs|scuttl/i;
+const MANY_HEADED = /two[- ]head|three[- ]head|multi[- ]head|hydra|heads\b/i;
+const MANY_ARMED = /four[- ]arm|six[- ]arm|multi[- ]arm|extra arm|many arms/i;
 
 export function validateGenome(raw: any, desc: string): Genome {
   const base = defaultBiped();
   const sk = raw?.skeleton ?? {};
-  const roles = new Set(['leg', 'arm', 'wing', 'tail']);
 
-  let chains: ChainSpec[] = Array.isArray(sk.chains)
-    ? sk.chains
-        .filter((c: any) => roles.has(c?.role))
-        .slice(0, 6)
-        .map((c: any): ChainSpec => ({
-          role: c.role,
-          attach: c.attach === 'chest' ? 'chest' : 'hip',
-          seg: (Array.isArray(c.seg) ? c.seg : [0.3, 0.3])
-            .slice(0, c.role === 'tail' ? 3 : 2)
-            .map((s: unknown) => clampN(s, 0.08, 0.8, 0.3)),
-          r: clampN(c.r, 0.015, 0.12, 0.05),
-          spread: clampN(c.spread, 0, 0.45, 0.12),
-        }))
-        .map((c: ChainSpec) =>
-          c.seg.length < 2 && c.role !== 'tail'
-            ? { ...c, seg: [c.seg[0] ?? 0.3, c.seg[0] ?? 0.3] }
-            : c,
-        )
-    : [];
+  const body: number[] = (Array.isArray(sk.body) && sk.body.length ? sk.body : [0.26, 0.24])
+    .slice(0, 8).map((v: unknown) => clampN(v, 0.05, 0.8, 0.25));
+  const girth: number[] = (Array.isArray(sk.girth) && sk.girth.length ? sk.girth : [0.1])
+    .slice(0, 10).map((v: unknown) => clampN(v, 0.02, 0.4, 0.1));
 
-  // unless the words ask for extra limbs, one chain per role is the law —
-  // a 3B model ignores prose rules often enough that this must be code
-  const wantsExtra = /\b(three|four|six|eight|many|multiple|extra|\d+)[- ]?(arm|leg|wing|tail|limb|head)/i.test(desc);
-  if (!wantsExtra) {
-    const seen = new Set<string>();
-    chains = chains.filter(c => {
-      const key = c.role === 'leg' ? `leg@${c.attach}` : c.role;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+  let chains: ChainSpec[] = (Array.isArray(sk.chains) ? sk.chains : [])
+    .filter((c: any) => ROLES.has(c?.role))
+    .slice(0, 12)
+    .map((c: any): ChainSpec => {
+      const seg = (Array.isArray(c.seg) && c.seg.length ? c.seg : [0.3, 0.3])
+        .slice(0, 4).map((s: unknown) => clampN(s, 0.03, 0.9, 0.25));
+      if (seg.length < 2 && c.role !== 'horn' && c.role !== 'fin') seg.push(seg[0]);
+      return {
+        role: c.role,
+        at: clampN(c.at, 0, 1, 0.5),
+        seg,
+        r: clampN(c.r, 0.01, 0.15, 0.05),
+        spread: clampN(c.spread, 0, 0.5, 0.1),
+        ...(typeof c.mirror === 'boolean' ? { mirror: c.mirror } : {}),
+        ...(typeof c.ink === 'number' ? { ink: Math.min(3, Math.max(0, Math.round(c.ink))) } : {}),
+        ...(typeof c.angle === 'number' ? { angle: clampN(c.angle, -1.6, 1.6, 0) } : {}),
+      };
     });
+
+  // budgets: generous enough for a spider, tight enough that a dwarf doesn't
+  // sprout extra limbs the words never asked for
+  const budget: Record<ChainRole, number> = {
+    leg: MANY_LEGGED.test(desc) ? 5 : 2,
+    arm: MANY_ARMED.test(desc) ? 3 : 1,
+    wing: 1, tail: 1,
+    head: MANY_HEADED.test(desc) ? 2 : 1,
+    horn: 2, fin: 2,
+  };
+  const used: Partial<Record<ChainRole, number>> = {};
+  chains = chains.filter(c => {
+    const n = (used[c.role] ?? 0) + 1;
+    if (n > budget[c.role]) return false;
+    used[c.role] = n;
+    return true;
+  });
+
+  // `at` has a meaning: 1 is the head end, 0 is the tail end. A model that
+  // puts a head at 0 has misread the axis, not invented a new creature.
+  for (const c of chains) {
+    if (c.role === 'head') c.at = Math.max(0.78, c.at);
+    if (c.role === 'tail') c.at = Math.min(0.22, c.at);
+    if (c.role === 'wing') c.at = Math.min(0.95, Math.max(0.55, c.at));
   }
 
-  const prone = !!sk.prone;
-  // upright creatures don't grow legs from their chest — that's model error,
-  // unless there are no hip legs at all (then it's a mislabel: move them down)
-  if (!prone) {
-    const hasHipLegs = chains.some(c => c.role === 'leg' && c.attach === 'hip');
-    chains = chains.flatMap(c => {
-      if (c.role !== 'leg' || c.attach !== 'chest') return [c];
-      return hasHipLegs ? [] : [{ ...c, attach: 'hip' as const }];
+  // heads stacked at the same spot read as a single head — separate them
+  const heads = chains.filter(c => c.role === 'head');
+  if (heads.length > 1) {
+    heads.forEach((h, i) => {
+      h.spread = Math.max(h.spread, 0.12);
+      h.mirror = false;
+      h.at = Math.min(1, h.at - i * 0.04);
+      h.angle = (h.angle ?? 0) + (i === 0 ? 0.25 : -0.15);
     });
+    // one pair of necks leaning apart, rather than two heads in one place
+    heads[0].mirror = heads.length === 2;
+    if (heads.length === 2) chains = chains.filter(c => c !== heads[1]);
   }
-  if (!chains.some(c => c.role === 'leg' && c.attach === 'hip'))
-    chains.push({ role: 'leg', attach: 'hip', seg: [0.35, 0.35], r: 0.05, spread: 0.11 });
-  if (prone && !chains.some(c => c.role === 'leg' && c.attach === 'chest'))
-    chains.push({ role: 'leg', attach: 'chest', seg: [0.32, 0.32], r: 0.045, spread: 0.11 });
-  if (prone) chains = chains.filter(c => c.role !== 'arm');
+
+  // every creature needs a head to read as a creature
+  if (!chains.some(c => c.role === 'head')) {
+    chains.push({ role: 'head', at: 1, seg: [0.09, 0.12], r: 0.11, spread: 0, ink: 2 });
+  }
+
+  // legless is a legitimate creature — it slithers, it doesn't grow legs
+  const hasLegs = chains.some(c => c.role === 'leg');
+  let locomotion: Locomotion =
+    ['walk', 'slither', 'fly', 'hop'].includes(sk.locomotion) ? sk.locomotion : 'walk';
+  if (!hasLegs && locomotion !== 'fly') locomotion = 'slither';
+  if (hasLegs && locomotion === 'slither') locomotion = 'walk';
 
   const skeleton: Skeleton = {
-    prone,
-    spine: clampN(sk.spine, 0.15, 0.9, 0.5),
-    neck: clampN(sk.neck, 0.02, 0.35, 0.09),
-    headR: clampN(sk.headR, 0.05, 0.28, 0.115),
-    hipW: clampN(sk.hipW, 0.08, 0.5, 0.22),
-    chestW: clampN(sk.chestW, 0.1, 0.7, 0.36),
-    torsoR: clampN(sk.torsoR, 0.04, 0.2, 0.1),
-    chains,
+    upright: typeof sk.upright === 'boolean' ? sk.upright : !MANY_LEGGED.test(desc),
+    body, girth, locomotion, chains,
   };
 
-  const g = raw?.gait ?? {};
+  const gs = raw?.gait ?? {};
   const gait: Gait = {
-    cadence: clampN(g.cadence, 0.2, 2.2, base.gait.cadence),
-    stride: clampN(g.stride, 0.2, 2.4, base.gait.stride),
-    stance: clampN(g.stance, 0.5, 0.75, base.gait.stance),
-    lift: clampN(g.lift, 0, 0.3, base.gait.lift),
-    bounce: clampN(g.bounce, 0, 0.08, base.gait.bounce),
-    sway: clampN(g.sway, 0, 0.09, base.gait.sway),
-    lean: clampN(g.lean, -0.2, 0.5, base.gait.lean),
-    slump: clampN(g.slump, 0, 0.8, base.gait.slump),
-    crouch: clampN(g.crouch, 0, 0.25, base.gait.crouch),
-    pelvisTwist: clampN(g.pelvisTwist, 0, 0.3, base.gait.pelvisTwist),
-    shoulderTwist: clampN(g.shoulderTwist, 0, 0.4, base.gait.shoulderTwist),
-    armSwing: clampN(g.armSwing, 0, 1, base.gait.armSwing),
-    elbowBase: clampN(g.elbowBase, 0, 1.2, base.gait.elbowBase),
-    elbowAmp: clampN(g.elbowAmp, 0, 1.2, base.gait.elbowAmp),
-    elbowLag: clampN(g.elbowLag, 0, 0.4, base.gait.elbowLag),
-    headPitch: clampN(g.headPitch, -0.4, 0.8, base.gait.headPitch),
-    flapAmp: clampN(g.flapAmp, 0, 1.3, base.gait.flapAmp),
-    tailWave: clampN(g.tailWave, 0, 1.2, base.gait.tailWave),
+    cadence: clampN(gs.cadence, 0.2, 2.2, base.gait.cadence),
+    stride: clampN(gs.stride, 0.2, 2.4, base.gait.stride),
+    stance: clampN(gs.stance, 0.5, 0.75, base.gait.stance),
+    lift: clampN(gs.lift, 0, 0.3, base.gait.lift),
+    bounce: clampN(gs.bounce, 0, 0.08, base.gait.bounce),
+    sway: clampN(gs.sway, 0, 0.09, base.gait.sway),
+    lean: clampN(gs.lean, -0.2, 0.5, base.gait.lean),
+    slump: clampN(gs.slump, 0, 0.8, base.gait.slump),
+    crouch: clampN(gs.crouch, 0, 0.25, base.gait.crouch),
+    pelvisTwist: clampN(gs.pelvisTwist, 0, 0.3, base.gait.pelvisTwist),
+    shoulderTwist: clampN(gs.shoulderTwist, 0, 0.4, base.gait.shoulderTwist),
+    armSwing: clampN(gs.armSwing, 0, 1, base.gait.armSwing),
+    elbowBase: clampN(gs.elbowBase, 0, 1.2, base.gait.elbowBase),
+    elbowAmp: clampN(gs.elbowAmp, 0, 1.2, base.gait.elbowAmp),
+    elbowLag: clampN(gs.elbowLag, 0, 0.4, base.gait.elbowLag),
+    headPitch: clampN(gs.headPitch, -0.4, 0.8, base.gait.headPitch),
+    flapAmp: clampN(gs.flapAmp, 0, 1.3, base.gait.flapAmp),
+    tailWave: clampN(gs.tailWave, 0, 1.2, base.gait.tailWave),
+    bodyWave: locomotion === 'slither'
+      ? Math.max(0.6, clampN(gs.bodyWave, 0, 1.2, 0.85))
+      : clampN(gs.bodyWave, 0, 1.2, 0),
   };
 
-  const hexOk = (c: unknown, fb: string) =>
-    typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fb;
   const p = raw?.palette ?? {};
-  const palette = {
+  const palette: Palette = {
     torso: hexOk(p.torso, base.palette.torso),
     limbs: hexOk(p.limbs, base.palette.limbs),
     head: hexOk(p.head, base.palette.head),
     accent: hexOk(p.accent, base.palette.accent),
   };
 
-  // name from the DESCRIPTION, not the model: rerolling the same words then
-  // overwrites the dud in genomes/ instead of spamming the pool
-  const name = 'hatched-' + desc.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32);
+  const name = 'hatched-' +
+    desc.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32);
 
   const genome: Genome = { name, skeleton, gait, palette };
-  const canHold = !prone && chains.some(c => c.role === 'arm');
-  if (raw?.weapon && canHold) {
-    genome.weapon = {
-      length: clampN(raw.weapon.length, 0.15, 0.9, 0.5),
-      r: clampN(raw.weapon.r, 0.02, 0.09, 0.035),
-      color: hexOk(raw.weapon.color, '#cfd6e4'),
-    };
-  }
-  // weapon backstop: if the words name a weapon, the creature gets one even
-  // when the model forgets — forged from the vocabulary, not the vibes
-  if (!genome.weapon && canHold) {
-    const FORGE: [RegExp, { length: number; r: number; color: string }][] = [
+
+  // if the words name a weapon, the creature gets one even when the model forgets
+  const canHold = chains.some(c => c.role === 'arm');
+  if (canHold) {
+    const FORGE: [RegExp, Genome['weapon']][] = [
       [/axe|hatchet/i, { length: 0.42, r: 0.055, color: '#9aa1ab' }],
       [/club|cudgel/i, { length: 0.5, r: 0.07, color: '#6b4a2f' }],
       [/sword|blade|sabre|saber/i, { length: 0.6, r: 0.032, color: '#cfd6e4' }],
-      [/spear|pike|lance/i, { length: 0.85, r: 0.024, color: '#a08a63' }],
+      [/spear|pike|lance|trident/i, { length: 0.85, r: 0.024, color: '#a08a63' }],
       [/hammer|maul|mace/i, { length: 0.4, r: 0.065, color: '#7a7f8a' }],
-      [/staff|stave|wand/i, { length: 0.75, r: 0.026, color: '#8a6d3f' }],
+      [/staff|stave|wand|crossbow|bow/i, { length: 0.75, r: 0.026, color: '#8a6d3f' }],
     ];
-    for (const [re, w] of FORGE) {
-      if (re.test(desc)) { genome.weapon = { ...w }; break; }
-    }
+    for (const [re, w] of FORGE) if (re.test(desc)) { genome.weapon = w; break; }
   }
   return genome;
 }
@@ -229,7 +353,7 @@ export async function hatchGenome(
   model = HATCH_MODEL,
   url = OLLAMA_URL,
   onProgress?: (chars: number) => void,
-  temperature = 0.7,
+  temperature = 0.8,
 ): Promise<Genome> {
   const text = await askOllama(desc, model, url, onProgress, temperature);
   return validateGenome(JSON.parse(text), desc);

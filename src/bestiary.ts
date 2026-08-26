@@ -2,7 +2,7 @@
 // walking its real walk — there are no preview images anywhere.
 
 import { Character, migrateCharacter } from './character';
-import { effectiveGait } from './genome';
+import { effectiveGait, heightOf } from './genome';
 import { solvePose } from './pose';
 import { PixelRenderer, Camera } from './render';
 
@@ -25,12 +25,6 @@ const emptyEl = document.getElementById('empty')!;
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, '');
 
-function heightOf(ch: Character): number {
-  const sk = ch.genome.skeleton;
-  const legs = sk.chains.filter(c => c.role === 'leg' && c.attach === 'hip');
-  const legLen = legs.length ? Math.max(...legs.map(c => c.seg[0] + c.seg[1])) : 0.8;
-  return sk.prone ? legLen + sk.torsoR + sk.headR * 2 : legLen + sk.spine + sk.neck + sk.headR * 2;
-}
 
 function renderFilters() {
   filtersEl.innerHTML = '';
@@ -114,7 +108,7 @@ function frame(now: number) {
     if (!card.ctx) continue;
     const eff = effectiveGait(card.ch.genome.gait, { tired: 0, angry: 0 });
     card.phase = (card.phase + eff.cadence * dt) % 1;
-    const h = heightOf(card.ch);
+    const h = heightOf(card.ch.genome);
     const cam: Camera = {
       yaw: 0.5, pitch: 0.24, ppm: (SIZE * 0.62) / h, cy: h * 0.5, floor: false, flat: false,
     };

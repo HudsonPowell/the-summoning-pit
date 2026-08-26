@@ -4,7 +4,7 @@
 // things and bumping into each other.
 
 import { Character, StrikeSpec, DEFAULT_STRIKE_LIGHT } from '../character';
-import { Genome, effectiveGait } from '../genome';
+import { Genome, effectiveGait, heightOf } from '../genome';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
 
@@ -56,12 +56,6 @@ const STRIKE_PERIOD = 1.1;  // seconds between swings in a fight
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
-function heightOf(g: Genome): number {
-  const sk = g.skeleton;
-  const legs = sk.chains.filter(c => c.role === 'leg' && c.attach === 'hip');
-  const legLen = legs.length ? Math.max(...legs.map(c => c.seg[0] + c.seg[1])) : 0.8;
-  return sk.prone ? legLen + sk.torsoR + sk.headR * 2 : legLen + sk.spine + sk.neck + sk.headR * 2;
-}
 
 export function makeAgent(ch: Character, x: number, z: number): Agent {
   const g = ch.genome;

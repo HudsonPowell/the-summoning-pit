@@ -4,7 +4,7 @@
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { PNG } from 'pngjs';
-import { defaultBiped, imp, hound, troll, ogre, Genome } from '../src/genome';
+import { defaultBiped, imp, hound, troll, ogre, Genome, heightOf } from '../src/genome';
 import { solvePose } from '../src/pose';
 import { PixelRenderer, Camera } from '../src/render';
 
@@ -12,14 +12,6 @@ const CELL_W = 28, CELL_H = 32; // px per creature cell at sprite scale
 const SCALE = 8; // upscale for viewing
 const PHASE = 0.18; // mid-stride
 
-function heightOf(g: Genome): number {
-  const sk = g.skeleton;
-  const legs = sk.chains.filter(c => c.role === 'leg' && c.attach === 'hip');
-  const legLen = legs.length ? Math.max(...legs.map(c => c.seg[0] + c.seg[1])) : 0.8;
-  return sk.prone
-    ? legLen + sk.torsoR + sk.headR * 2
-    : legLen + sk.spine + sk.neck + sk.headR * 2;
-}
 
 const creatures = [defaultBiped(), imp(), hound(), troll(), ogre()];
 const png = new PNG({ width: CELL_W * creatures.length * SCALE, height: CELL_H * 2 * SCALE });

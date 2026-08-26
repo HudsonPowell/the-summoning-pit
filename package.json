@@ -10,7 +10,7 @@
     "farm:judge": "tsx farm/judge.ts",
     "farm:evolve": "tsx farm/evolve.ts",
     "hatch": "tsx farm/hatch.ts",
-    "test": "tsx farm/sim_test.ts && tsx farm/render_test.ts"
+    "test": "tsx farm/sim_test.ts && tsx farm/render_test.ts && tsx farm/migrate_check.ts"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",

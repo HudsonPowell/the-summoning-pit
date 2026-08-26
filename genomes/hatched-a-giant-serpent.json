@@ -1,0 +1,65 @@
+{
+  "name": "hatched-a-giant-serpent",
+  "skeleton": {
+    "upright": false,
+    "body": [
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.28,
+      0.24
+    ],
+    "girth": [
+      0.04,
+      0.09,
+      0.11,
+      0.1,
+      0.08,
+      0.06,
+      0.05
+    ],
+    "locomotion": "slither",
+    "chains": [
+      {
+        "role": "head",
+        "at": 1,
+        "seg": [
+          0.1,
+          0.18
+        ],
+        "r": 0.115,
+        "spread": 0,
+        "angle": 0.12
+      }
+    ]
+  },
+  "gait": {
+    "cadence": 1.1,
+    "stride": 0.9,
+    "stance": 0.6,
+    "lift": 0.11,
+    "bounce": 0.028,
+    "sway": 0.03,
+    "lean": 0.06,
+    "slump": 0,
+    "crouch": 0.03,
+    "pelvisTwist": 0.1,
+    "shoulderTwist": 0.14,
+    "armSwing": 0.42,
+    "elbowBase": 0.35,
+    "elbowAmp": 0.5,
+    "elbowLag": 0.16666666666666666,
+    "headPitch": 0,
+    "flapAmp": 0.5,
+    "tailWave": 0.35,
+    "bodyWave": 0.6
+  },
+  "palette": {
+    "torso": "#4f8f52",
+    "limbs": "#3c6f3f",
+    "head": "#77b06a",
+    "accent": "#e0d264"
+  }
+}

@@ -35,5 +35,5 @@ const score = out[0].label.includes('generic') ? out[1].score : out[0].score;
 
 console.log(`\nhatched -> genomes/${slug}.json`);
 console.log(`sheet   -> ${sheetPath}`);
-console.log(`chains  -> ${genome.skeleton.chains.map(c => `${c.role}@${c.attach}`).join(', ')}${genome.skeleton.prone ? ' (prone)' : ''}`);
+console.log(`chains  -> ${genome.skeleton.chains.map(c => `${c.role}@${c.at.toFixed(2)}`).join(', ')} ${genome.skeleton.locomotion}`);
 console.log(`judge   -> reads-as-description ${score.toFixed(3)} (vs generic humanoid)`);

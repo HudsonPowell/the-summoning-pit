@@ -78,6 +78,7 @@ const GAIT_BOUNDS: Record<keyof Gait, [number, number]> = {
   headPitch: [-0.4, 0.8],
   flapAmp: [0, 1.3],
   tailWave: [0, 1.2],
+  bodyWave: [0, 1.2],
 };
 const SCALE_KEYS: (keyof SkeletonScales)[] = ['legs', 'arms', 'head', 'bulk', 'width'];
 const SCALE_BOUNDS: [number, number] = [0.6, 1.7];

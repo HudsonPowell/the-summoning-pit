@@ -1,0 +1,86 @@
+{
+  "name": "hatched-a-two-headed-ogre",
+  "skeleton": {
+    "upright": true,
+    "body": [
+      0.36,
+      0.34
+    ],
+    "girth": [
+      0.17,
+      0.18
+    ],
+    "locomotion": "walk",
+    "chains": [
+      {
+        "role": "head",
+        "at": 0.78,
+        "seg": [
+          0.08,
+          0.14
+        ],
+        "r": 0.135,
+        "spread": 0.12,
+        "angle": 0.25,
+        "mirror": true
+      },
+      {
+        "role": "arm",
+        "at": 0.5,
+        "seg": [
+          0.5,
+          0.46
+        ],
+        "r": 0.085,
+        "spread": 0.31
+      },
+      {
+        "role": "leg",
+        "at": 0.2,
+        "seg": [
+          0.55,
+          0.52
+        ],
+        "r": 0.09,
+        "spread": 0.19
+      },
+      {
+        "role": "leg",
+        "at": 1,
+        "seg": [
+          0.55,
+          0.52
+        ],
+        "r": 0.09,
+        "spread": 0.19
+      }
+    ]
+  },
+  "gait": {
+    "cadence": 0.65,
+    "stride": 1.3,
+    "stance": 0.6,
+    "lift": 0.11,
+    "bounce": 0.028,
+    "sway": 0.03,
+    "lean": 0.1,
+    "slump": 0,
+    "crouch": 0.03,
+    "pelvisTwist": 0.1,
+    "shoulderTwist": 0.14,
+    "armSwing": 0.32,
+    "elbowBase": 0.35,
+    "elbowAmp": 0.5,
+    "elbowLag": 0.16666666666666666,
+    "headPitch": 0,
+    "flapAmp": 0.5,
+    "tailWave": 0.35,
+    "bodyWave": 0
+  },
+  "palette": {
+    "torso": "#7d6a4c",
+    "limbs": "#5a4a33",
+    "head": "#a58a63",
+    "accent": "#b03a2e"
+  }
+}

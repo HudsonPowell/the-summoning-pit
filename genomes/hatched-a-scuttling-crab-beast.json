@@ -1,0 +1,120 @@
+{
+  "name": "hatched-a-scuttling-crab-beast",
+  "skeleton": {
+    "upright": false,
+    "body": [
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15
+    ],
+    "girth": [
+      0.02,
+      0.02,
+      0.02,
+      0.02,
+      0.02,
+      0.02,
+      0.02,
+      0.02
+    ],
+    "locomotion": "walk",
+    "chains": [
+      {
+        "role": "leg",
+        "at": 0.4,
+        "seg": [
+          0.05,
+          0.1
+        ],
+        "r": 0.03,
+        "spread": 0.03,
+        "mirror": false,
+        "ink": 1,
+        "angle": 0.2
+      },
+      {
+        "role": "leg",
+        "at": 0.7,
+        "seg": [
+          0.1,
+          0.2
+        ],
+        "r": 0.04,
+        "spread": 0.05,
+        "mirror": true,
+        "ink": 1,
+        "angle": 0.2
+      },
+      {
+        "role": "leg",
+        "at": 0.9,
+        "seg": [
+          0.1,
+          0.2
+        ],
+        "r": 0.04,
+        "spread": 0.05,
+        "mirror": true,
+        "ink": 1,
+        "angle": 0.2
+      },
+      {
+        "role": "tail",
+        "at": 0.1,
+        "seg": [
+          0.03,
+          0.03
+        ],
+        "r": 0.02,
+        "spread": 0,
+        "mirror": false,
+        "ink": 3
+      },
+      {
+        "role": "head",
+        "at": 1,
+        "seg": [
+          0.05,
+          0.05
+        ],
+        "r": 0.05,
+        "spread": 0,
+        "mirror": true,
+        "ink": 2,
+        "angle": 0.3
+      }
+    ]
+  },
+  "gait": {
+    "cadence": 2.1,
+    "stride": 0.9,
+    "stance": 0.6,
+    "lift": 0.11,
+    "bounce": 0.028,
+    "sway": 0.03,
+    "lean": 0.1,
+    "slump": 0,
+    "crouch": 0.03,
+    "pelvisTwist": 0.1,
+    "shoulderTwist": 0.14,
+    "armSwing": 0.42,
+    "elbowBase": 0.35,
+    "elbowAmp": 0.5,
+    "elbowLag": 0.16666666666666666,
+    "headPitch": 0,
+    "flapAmp": 0.5,
+    "tailWave": 0.35,
+    "bodyWave": 0.8
+  },
+  "palette": {
+    "torso": "#8f8f8f",
+    "limbs": "#333333",
+    "head": "#999999",
+    "accent": "#333333"
+  }
+}

@@ -66,7 +66,8 @@ function refreshFile() {
 
 const gaitSetters: [keyof Gait, (v: number) => void][] = [];
 const scaleSetters: [keyof SkeletonScales, (v: number) => void][] = [];
-const paletteSetters: [keyof Genome['palette'], (v: string) => void][] = [];
+type InkName = 'torso' | 'limbs' | 'head' | 'accent';
+const paletteSetters: [InkName, (v: string) => void][] = [];
 const stillSetters: [keyof StillSpec, (v: number) => void][] = [];
 const strikeSetters: [Exclude<keyof StrikeSpec, 'posts'>, (v: number) => void][] = [];
 let blastSetters: { core: (v: string) => void; edge: (v: string) => void } | null = null;
@@ -219,7 +220,7 @@ for (const key of ['legs', 'arms', 'head', 'bulk', 'width'] as (keyof SkeletonSc
 }
 
 const gPalette = group(panel, 'palette');
-for (const key of ['torso', 'limbs', 'head', 'accent'] as (keyof Genome['palette'])[]) {
+for (const key of ['torso', 'limbs', 'head', 'accent'] as InkName[]) {
   const set = color(gPalette, key, genome.palette[key], v => {
     genome.palette[key] = v;
     refreshFile();
