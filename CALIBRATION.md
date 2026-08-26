@@ -636,3 +636,30 @@ engineer is a slab on legs, so are the basilisk, hydra and crab-beast) and pins
 (the golem knight and the desert nomad are vertical lines). Nothing in the
 schema says a torso has a sane span-to-girth ratio, so the model spends its
 budget at either extreme. That is the next floor.
+
+## secondary motion: what makes it look alive (2026-08-26)
+
+The rig posed every creature exactly on target, on the frame it was asked to,
+which is precisely why it read as a puppet. `src/secondary.ts` is the lag —
+under-damped springs fed by what the creature is doing and what is done to it.
+
+- **Under-damped on purpose.** Critical damping is correct and looks dead.
+  Damping ratios land between 0.12 (flesh) and 0.42 (head).
+- **Mass sets the softness**: `soft = 1/(0.55 + mass*0.45)` scales every
+  stiffness, so a troll wobbles longer than an imp. That single term is most of
+  what tells you how heavy a thing is.
+- **Five springs**: lean (banks past the turn), twist (torso dragged after the
+  feet), bob (weight landing), jiggle (never has a target, only settles), head
+  (arrives last and overshoots). Plus spin, which nothing drives but a blow.
+- **The wobble travels** rather than moving the whole body at once:
+  `jigAt(u) = jiggle * sin(u*3.1 + 0.6) * 0.5` along the body curve.
+- **Sub-step the spring** above 1/45 s or a slow frame blows it up.
+
+## import cycles typecheck and then fail in the browser
+
+`smith.ts` imported OLLAMA_URL from `hatch.ts`, and hatch then needed the
+smith. `tsc --noEmit` is clean, node is clean, the farm is clean — and the
+browser throws `temperOf is not defined` at the first spawn, because a cycle
+leaves part of the graph uninitialised. Constants shared by two modules go in
+their own module (`src/ollama.ts`). Cheap rule: if two files import each other,
+one of them is really three.

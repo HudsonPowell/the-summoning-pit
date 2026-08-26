@@ -38,6 +38,15 @@ export interface PoseExtras {
    */
   turn?: number;    // radians/sec, + turning one way
   lookYaw?: number; // where the head wants to point, relative to facing
+  /**
+   * The springs (src/secondary.ts). These are the parts that are LATE: the
+   * bank that overshoots the turn, the torso dragged round after the feet,
+   * weight landing, and flesh still moving after the frame stopped.
+   */
+  lean?: number;
+  twist?: number;
+  bob?: number;
+  jiggle?: number;
 }
 
 function hex(c: string): [number, number, number] {
@@ -126,6 +135,12 @@ export function solvePose(
   // drive forward through the strike, recover after it
   const lungeAmt = (spec0.lunge ?? 0) * strikeW * Math.sin(Math.PI * Math.min(1, strikeU * 1.15));
   const turnRate = extras?.turn ?? 0;
+  const sLean = extras?.lean ?? 0;
+  const sTwist = extras?.twist ?? 0;
+  const sBob = extras?.bob ?? 0;
+  const sJig = extras?.jiggle ?? 0;
+  // the wobble travels along the body rather than moving all of it at once
+  const jigAt = (u: number) => sJig * Math.sin(u * 3.1 + 0.6) * 0.5;
 
   const legs = sk.chains.filter(c => c.role === 'leg').sort((a, b) => a.at - b.at);
   const N = Math.max(1, sk.body.length);
@@ -161,7 +176,8 @@ export function solvePose(
 
   if (sk.upright) {
     const hipH = supportH(0) * (1 - 0.72 * co);
-    let p = v3(leanCo * 0.12, hipH + g.bounce * Math.cos(2 * TAU * (phase - 0.3)) * mv + breathe,
+    let p = v3(leanCo * 0.12,
+      hipH + g.bounce * Math.cos(2 * TAU * (phase - 0.3)) * mv + breathe + sBob,
       -g.sway * Math.cos(TAU * (phase - 0.3)) * mv);
     nodes.push(p);
     for (let i = 0; i < N; i++) {
@@ -169,8 +185,13 @@ export function solvePose(
       const u = (i + 1) / N;
       const ang = leanCo * (0.6 + 0.7 * u) + slumpCo * u * u;
       p = add(p, v3(Math.sin(ang) * sk.body[i], Math.cos(ang) * sk.body[i], waveAt(i)));
-      // banking into a turn, strongest at the top of the spine
-      nodes.push(add(p, v3(lungeAmt * u, 0, -turnRate * 0.06 * u)));
+      // banking into a turn, strongest at the top of the spine — and the
+      // spring carries it past the turn and back
+      nodes.push(add(p, v3(
+        lungeAmt * u + sTwist * 0.09 * u,
+        jigAt(u) * 0.35,
+        -turnRate * 0.06 * u + sLean * 0.16 * u * u + jigAt(u),
+      )));
     }
   } else {
     const total = sk.body.reduce((a, b) => a + b, 0);
@@ -180,11 +201,12 @@ export function solvePose(
       const at = i / N;
       const h = supportH(at) * (1 - 0.72 * co) + hover
         + g.bounce * Math.cos(2 * TAU * (phase - 0.3 - at * 0.25)) * mv
-        + breathe - slumpCo * 0.12 * at;
+        + breathe - slumpCo * 0.12 * at + sBob + jigAt(at) * 0.4;
       nodes.push(v3(
-        x + lungeAmt * (0.35 + 0.65 * at),
+        x + lungeAmt * (0.35 + 0.65 * at) + sTwist * 0.06 * at,
         h,
-        waveAt(i) + -g.sway * Math.cos(TAU * (phase - 0.3)) * mv * (1 - at) - turnRate * 0.05 * at,
+        waveAt(i) + -g.sway * Math.cos(TAU * (phase - 0.3)) * mv * (1 - at)
+          - turnRate * 0.05 * at + sLean * 0.2 * at + jigAt(at),
       ));
       if (i < N) x += sk.body[i];
     }

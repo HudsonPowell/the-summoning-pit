@@ -3,7 +3,7 @@
 // authored armoury answers instantly when the model is missing or wrong.
 
 import { WeaponSpec, WeaponPart } from './character';
-import { OLLAMA_URL, HATCH_MODEL } from './hatch';
+import { OLLAMA_URL, HATCH_MODEL } from './ollama';
 
 const SMITH_NOTES = `
 You design a held weapon for a small game character as JSON.

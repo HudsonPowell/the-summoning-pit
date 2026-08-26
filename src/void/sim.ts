@@ -6,6 +6,7 @@
 import { Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT } from '../character';
 import { Genome, effectiveGait, heightOf } from '../genome';
 import { Temper, temperOf } from '../temper';
+import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
 
@@ -32,6 +33,9 @@ export interface Agent {
   target: Agent | null;
   nerve: number;             // aggression, kept under its old name for the AI
   temper: Temper;            // what it is like, read off what it is made of
+  sec: Secondary;            // the parts of the body that are late
+  lookAt: number;            // world angle the head is resting on
+  scanT: number;             // seconds until it looks somewhere else
   turnRate: number;          // radians/sec, for secondary motion
   bulk: number;              // rough size, for reach and shoving
   speed: number;             // metres/sec walking
@@ -118,6 +122,9 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     target: null,
     nerve: temper.aggression,
     temper,
+    sec: newSecondary(),
+    lookAt: rnd(-Math.PI, Math.PI),
+    scanT: rnd(0, 0.8),
     turnRate: 0,
     bulk: h,
     // the gait says how fast it CAN move; temperament says how much it does
@@ -232,10 +239,44 @@ function nearest(sim: VoidSim, a: Agent, maxR: number): Agent | null {
   return best;
 }
 
+/**
+ * Who to go for. "Nearest" is how a thing with no eyes behaves; a creature
+ * that is actually looking around weighs up what it can see — how far, how
+ * hurt, how big, and whether it is already busy with someone else. A brave
+ * thing will take on something larger. A timid one picks off the wounded.
+ */
+function pickTarget(sim: VoidSim, a: Agent, maxR: number): Agent | null {
+  let best: Agent | null = null;
+  let bestScore = 0;
+  for (const o of sim.agents) {
+    if (o === a || o.deadT >= 0) continue;
+    const d = Math.hypot(o.x - a.x, o.z - a.z);
+    if (d > maxR) continue;
+
+    let score = 1 - d / maxR;                       // close is easy
+    score += (1 - o.hp / Math.max(1, o.maxHp)) * 0.55;  // wounded is easier
+    // size it up: a big thing is only appealing if you have the nerve
+    const odds = (a.bulk - o.bulk) * 0.5 + (a.temper.bravery - 0.5) * 0.8;
+    score += Math.max(-0.7, Math.min(0.45, odds));
+    // something already fighting has its back to you
+    if (o.state === 'fight' && o.target !== a) score += 0.3;
+    // and something running away invites a chase
+    if (o.state === 'flee') score += 0.25 * a.temper.aggression;
+    // a little arbitrariness, so the pit does not gang up in lockstep
+    score += Math.random() * 0.22;
+
+    if (score > bestScore) { bestScore = score; best = o; }
+  }
+  return best;
+}
+
 function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, how?: string): void {
   if (a.hurtT > 0 || a.deadT >= 0) return;
   a.hp--;
   a.hurtT = 0.55;
+  // the blow goes into the body, not just into the hit points
+  const fromYaw = Math.atan2(fromZ - a.z, fromX - a.x) - a.heading;
+  jolt(a.sec, a.hp <= 0 ? 0.55 : 0.3, fromYaw, a.bulk);
   // knocked back along the blow
   const d = Math.hypot(a.x - fromX, a.z - fromZ) || 1;
   a.x += ((a.x - fromX) / d) * 0.35;
@@ -279,6 +320,10 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     if (a.deadT >= 0) {
       a.deadT += dt;
       a.move += (0 - a.move) * Math.min(1, 8 * dt);
+      stepSecondary(a.sec, dt, {
+        turnRate: 0, move: 0, speed: 0, mass: a.bulk,
+        lookYaw: 0, phase: a.phase, dead: true,
+      });
       continue;
     }
 
@@ -327,7 +372,21 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       }
       case 'think': {
         a.move += (0 - a.move) * Math.min(1, 5 * dt);
-        // look about, then commit to a new direction
+        // Look about. The head sweeps across whatever is out there and rests
+        // on each thing for a beat — this is the tell that it is deciding
+        // rather than waiting for a timer to expire.
+        a.scanT -= dt;
+        if (a.scanT <= 0) {
+          const seen = sim.agents.filter(o => o !== a && o.deadT < 0
+            && Math.hypot(o.x - a.x, o.z - a.z) < NOTICE_R * 1.3);
+          if (seen.length) {
+            const at = seen[Math.floor(Math.random() * seen.length)];
+            a.lookAt = Math.atan2(at.z - a.z, at.x - a.x);
+          } else {
+            a.lookAt = a.heading + rnd(-1.5, 1.5);
+          }
+          a.scanT = rnd(0.5, 1.2);
+        }
         if (a.stateT > 0.6 && Math.random() < dt * 2) a.aim = rnd(-Math.PI, Math.PI);
         if (a.stateT > rnd(1.2, 2.6)) setState(a, 'wander');
         break;
@@ -376,7 +435,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         break;
       }
       case 'flee': {
-        const t = a.target ?? nearest(sim, a, NOTICE_R);
+        const t = a.target ?? pickTarget(sim, a, NOTICE_R);
         if (t) a.aim = Math.atan2(a.z - t.z, a.x - t.x);
         a.move += (1 - a.move) * Math.min(1, 6 * dt);
         walk(a, dt, 1.4);
@@ -389,7 +448,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
 
     // noticing: only while going about your business
     if ((a.state === 'wander' || a.state === 'think') && a.stateT > 0.5) {
-      const other = nearest(sim, a, NOTICE_R);
+      const other = pickTarget(sim, a, NOTICE_R);
       if (other && Math.random() < dt * 0.9 * (1 - sim.peace) * (0.4 + a.nerve)) {
         a.target = other;
         setState(a, 'approach');
@@ -406,6 +465,21 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     // keep the gait cycle honest to distance travelled
     const eff = effectiveGait(a.genome.gait, { tired: 0, angry: a.state === 'fight' ? 0.7 : 0 });
     a.phase = (a.phase + eff.cadence * a.move * dt) % 1;
+
+    // a target holds the head; otherwise it rests where the scan left it
+    if (a.target && a.target.deadT < 0 && (a.state === 'fight' || a.state === 'approach')) {
+      a.lookAt = Math.atan2(a.target.z - a.z, a.target.x - a.x);
+    }
+    const rel = Math.atan2(Math.sin(a.lookAt - a.heading), Math.cos(a.lookAt - a.heading));
+    stepSecondary(a.sec, dt, {
+      turnRate: a.turnRate,
+      move: a.move,
+      speed: a.speed,
+      mass: a.bulk,
+      lookYaw: Math.max(-1.0, Math.min(1.0, rel)),
+      phase: a.phase,
+      dead: a.deadT >= 0,
+    });
 
     // soft separation so bodies do not occupy each other
     for (const o of sim.agents) {

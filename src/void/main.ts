@@ -46,7 +46,7 @@ const DEFAULT_LOOK: Look = {
   closeness: 0.72, response: 0.5, lead: 0.5,
   voidCol: '#000000', floorColA: '#2a2f3a', floorColB: '#22262f',
   flat: false, pitch: 0.34, orbit: 0.16, population: 4, peace: 0.35,
-  panel: true,
+  panel: false,
 };
 
 function loadLook(): Look {
@@ -137,23 +137,30 @@ async function loadRoster(): Promise<Character[]> {
   return out;
 }
 
+// --- yours ------------------------------------------------------------------
+// Your creature is the one the camera cares about. You can pull the camera off
+// it — drag to orbit, wheel to zoom — but it drifts back, because losing your
+// own summon in a crowd is the one thing that must not happen.
+
+let yours: Agent | null = null;
+const orbit = { yaw: 0, zoom: 0, idle: 99 };
+
+/** The most recent thing you summoned that is still standing. */
+function yourAgent(sim: VoidSim): Agent | null {
+  if (yours && yours.deadT < 0 && sim.agents.includes(yours)) return yours;
+  const mine = sim.agents.filter(a => a.by === 'you' && a.deadT < 0);
+  yours = mine.length ? mine[mine.length - 1] : null;
+  return yours;
+}
+
 // --- the summoning box ------------------------------------------------------
 // The one verb. You type, something that has never existed walks into the pit.
 // The words are yours and stay yours — nothing keeps them, and the creature is
 // named by its body, not by what you typed (see src/naming.ts).
 
-function buildSummon(sim: VoidSim, panel: HTMLElement): void {
-  const wrap = document.createElement('div');
-  wrap.className = 'summon';
-  const box = document.createElement('input');
-  box.type = 'text';
-  box.placeholder = 'summon…';
-  box.autocomplete = 'off';
-  box.spellcheck = false;
-  const status = document.createElement('div');
-  status.className = 'summonStatus';
-  wrap.append(box, status);
-  panel.prepend(wrap);
+function buildSummon(sim: VoidSim): void {
+  const box = document.getElementById('summonBox') as HTMLInputElement;
+  const status = document.getElementById('summonStatus')!;
 
   let busy = false;
   async function summon() {
@@ -167,6 +174,7 @@ function buildSummon(sim: VoidSim, panel: HTMLElement): void {
         status.textContent = `summoning… ${chars}`;
       });
       const a = spawnChar(sim, makeCharacter(g, 'beast'), 'you');
+      yours = a;
       status.textContent = `${a.ch.name} answers`;
       director.punch(0.7);
     } catch (e) {
@@ -197,6 +205,25 @@ function buildSummon(sim: VoidSim, panel: HTMLElement): void {
 const director = new Director();
 
 function driveCamera(sim: VoidSim, dt: number) {
+  const you = yourAgent(sim);
+  if (you) {
+    orbit.idle += dt;
+    // a hand on the camera holds it; take it off and it comes home
+    if (orbit.idle > 1.6) {
+      const back = Math.min(1, 0.9 * dt);
+      orbit.yaw += (0 - orbit.yaw) * back;
+      orbit.zoom += (0 - orbit.zoom) * back;
+    }
+    const k = Math.min(1, 5 * dt);
+    cam.cx = (cam.cx ?? 0) + (you.x - (cam.cx ?? 0)) * k;
+    cam.cz = (cam.cz ?? 0) + (you.z - (cam.cz ?? 0)) * k;
+    cam.cy += (you.bulk * 0.55 - cam.cy) * k;
+    const want = (view.size.H * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom);
+    cam.ppm += (want - cam.ppm) * Math.min(1, 2.4 * dt);
+    const wantYaw = 0.5 + orbit.yaw;
+    cam.yaw += (wantYaw - cam.yaw) * Math.min(1, 4 * dt);
+    return;
+  }
   const f = director.update(sim, dt, {
     closeness: look.closeness,
     response: look.response,
@@ -248,9 +275,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     const u = Math.min(1, a.strikeT / (spec?.duration ?? 0.5));
     intent = { slash: { t: u, weight: slashWeight(u), spec } };
   }
-  const look = a.target && a.deadT < 0
-    ? Math.atan2(a.target.z - a.z, a.target.x - a.x) - a.heading
-    : 0;
+
   const caps = solvePose(
     a.genome, mood, a.phase, a.move, a.idleT, intent,
     a.deadT >= 0 ? Math.min(1, a.deadT / 0.5) : 0,
@@ -258,15 +283,21 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       weapon: a.ch.weapon,
       offhand: a.ch.offhand,
       turn: a.turnRate,
-      // heads track what they are dealing with, up to a believable angle
-      lookYaw: Math.max(-0.9, Math.min(0.9, Math.atan2(Math.sin(look), Math.cos(look)))),
+      // the head has already been through its own spring — it arrives late
+      // and goes past, rather than snapping onto the target
+      lookYaw: Math.max(-0.9, Math.min(0.9, a.sec.head)),
+      lean: a.sec.lean,
+      twist: a.sec.twist,
+      bob: a.sec.bob,
+      jiggle: a.sec.jiggle,
     },
   );
   const flash = a.hurtT > 0 && Math.sin(t * 40) > 0;
   const fade = a.deadT >= 0 ? Math.max(0, 1 - Math.max(0, a.deadT - 2) / 1.5) : 1;
+  const yaw = -(a.heading + a.sec.spin);
   return caps.map(c => {
-    const p = rotY(c.a, -a.heading);
-    const q = rotY(c.b, -a.heading);
+    const p = rotY(c.a, yaw);
+    const q = rotY(c.b, yaw);
     const col: [number, number, number] = flash
       ? [255, 235, 235]
       : [c.color[0] * fade, c.color[1] * fade, c.color[2] * fade];
@@ -277,6 +308,40 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       color: col,
     };
   });
+}
+
+/**
+ * A sigil: a small pip hovering over anything with an owner, in that owner's
+ * colour. No typography, readable at any zoom, and it survives the creature
+ * being a two-headed blob in a scrum of six others — which a name floating in
+ * 5px type would not.
+ */
+const SIGIL: Record<string, [number, number, number]> = {
+  you: [110, 232, 214],
+};
+function sigilColor(by: string): [number, number, number] {
+  if (SIGIL[by]) return SIGIL[by];
+  // a stable colour per owner, so a friend is the same colour every session
+  let h = 0;
+  for (let i = 0; i < by.length; i++) h = (Math.imul(h, 31) + by.charCodeAt(i)) >>> 0;
+  const hue = (h % 360) / 360;
+  const f = (n: number) => {
+    const k = (n + hue * 6) % 6;
+    return Math.round(255 * (0.45 + 0.5 * Math.max(0, Math.min(1, Math.min(k, 4 - k, 1)))));
+  };
+  SIGIL[by] = [f(5), f(3), f(1)];
+  return SIGIL[by];
+}
+
+function sigilCapsules(a: Agent, t: number): Capsule[] {
+  if (!a.by || a.deadT >= 0) return [];
+  const col = sigilColor(a.by);
+  const y = a.bulk * 1.16 + 0.1 + Math.sin(t * 2.2 + a.id) * 0.025;
+  const r = Math.max(0.035, a.bulk * 0.035);
+  return [
+    { a: v3(a.x, y, a.z), b: v3(a.x, y, a.z), r, color: col, part: 'sigil' },
+    { a: v3(a.x, y - r * 2.4, a.z), b: v3(a.x, y - r * 1.1, a.z), r: r * 0.34, color: col, part: 'sigil' },
+  ];
 }
 
 // --- the feed: the same event stream, read aloud ----------------------------
@@ -324,7 +389,7 @@ async function boot() {
   sim.peace = look.peace;
 
   buildPanel(sim, live);
-  buildSummon(sim, document.getElementById('panelInner')!);
+  buildSummon(sim);
 
   let last = performance.now();
   function tick(dt: number) {
@@ -338,7 +403,10 @@ async function boot() {
     driveCamera(sim, dt);
 
     const caps: Capsule[] = [];
-    for (const a of sim.agents) caps.push(...agentCapsules(a, sim.t));
+    for (const a of sim.agents) {
+      caps.push(...agentCapsules(a, sim.t));
+      caps.push(...sigilCapsules(a, sim.t));
+    }
     for (const s of sim.shots) caps.push(...shotCapsules(s));
     view.render(caps, cam, 0);
 
@@ -503,6 +571,31 @@ function setPanel(open: boolean) {
   persist();
   fitCanvas();
 }
+
+// dragging the stage orbits; the wheel pushes in and out
+(() => {
+  const stage = document.getElementById('stage')!;
+  let down = false, lastX = 0;
+  stage.addEventListener('pointerdown', e => {
+    if (e.target instanceof HTMLInputElement) return;
+    down = true; lastX = e.clientX; orbit.idle = 0;
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!down) return;
+    orbit.yaw += (e.clientX - lastX) * 0.006;
+    lastX = e.clientX;
+    orbit.idle = 0;
+  });
+  const up = () => { down = false; orbit.idle = 0; };
+  stage.addEventListener('pointerup', up);
+  stage.addEventListener('pointercancel', up);
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    orbit.zoom = Math.max(-1.1, Math.min(1.1, orbit.zoom - e.deltaY * 0.0016));
+    orbit.idle = 0;
+  }, { passive: false });
+})();
 
 addEventListener('keydown', e => {
   if (e.target instanceof HTMLInputElement) return;

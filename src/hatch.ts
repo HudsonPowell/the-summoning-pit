@@ -12,12 +12,10 @@ import {
 } from './genome';
 import { titleFor } from './naming';
 import { weaponsFromWords } from './smith';
+import { HATCH_MODEL, OLLAMA_URL } from './ollama';
 import { temperOf, temperFromWords } from './temper';
 
-export const HATCH_MODEL =
-  (typeof process !== 'undefined' && process.env?.HATCH_MODEL) || 'llama3.2:3b';
-export const OLLAMA_URL =
-  (typeof process !== 'undefined' && process.env?.OLLAMA_URL) || 'http://localhost:11434';
+export { HATCH_MODEL, OLLAMA_URL } from './ollama';
 
 // --- the vocabulary --------------------------------------------------------
 
