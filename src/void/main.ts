@@ -9,6 +9,7 @@ import { Camera } from '../render';
 import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, Agent, VoidSim, Shot } from './sim';
 import { Director } from './director';
+import { LiveVoid } from './live';
 
 const KEY = 'void-look';
 
@@ -221,21 +222,60 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
   });
 }
 
+// --- the feed: the same event stream, read aloud ----------------------------
+
+const feedLines: string[] = [];
+function narrate(e: import('./sim').VoidEvent): string | null {
+  const who = e.actor?.name ?? 'something';
+  const whom = e.target?.name ?? 'something';
+  const at = e.range ? ` at ${e.range.toFixed(1)}m` : '';
+  switch (e.kind) {
+    case 'kill': return `${who} felled ${whom} — ${e.how ?? 'a blow'}${at}`;
+    case 'spawn': return `${who} enters the pit`;
+    case 'flee': return `${who} breaks and runs`;
+    case 'notice': return `${who} sets upon ${whom}`;
+    default: return null;
+  }
+}
+function pushFeed(events: import('./sim').VoidEvent[]) {
+  const el = document.getElementById('feed');
+  if (!el) return;
+  let changed = false;
+  for (const e of events) {
+    const line = narrate(e);
+    if (!line) continue;
+    feedLines.unshift(line);
+    changed = true;
+  }
+  if (!changed) return;
+  feedLines.length = Math.min(feedLines.length, 14);
+  el.innerHTML = feedLines.map((l, i) =>
+    `<div style="opacity:${(1 - i / 16).toFixed(2)}">${l}</div>`).join('');
+}
+
 // --- boot -------------------------------------------------------------------
 
+const LIVE = new URLSearchParams(location.search).has('live');
+const PIT_URL = new URLSearchParams(location.search).get('pit')
+  ?? `ws://${location.hostname}:8787`;
+
 async function boot() {
-  const roster = await loadRoster();
-  const sim = createVoid(roster, look.population);
+  const live = LIVE ? new LiveVoid() : null;
+  if (live) live.connect(PIT_URL);
+  const roster = live ? [] : await loadRoster();
+  const sim = live ? live.sim : createVoid(roster, look.population);
   sim.peace = look.peace;
 
-  buildPanel(sim);
+  buildPanel(sim, live);
 
   let last = performance.now();
   function tick(dt: number) {
-    stepVoid(sim, dt);
+    if (live) live.update(dt); else stepVoid(sim, dt);
+    pushFeed(sim.events);
+    if (live) sim.events.length = 0;
     for (const e of sim.events) {
-      if (e.type === 'die') director.punch(1);
-      else if (e.type === 'hit' || e.type === 'impact') director.punch(0.45);
+      if (e.kind === 'kill') director.punch(1);
+      else if (e.kind === 'hit') director.punch(0.45);
     }
     driveCamera(sim, dt);
 
@@ -256,7 +296,7 @@ async function boot() {
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
-    sim, cam, look, director,
+    sim, cam, look, director, live,
     tick,
     refit: fitCanvas,
     run: (seconds: number, dt = 1 / 60) => {
@@ -267,7 +307,7 @@ async function boot() {
 
 // --- the control drawer -----------------------------------------------------
 
-function buildPanel(sim: VoidSim) {
+function buildPanel(sim: VoidSim, live: LiveVoid | null) {
   const panel = document.getElementById('panelInner')!;
   const row = (label: string, el: HTMLElement, val?: HTMLElement) => {
     const r = document.createElement('label');
@@ -312,9 +352,11 @@ function buildPanel(sim: VoidSim) {
     row(label, input);
   };
 
-  head('the void');
-  sl('cast size', 1, 8, 1, () => look.population, v => { look.population = v; sim.population = v; });
-  sl('peace', 0, 1, 0.05, () => look.peace, v => { look.peace = v; sim.peace = v; });
+  head(LIVE ? 'the pit — live' : 'the void');
+  if (!LIVE) {
+    sl('cast size', 1, 8, 1, () => look.population, v => { look.population = v; sim.population = v; });
+    sl('peace', 0, 1, 0.05, () => look.peace, v => { look.peace = v; sim.peace = v; });
+  }
 
   head('camera');
   sl('closeness', 0, 1, 0.02, () => look.closeness, v => { look.closeness = v; });
@@ -358,9 +400,20 @@ function buildPanel(sim: VoidSim) {
     btns.appendChild(b);
   };
   mk('capture', capture);
-  mk('stir', () => { for (const a of sim.agents) { a.target = null; a.state = 'wander'; a.stateT = 0; } spawnOne(sim); });
+  mk('stir', () => {
+    if (live) { live.send({ t: 'stir' }); return; }
+    for (const a of sim.agents) { a.target = null; a.state = 'wander'; a.stateT = 0; }
+    spawnOne(sim);
+  });
   mk('reset look', () => { look = { ...DEFAULT_LOOK }; persist(); location.reload(); });
   panel.appendChild(btns);
+
+  const feedHead = document.createElement('h2');
+  feedHead.textContent = 'the feed';
+  panel.appendChild(feedHead);
+  const feed = document.createElement('div');
+  feed.id = 'feed';
+  panel.appendChild(feed);
 
   const links = document.createElement('div');
   links.id = 'links';

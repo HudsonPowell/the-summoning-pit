@@ -20,6 +20,22 @@ One creature, moving, changeable while it moves. No play button — it never sto
 Mood sliders are adverbs: they re-weight the same drivers, they are not new animations.
 The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same genome.
 
+## The pit (multiplayer)
+
+```
+npm run pit      # the server: owns the void, narrates it
+npm run dev      # the client
+```
+
+Then open `/void.html?live` in as many browsers as you like — everyone watches
+the same creatures. `npm run pit:test` proves two clients agree.
+
+The server owns the sim; clients only render. Two things cross the wire:
+POSITIONS at 12Hz (~5 KB/s per watcher) and EVENTS the moment they happen.
+Genomes travel once, by id, because the expensive data never changes. The
+event stream is deliberately rich — who struck whom, with what, at what range
+— because one record feeds sound, camera, the feed, records and clips.
+
 ## Play CLASH (arena mode)
 
 `npm test` runs the sim suite: a 900-tick replay must hash identically

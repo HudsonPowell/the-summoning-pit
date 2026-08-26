@@ -9,6 +9,8 @@ import { Genome, effectiveGait, heightOf } from '../genome';
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
 
 export interface Agent {
+  id: number;
+  by?: string;      // whose creature this is
   ch: Character;
   genome: Genome;
   x: number; z: number;      // metres
@@ -33,10 +35,24 @@ export interface Agent {
   speed: number;             // metres/sec walking
 }
 
+export type EventKind =
+  | 'spawn' | 'notice' | 'flee' | 'strike' | 'loose' | 'hit' | 'kill' | 'despawn';
+
+/** Who did the thing. Enough to name it in a feed without the sim attached. */
+export interface EventWho { id: number; name: string; by?: string }
+
+/**
+ * One record, five consumers: sound, camera, kill feed, records, clips.
+ * It has to SAY what happened — a bare position is only good for a shake.
+ */
 export interface VoidEvent {
-  type: 'strike' | 'hit' | 'die' | 'notice' | 'spawn' | 'loose' | 'impact';
+  kind: EventKind;
+  t: number;
   x: number; z: number;
-  agent?: Agent;
+  actor?: EventWho;
+  target?: EventWho;
+  how?: string;      // 'bite' | 'lash' | 'swipe' | 'thrust' | 'bolt' | 'spell'
+  range?: number;    // metres between them when it happened
 }
 
 /** Something in flight. Nobody owns it once it leaves. */
@@ -69,11 +85,15 @@ const STRIKE_PERIOD = 1.1;  // seconds between swings in a fight
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
 
-export function makeAgent(ch: Character, x: number, z: number): Agent {
+let nextAgentId = 1;
+
+export function makeAgent(ch: Character, x: number, z: number, by?: string): Agent {
   const g = ch.genome;
   const eff = effectiveGait(g.gait, { tired: 0, angry: 0 });
   const h = heightOf(g);
   return {
+    id: nextAgentId++,
+    by,
     ch, genome: g,
     x, z,
     heading: rnd(-Math.PI, Math.PI),
@@ -118,13 +138,15 @@ function spawnSpot(sim: VoidSim): { x: number; z: number } {
   return { x: rnd(-4, 4), z: rnd(-4, 4) };
 }
 
+export const whoOf = (a: Agent): EventWho => ({ id: a.id, name: a.ch.name, by: a.by });
+
 export function spawnOne(sim: VoidSim, quiet = false): Agent | null {
   if (sim.roster.length === 0) return null;
   const ch = sim.roster[Math.floor(Math.random() * sim.roster.length)];
   const { x, z } = spawnSpot(sim);
   const a = makeAgent(ch, x, z);
   sim.agents.push(a);
-  if (!quiet) sim.events.push({ type: 'spawn', x, z, agent: a });
+  if (!quiet) sim.events.push({ kind: 'spawn', t: sim.t, x, z, actor: whoOf(a) });
   return a;
 }
 
@@ -150,6 +172,16 @@ function walk(a: Agent, dt: number, scale = 1): void {
 
 function reachOf(a: Agent): number {
   return REACH_BASE * (0.7 + a.bulk * 0.45);
+}
+
+/** What this creature's current swing should be CALLED. */
+export function styleName(a: Agent): string {
+  const spec = strikeSpecOf(a);
+  if (spec.ranged) return spec.ranged.speed > 12 ? 'bolt' : 'spell';
+  if (spec.limb === 'head') return 'bite';
+  if (spec.limb === 'tail') return 'lash';
+  const w = a.ch.weapon?.name;
+  return w ? w.split(/[^a-z]+/i).filter(Boolean).slice(-1)[0] || 'blow' : 'blow';
 }
 
 function strikeSpecOf(a: Agent): StrikeSpec {
@@ -184,7 +216,7 @@ function nearest(sim: VoidSim, a: Agent, maxR: number): Agent | null {
   return best;
 }
 
-function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number): void {
+function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, how?: string): void {
   if (a.hurtT > 0 || a.deadT >= 0) return;
   a.hp--;
   a.hurtT = 0.55;
@@ -192,17 +224,25 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number): void {
   const d = Math.hypot(a.x - fromX, a.z - fromZ) || 1;
   a.x += ((a.x - fromX) / d) * 0.35;
   a.z += ((a.z - fromZ) / d) * 0.35;
-  sim.events.push({ type: 'hit', x: a.x, z: a.z, agent: a });
+  const common = {
+    t: sim.t, x: a.x, z: a.z,
+    actor: by ? whoOf(by) : undefined,
+    target: whoOf(a),
+    how,
+    range: by ? Math.hypot(by.x - a.x, by.z - a.z) : undefined,
+  };
+  sim.events.push({ kind: 'hit', ...common });
   if (a.hp <= 0) {
     a.deadT = 0;
     a.state = 'down';
     a.strikeT = -1;
     a.target = null;
-    sim.events.push({ type: 'die', x: a.x, z: a.z, agent: a });
+    sim.events.push({ kind: 'kill', ...common });
   } else if (a.hp <= 1 && Math.random() > a.nerve) {
     // losing and not brave enough for this
     a.state = 'flee';
     a.stateT = 0;
+    sim.events.push({ kind: 'flee', t: sim.t, x: a.x, z: a.z, actor: whoOf(a) });
   }
 }
 
@@ -248,11 +288,15 @@ export function stepVoid(sim: VoidSim, dt: number): void {
             from: a,
             trail: [],
           });
-          sim.events.push({ type: 'loose', x: a.x, z: a.z, agent: a });
+          sim.events.push({
+            kind: 'loose', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
+            target: t ? whoOf(t) : undefined, how: styleName(a),
+            range: t ? Math.hypot(t.x - a.x, t.z - a.z) : undefined,
+          });
         } else if (t && t.deadT < 0) {
           const d = Math.hypot(t.x - a.x, t.z - a.z);
           const facing = Math.cos(Math.atan2(t.z - a.z, t.x - a.x) - a.heading);
-          if (d < reachOf(a) + reachOf(t) * 0.5 && facing > 0.3) hurt(sim, t, a.x, a.z);
+          if (d < reachOf(a) + reachOf(t) * 0.5 && facing > 0.3) hurt(sim, t, a.x, a.z, a, styleName(a));
         }
       }
       if (a.strikeT >= spec.duration) { a.strikeT = -1; a.struck = false; }
@@ -305,7 +349,11 @@ export function stepVoid(sim: VoidSim, dt: number): void {
           a.strikeT = 0;
           a.struck = false;
           a.heavy = Math.random() < 0.3;
-          sim.events.push({ type: 'strike', x: a.x, z: a.z, agent: a });
+          sim.events.push({
+            kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
+            target: t ? whoOf(t) : undefined, how: styleName(a),
+            range: Math.hypot(t.x - a.x, t.z - a.z),
+          });
         }
         break;
       }
@@ -327,7 +375,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       if (other && Math.random() < dt * 0.9 * (1 - sim.peace) * (0.4 + a.nerve)) {
         a.target = other;
         setState(a, 'approach');
-        sim.events.push({ type: 'notice', x: a.x, z: a.z, agent: a });
+        sim.events.push({ kind: 'notice', t: sim.t, x: a.x, z: a.z, actor: whoOf(a), target: whoOf(other) });
         // being stalked is worth reacting to
         if (other.state === 'wander' || other.state === 'think') {
           other.target = a;
@@ -366,8 +414,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     for (const o of sim.agents) {
       if (o === s.from || o.deadT >= 0) continue;
       if (Math.hypot(o.x - s.x, o.z - s.z) < 0.45 + s.spec.size) {
-        hurt(sim, o, s.x - s.vx * 0.1, s.z - s.vz * 0.1);
-        sim.events.push({ type: 'impact', x: s.x, z: s.z, agent: o });
+        hurt(sim, o, s.x - s.vx * 0.1, s.z - s.vz * 0.1, s.from, s.spec.speed > 12 ? 'bolt' : 'spell');
         s.life = -1;
         break;
       }

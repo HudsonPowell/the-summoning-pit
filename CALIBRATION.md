@@ -551,3 +551,28 @@ A 70B model would have produced the same sameness.
   recovers after: 0.3 m on a bite, 0.22 on a thrust.
 - Check with `farm/attack_test.ts` (all styles, windup vs strike),
   `farm/bite_test.ts` (frame-by-frame) and `farm/ranged_test.ts` (in the suite).
+
+### The pit — server, wire format, event stream (2026-08-25)
+`npm run pit` runs the void on a server; `/void.html?live` watches it.
+Verified: two independent clients, identical creature ids, ~10Hz, **535 bytes
+per snapshot ≈ 5 KB/s per watcher**.
+- **Nobody drives a character, so none of the hard netcode applies** — no
+  prediction, no rollback, no rewind. It is state replication, and the state
+  is tiny.
+- **Three separate rates, on purpose**: sim 30Hz, positions 12Hz, events the
+  instant they happen. Events are sparse and carry the story, so they must not
+  wait for a position tick.
+- **Genomes travel once, by id.** The catalogue goes out in `hello`; snapshots
+  carry an index. The expensive data is the only part that never changes.
+- **The client interpolates positions but advances gait phase LOCALLY** from
+  each creature's own cadence, and starts strikes from EVENTS rather than
+  snapshots. So animation stays smooth however sparse the wire is — and it is
+  why the event stream had to be rich from the first commit.
+- `LiveVoid` deliberately quacks like `VoidSim`, so the director, the pose
+  solver and every look control work unchanged. Same seam the farm uses.
+- **Two bugs worth remembering.** (1) `{ t: 'hello', ...snapshot() }` — the
+  spread carries its own `t` and silently relabelled the message as a
+  snapshot, so the roster never arrived and every creature was undefined.
+  Spread first, label after. (2) Clearing `sim.events` at the START of the
+  client update destroyed events that arrived between frames, unread — the
+  caller drains them after reading instead.

@@ -31,9 +31,9 @@ let loosed = 0, impacts = 0, maxShots = 0, bites = 0;
 for (let i = 0; i < 60 * 25; i++) {
   stepVoid(sim, 1 / 60);
   for (const e of sim.events) {
-    if (e.type === 'loose') loosed++;
-    if (e.type === 'impact') impacts++;
-    if (e.type === 'strike' && e.agent === b) bites++;
+    if (e.kind === 'loose') loosed++;
+    if (e.kind === 'hit' && (e.how === 'bolt' || e.how === 'spell')) impacts++;
+    if (e.kind === 'strike' && e.actor?.id === b.id) bites++;
   }
   maxShots = Math.max(maxShots, sim.shots.length);
 }

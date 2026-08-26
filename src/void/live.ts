@@ -1,0 +1,168 @@
+// Watching a pit you are not simulating.
+//
+// The remote view quacks like the local one: it hands back the same agents
+// and shots the renderer already knows, so the director, the pose solver and
+// every look control work unchanged. Positions arrive twelve times a second
+// and are interpolated; gait phase is advanced LOCALLY from each creature's
+// own cadence, and strikes are started by events — so the animation stays
+// smooth however sparse the wire is.
+
+import { Character, migrateCharacter } from '../character';
+import { effectiveGait } from '../genome';
+import { Agent, VoidSim, VoidEvent, Shot, makeAgent } from './sim';
+
+const DELAY = 0.12; // render this far in the past, so there is always a pair
+
+interface Snap {
+  at: number;
+  time: number;
+  agents: any[];
+  shots: any[];
+}
+
+export class LiveVoid {
+  sim: VoidSim;
+  connected = false;
+  watchers = 0;
+  private ws?: WebSocket;
+  private cast: Character[] = [];
+  private prev?: Snap;
+  private next?: Snap;
+  private clock = 0;
+  private byId = new Map<number, Agent>();
+
+  constructor() {
+    this.sim = {
+      agents: [], shots: [], roster: [], events: [],
+      t: 0, spawnT: 0, population: 0, peace: 0.35,
+    };
+  }
+
+  connect(url: string): void {
+    const ws = new WebSocket(url);
+    this.ws = ws;
+    ws.onopen = () => { this.connected = true; };
+    ws.onclose = () => {
+      this.connected = false;
+      // the pit outlives any one connection; keep trying to get back in
+      setTimeout(() => this.connect(url), 1500);
+    };
+    ws.onmessage = e => this.receive(JSON.parse(e.data as string));
+  }
+
+  send(msg: unknown): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  private receive(m: any): void {
+    if (m.t === 'hello') {
+      this.cast = m.cast.map((c: any) => {
+        try { return migrateCharacter(c.ch); } catch { return null; }
+      }).filter(Boolean) as Character[];
+      this.sim.roster = this.cast;
+      this.take(m);
+      return;
+    }
+    if (m.t === 'snap') { this.take(m); return; }
+    if (m.t === 'ev') {
+      for (const ev of m.list as VoidEvent[]) this.applyEvent(ev);
+      this.sim.events.push(...m.list);
+    }
+  }
+
+  private take(m: any): void {
+    this.prev = this.next;
+    this.next = { at: performance.now() / 1000, time: m.time, agents: m.agents, shots: m.shots };
+    if (!this.prev) this.prev = this.next;
+    this.clock = this.next.at - DELAY;
+  }
+
+  /** Events drive the things that must not wait for the next position packet. */
+  private applyEvent(ev: VoidEvent): void {
+    const a = ev.actor ? this.byId.get(ev.actor.id) : undefined;
+    if ((ev.kind === 'strike' || ev.kind === 'loose') && a) {
+      a.strikeT = 0;
+      a.struck = false;
+      a.heavy = false;
+    }
+    if (ev.kind === 'hit' && ev.target) {
+      const t = this.byId.get(ev.target.id);
+      if (t) t.hurtT = 0.55;
+    }
+  }
+
+  private agentFor(row: any): Agent | null {
+    let a = this.byId.get(row.i);
+    if (!a) {
+      const ch = this.cast[row.c] ?? this.cast[0];
+      if (!ch) return null; // roster not in yet — skip until hello lands
+      a = makeAgent(ch, row.x, row.z, row.by);
+      a.id = row.i;
+      this.byId.set(row.i, a);
+      this.sim.agents.push(a);
+    }
+    return a;
+  }
+
+  update(dt: number): void {
+    // events arrive between frames, so they are drained by the caller AFTER
+    // it has read them — clearing here would destroy them unread
+    if (!this.next || !this.prev) return;
+    this.clock += dt;
+
+    const span = Math.max(1e-3, this.next.at - this.prev.at);
+    const u = Math.max(0, Math.min(1, (this.clock - this.prev.at) / span));
+    this.sim.t = this.prev.time + (this.next.time - this.prev.time) * u;
+
+    const prevById = new Map<number, any>(this.prev.agents.map((r: any) => [r.i, r]));
+    const live = new Set<number>();
+
+    for (const row of this.next.agents) {
+      live.add(row.i);
+      const a = this.agentFor(row);
+      if (!a) continue;
+      const p = prevById.get(row.i) ?? row;
+
+      a.x = p.x + (row.x - p.x) * u;
+      a.z = p.z + (row.z - p.z) * u;
+      // headings wrap, so interpolate the short way round
+      let dh = row.h - p.h;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      a.heading = p.h + dh * u;
+      a.move = p.mv + (row.mv - p.mv) * u;
+      a.turnRate = row.tr;
+      a.hp = row.hp;
+      a.state = row.st;
+      a.deadT = row.d;
+      a.by = row.by;
+      a.target = row.tg ? this.byId.get(row.tg) ?? null : null;
+
+      // the parts the wire never sends, advanced locally so they stay smooth
+      const eff = effectiveGait(a.genome.gait, { tired: 0, angry: a.state === 'fight' ? 0.7 : 0 });
+      a.phase = (a.phase + eff.cadence * a.move * dt) % 1;
+      a.idleT += dt;
+      if (a.hurtT > 0) a.hurtT -= dt;
+      if (a.strikeT >= 0) {
+        a.strikeT += dt;
+        const spec = (a.ch.behaviors['attack-light'] as any)?.strike;
+        if (a.strikeT > (spec?.duration ?? 0.5)) a.strikeT = -1;
+      }
+    }
+
+    // anything the pit has forgotten
+    for (const [id, a] of this.byId) {
+      if (live.has(id)) continue;
+      this.byId.delete(id);
+      const i = this.sim.agents.indexOf(a);
+      if (i >= 0) this.sim.agents.splice(i, 1);
+    }
+
+    this.sim.shots = (this.next.shots as any[]).map((s): Shot => ({
+      x: s.x, z: s.z, y: s.y, vx: 0, vz: 0, life: 1,
+      spec: { speed: 0, range: 0, size: s.r, color: s.c, arcing: false, trail: s.tr.length },
+      from: this.sim.agents[0],
+      trail: s.tr.map((t: number[]) => ({ x: t[0], y: t[1], z: t[2] })),
+    }));
+  }
+}
