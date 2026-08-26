@@ -295,9 +295,20 @@ const cam: Camera = { yaw: 0.0, pitch: 0.62, ppm: 26, cy: 0.55, cx: player.x, cz
 const zoomInput = document.getElementById('zoom') as HTMLInputElement | null;
 const resInput = document.getElementById('res') as HTMLInputElement | null;
 const paceInput = document.getElementById('pace') as HTMLInputElement | null;
-zoomInput?.addEventListener('input', () => { cam.ppm = parseFloat(zoomInput.value); });
+// same rule as the forge: resolution is pixel density, zoom is framing, so
+// ppm has to scale with the buffer or the slider just changes field of view
+const ARENA_REF_RES = 240;
+let arenaRes = ARENA_REF_RES;
+let arenaZoom = cam.ppm;
+const applyArenaScale = () => { cam.ppm = arenaZoom * (arenaRes / ARENA_REF_RES); };
+zoomInput?.addEventListener('input', () => {
+  arenaZoom = parseFloat(zoomInput.value);
+  applyArenaScale();
+});
 resInput?.addEventListener('input', () => {
   const w = parseInt(resInput.value, 10);
+  arenaRes = w;
+  applyArenaScale();
   view.setSize(w, Math.round(w * 0.75));
 });
 paceInput?.addEventListener('input', () => { pace = parseFloat(paceInput.value); });

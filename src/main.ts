@@ -25,6 +25,19 @@ let baseSkeleton: Skeleton = structuredClone(genome.skeleton);
 const scales: SkeletonScales = { legs: 1, arms: 1, head: 1, bulk: 1, width: 1 };
 const mood: Mood = { tired: 0, angry: 0 };
 const cam: Camera = { yaw: 0.5, pitch: 0.22, ppm: 72, cy: 0.95 };
+
+// Resolution must change PIXEL DENSITY, not framing. ppm is buffer-pixels
+// per metre, so leaving it fixed while the buffer grows just fits more world
+// in — the figure keeps the same pixel count and only looks further away.
+// Deriving ppm from the buffer size keeps the framing put, so the slider does
+// the one thing its name promises: bigger pixels or smaller ones.
+const REF_RES = 176;   // the resolution `zoom` is quoted against
+let bufRes = REF_RES;  // current buffer edge, px
+let zoomPpm = 72;      // zoom in px/metre AT the reference resolution
+function applyCamScale() {
+  cam.ppm = zoomPpm * (bufRes / REF_RES);
+}
+applyCamScale();
 let activeBehavior = 'walk';
 let showBlast = false;
 
@@ -290,10 +303,14 @@ slider(gMood, 'angry', 0, 1, 0.01, mood.angry, v => { mood.angry = v; });
 const gCam = group(panel, 'camera — drag the canvas to orbit');
 const camYawSet = slider(gCam, 'yaw', -Math.PI, Math.PI, 0.001, cam.yaw, v => { cam.yaw = v; });
 const camPitchSet = slider(gCam, 'pitch', -0.1, 0.9, 0.001, cam.pitch, v => { cam.pitch = v; });
-const camZoomSet = slider(gCam, 'zoom', 24, 140, 1, cam.ppm, v => { cam.ppm = v; });
+const camZoomSet = slider(gCam, 'zoom', 24, 140, 1, zoomPpm, v => { zoomPpm = v; applyCamScale(); });
 
 const gRender = group(panel, 'render');
-slider(gRender, 'resolution', 96, 400, 16, 176, v => { view.setSize(v, v); });
+slider(gRender, 'resolution', 96, 400, 16, REF_RES, v => {
+  bufRes = v;
+  view.setSize(v, v);
+  applyCamScale();
+});
 toggle(gRender, 'CLASH flat look', false, v => { cam.flat = v; });
 
 // soft field: 0 keeps the hard nearest-capsule look; above that the parts
@@ -408,8 +425,9 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerup', () => { dragging = false; });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  cam.ppm = Math.min(140, Math.max(24, cam.ppm * (e.deltaY < 0 ? 1.06 : 0.94)));
-  camZoomSet(cam.ppm);
+  zoomPpm = Math.min(140, Math.max(24, zoomPpm * (e.deltaY < 0 ? 1.06 : 0.94)));
+  applyCamScale();
+  camZoomSet(zoomPpm);
 }, { passive: false });
 
 // Arrow keys orient the figure precisely: held for smooth continuous turning,

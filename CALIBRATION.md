@@ -391,3 +391,19 @@ Sorting artefacts on limbs are almost always one of these two; check the axis
 - Foot-ground slip vs floor scroll not exactly matched (treadmill approximation). Not noticeable yet.
 - 40 fps in the studio at 176² — fine for now, floor pass is the cost. WebGPU port is the real answer, not micro-optimisation.
 - Toe pitch during swing is a guess (0.5·sin(πu)); revisit with reference data.
+
+### Resolution vs zoom — they are not the same slider (2026-08-25)
+`ppm` is buffer-pixels per metre, so a resolution slider that only resizes the
+buffer changes **framing**, not density: the figure stays the same pixel count
+and simply occupies less of a larger frame, which reads as zooming out. Jody
+spotted this immediately.
+- Fix: **ppm is derived, never set directly** — `ppm = zoomPpm × (res / REF)`.
+  Framing then depends only on zoom (`REF / zoomPpm` metres visible), and
+  resolution moves nothing but the pixel count. Forge REF 176, rig arena 240.
+- Measured across a 4× range (96→400): on-screen figure height held at
+  483–489 px (the 1% is buffer-grid quantisation of the bounding box) while
+  colour runs across the mid-line went 18 → 22 → 31 → 34. That is the check
+  worth repeating — same size, more pixels.
+- CLASH's arena is deliberately different: native 512×352 is fixed by the
+  design doc and its `scale` select is an integer upscale of the whole board,
+  which is a true zoom and correct as-is.
