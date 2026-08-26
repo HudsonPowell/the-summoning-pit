@@ -8,7 +8,7 @@ import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { PixelView } from '../view';
-import { createVoid, stepVoid, spawnOne, spawnChar, Agent, VoidSim, Shot } from './sim';
+import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
 import { LiveVoid } from './live';
 
@@ -360,7 +360,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
   };
   let intent: Intent | undefined;
   if (a.strikeT >= 0) {
-    const spec = (a.ch.behaviors[a.heavy ? 'attack-heavy' : 'attack-light'] as any)?.strike;
+    const spec = strikeSpecOf(a);
     const u = Math.min(1, a.strikeT / (spec?.duration ?? 0.5));
     intent = { slash: { t: u, weight: slashWeight(u), spec } };
   }

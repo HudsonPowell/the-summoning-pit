@@ -36,6 +36,7 @@ export interface Agent {
   nerve: number;             // aggression, kept under its old name for the AI
   temper: Temper;            // what it is like, read off what it is made of
   sec: Secondary;            // the parts of the body that are late
+  swing: StrikeSpec | null;  // THIS swing, varied — never the same twice
   deeds: Deeds;              // what it has done, and what it took for doing it
   calm: number;              // seconds since anything happened to it
   lookAt: number;            // world angle the head is resting on
@@ -134,6 +135,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     nerve: temper.aggression,
     temper,
     sec: newSecondary(),
+    swing: null,
     deeds: { kills: 0, spoils: [], born: 0 },
     calm: 0,
     lookAt: rnd(-Math.PI, Math.PI),
@@ -223,10 +225,14 @@ export function styleName(a: Agent): string {
   return w ? w.split(/[^a-z]+/i).filter(Boolean).slice(-1)[0] || 'blow' : 'blow';
 }
 
-function strikeSpecOf(a: Agent): StrikeSpec {
-  const key = a.heavy ? 'attack-heavy' : 'attack-light';
-  const b = a.ch.behaviors[key] as { strike?: StrikeSpec } | undefined;
+function strikeStyleOf(a: Agent, heavy: boolean): StrikeSpec {
+  const b = a.ch.behaviors[heavy ? 'attack-heavy' : 'attack-light'] as { strike?: StrikeSpec } | undefined;
   return b?.strike ?? DEFAULT_STRIKE_LIGHT;
+}
+
+/** The swing in progress, if there is one — otherwise the creature's style. */
+export function strikeSpecOf(a: Agent): StrikeSpec {
+  return a.swing ?? strikeStyleOf(a, a.heavy);
 }
 
 export function strikeDuration(a: Agent): number {
@@ -241,7 +247,11 @@ export function rangedOf(a: Agent): RangedSpec | undefined {
 /** How far this creature likes to be. Archers keep their distance. */
 export function preferredRange(a: Agent): number {
   const r = rangedOf(a);
-  return r ? Math.min(r.range * 0.55, 5.5) : FIGHT_R;
+  if (r) return Math.min(r.range * 0.55, 5.5);
+  // Melee closed to a flat 1.5m and circled there, which for most creatures is
+  // outside its own arms — two things standing near each other, swinging at
+  // air. Fight at the distance your reach actually is.
+  return Math.max(0.7, reachOf(a) * 0.72);
 }
 
 function nearest(sim: VoidSim, a: Agent, maxR: number): Agent | null {
@@ -295,6 +305,52 @@ function pickTarget(sim: VoidSim, a: Agent, maxR: number): Agent | null {
   return best;
 }
 
+/**
+ * The same two moves forever is what made every fight look identical. A swing
+ * is now a variant of the creature's style: it can come from the other side,
+ * run fast or heavy, reach further or pull short. Same machinery, never quite
+ * the same arc, and it costs nothing because the shape was always data.
+ */
+function varyStrike(base: StrikeSpec, r: number): StrikeSpec {
+  const v = { ...base, posts: base.posts.map(p => [...p]) as StrikeSpec['posts'] };
+  const pick = Math.floor(r * 1000) % 4;
+  const jitter = (r * 7919) % 1;
+
+  // backhand: the whole arc comes across the other way
+  if (pick === 1) for (const p of v.posts) { p[2] = -p[2]; p[1] *= 0.75; }
+  // rising: from low up through the target rather than down onto it
+  if (pick === 2) for (const p of v.posts) { p[1] = -p[1] * 0.85; }
+  // a wider, looser sweep
+  if (pick === 3) for (const p of v.posts) { p[2] *= 1.5; }
+
+  v.duration = base.duration * (0.78 + jitter * 0.5);
+  v.reachMax = base.reachMax * (0.92 + jitter * 0.2);
+  v.twist = base.twist * (0.7 + jitter * 0.8);
+  if (base.lunge) v.lunge = base.lunge * (0.6 + jitter * 1.1);
+  return v;
+}
+
+/** Used by the live client so watchers see varied swings too. */
+export function varyFor(a: Agent, heavy: boolean, r: number): StrikeSpec {
+  return varyStrike(strikeStyleOf(a, heavy), r);
+}
+
+export function beginStrike(a: Agent, heavy: boolean): void {
+  a.strikeT = 0;
+  a.struck = false;
+  a.heavy = heavy;
+  const v = varyStrike(strikeStyleOf(a, heavy), Math.random());
+  // A head strike moves a head, and a head is small: on a hound that is 64cm
+  // of neck in an animal a metre long, which reads as nothing at all. An
+  // animal that bites throws its whole body at you.
+  if (v.limb === 'head' || v.limb === 'tail') {
+    v.lunge = (v.lunge ?? 0.2) * 1.9;
+    v.reachMax *= 1.25;
+    v.duration *= 0.82;
+  }
+  a.swing = v;
+}
+
 function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, how?: string): void {
   if (a.hurtT > 0 || a.deadT >= 0) return;
 
@@ -313,6 +369,18 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
   // the blow goes into the body, not just into the hit points
   const fromYaw = Math.atan2(fromZ - a.z, fromX - a.x) - a.heading;
   jolt(a.sec, a.hp <= 0 ? 0.55 : 0.3, fromYaw, a.bulk);
+
+  // A blow lands and the thing being hit carries on swinging as though nothing
+  // touched it — that is why exchanges read as two creatures taking turns at a
+  // wall. Being wounded costs you the swing you were in the middle of, and
+  // knocks you off the spot you were standing on.
+  a.strikeT = -1;
+  a.struck = false;
+  a.swing = null;
+  a.stateT = Math.min(a.stateT, 0.15);   // a beat to recover before the next
+  const knock = 0.16 / Math.max(0.5, a.bulk);
+  a.x -= Math.cos(fromYaw + a.heading) * knock;
+  a.z -= Math.sin(fromYaw + a.heading) * knock;
 
   // Anything that has sworn to this one comes running. This is the only way a
   // pact is ever visible: nothing is announced, you just watch two creatures
@@ -506,9 +574,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         // an aggressive thing swings oftener, and swings heavy
         const period = STRIKE_PERIOD * (1.5 - a.temper.aggression * 0.85);
         if (a.strikeT < 0 && a.stateT > 0.35 && Math.random() < dt / period) {
-          a.strikeT = 0;
-          a.struck = false;
-          a.heavy = Math.random() < 0.15 + a.temper.aggression * 0.4;
+          beginStrike(a, Math.random() < 0.15 + a.temper.aggression * 0.4);
           sim.events.push({
             kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
             target: t ? whoOf(t) : undefined, how: styleName(a),

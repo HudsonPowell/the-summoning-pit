@@ -10,7 +10,7 @@
 import { newPacts } from './pacts';
 import { Character, migrateCharacter } from '../character';
 import { effectiveGait } from '../genome';
-import { Agent, VoidSim, VoidEvent, Shot, makeAgent } from './sim';
+import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
 
 const DELAY = 0.12; // render this far in the past, so there is always a pair
 
@@ -113,6 +113,13 @@ export class LiveVoid {
       a.strikeT = 0;
       a.struck = false;
       a.heavy = false;
+      // The variation is cosmetic — damage was settled on the server — so the
+      // client rolls its own rather than putting a whole spec on the wire.
+      a.swing = varyFor(a, false, ((ev.t * 9301 + a.id * 49297) % 233280) / 233280);
+    }
+    if (ev.kind === 'hit' && ev.target) {
+      const t2 = this.byId.get(ev.target.id);
+      if (t2) { t2.strikeT = -1; t2.swing = null; }
     }
     if (ev.kind === 'hit' && ev.target) {
       const t = this.byId.get(ev.target.id);

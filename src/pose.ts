@@ -363,7 +363,14 @@ export function solvePose(
       if (pair === 0) {
         const w = s > 0 ? extras?.weapon : extras?.offhand;
         if (w) {
-          const ex = norm(sub(hand, elbow));
+          // A weapon runs along the forearm, so an arm hanging at rest points
+          // it straight at the floor — every armed creature stood there using
+          // its greatsword as a walking stick. Carry it: at rest the grip is
+          // swung up and forward, and it only lines up with the arm as the
+          // swing takes over.
+          const along = norm(sub(hand, elbow));
+          const carried = norm(v3(0.55, 0.72, -s * 0.25));
+          const ex = norm(vlerp(carried, along, Math.min(1, 0.25 + sw2 * 1.1)));
           let ez = cross(ex, v3(0, 1, 0));
           if (len(ez) < 1e-3) ez = v3(0, 0, 1);
           // mirror the grip for the off hand, so a shield faces out and a

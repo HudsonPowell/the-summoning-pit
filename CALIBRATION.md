@@ -808,3 +808,35 @@ Separation now also **feels** like something: heavier bodies give less ground
 (`give = other.bulk / (a.bulk + other.bulk)`), and any real shove jolts the
 secondary springs. Bodies used to interpenetrate and slide apart with the pose
 completely unaware.
+
+## watching a fight, one frame at a time (2026-08-27)
+
+`npm run fight ogre hound` renders a strip of a real fight. Numbers cannot tell
+you that a swing is boring. The first strip showed four things at once, none of
+which I would have found by reasoning:
+
+1. **They never closed.** Melee held a flat `FIGHT_R = 1.5 m` and circled there
+   — outside most creatures' own arms. Two things standing near each other,
+   swinging at air. Now `preferredRange = reachOf(a) * 0.72`, so a creature
+   fights at the distance its body actually is.
+2. **Weapons dragged on the floor.** The grip runs along the forearm, so an arm
+   at rest points a greatsword straight down — every armed creature stood there
+   using its weapon as a walking stick. The grip is now blended between a
+   CARRIED direction `(0.55, 0.72, ∓0.25)` and the forearm, lining up only as
+   the swing takes over.
+3. **Every swing was the same swing.** One spec per creature per weight, forever.
+   `varyStrike()` mirrors the arc, flips it to rise instead of fall, widens it,
+   and scales duration ±25%, reach, twist and lunge. The shape was always data,
+   so variation is free.
+4. **Nothing interrupted anything.** A creature took a blow and carried on
+   swinging as though nothing had touched it, which is why exchanges read as
+   two things taking turns at a wall. A wound now cancels the swing in
+   progress, costs a beat of recovery, and knocks the body back by
+   `0.16 / bulk` — the heavier you are, the less you give.
+5. **Bites did not read.** A head strike moves a head: 64 cm of neck on an
+   animal a metre long. Measured, not guessed. Head and tail strikes now throw
+   the whole body — lunge ×1.9, reach ×1.25, duration ×0.82.
+
+The live client rolls its own swing variation from `(event time, agent id)`
+rather than putting a spec on the wire: damage was settled on the server, so
+the arc is cosmetic and does not need to agree.

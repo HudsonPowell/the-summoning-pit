@@ -14,7 +14,8 @@
     "pit": "tsx server/index.ts",
     "pit:test": "tsx farm/pit_test.ts",
     "stress": "tsx farm/stress.ts",
-    "roster": "tsx farm/roster.ts"
+    "roster": "tsx farm/roster.ts",
+    "fight": "tsx farm/fight_strip.ts"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
