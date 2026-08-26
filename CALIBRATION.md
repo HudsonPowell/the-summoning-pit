@@ -663,3 +663,45 @@ browser throws `temperOf is not defined` at the first spawn, because a cycle
 leaves part of the graph uninitialised. Constants shared by two modules go in
 their own module (`src/ollama.ts`). Cheap rule: if two files import each other,
 one of them is really three.
+
+## foot-skate: legs cycle on distance, never on a clock (2026-08-26)
+
+`phase += cadence * move * dt` looks right and is the reason everything slid.
+A creature backing off, circling in a fight, chasing at 1.25x or fleeing at
+1.4x all cycled its legs at the same rate as one strolling, so the feet ran at
+a different speed from the floor.
+
+Stride is metres per cycle, so a cycle is one stride travelled:
+
+    fwd  = dx*cos(heading) + dz*sin(heading)
+    lat  = -dx*sin(heading) + dz*cos(heading)
+    phase += (fwd + |lat|*0.5) / max(0.08, stride)
+
+Signed, so backing up runs the cycle backwards; the lateral term keeps the feet
+lifting when a creature sidesteps. Measured after: 0.950 m travelled per leg
+cycle against a genome stride of 0.950, p10–p90 0.944–0.950.
+
+## the camera that made people ill
+
+Three separate faults, only one of which was smoothing:
+
+1. **Yaw wound up.** The director leaves `cam.yaw` unwrapped; it had reached
+   17.49 rad. Handing back to a follow camera targeting 0.5 and interpolating
+   LINEARLY spins the view two and a half times. Angles always take the short
+   way round — `smoothDampAngle` on a wrapped current.
+2. **Following the subject exactly.** A creature in a fight circles, jockeys
+   and backs off constantly. The camera now follows an ANCHOR that only moves
+   when the creature leaves a 0.9 m deadzone, damped over 0.75 s, and takes its
+   height from the creature's SIZE rather than its bob — tracking the bounce is
+   bolting the camera to a spring.
+3. **Cutting on hand-off.** Fine between the director's own shots, sickening
+   when it takes the camera off something you were watching. The director's
+   frame now goes through the same damping. A dead summon also keeps the
+   camera rather than releasing it mid-fight.
+
+Measured while following: peak yaw rate **0 rad/s**, peak camera speed 2.3 m/s
+against a creature moving at 1.71. Director-only: peak accel 18.5 m/s² where it
+had been 26,000.
+
+Cold start snaps to the first frame instead of damping up from nothing —
+otherwise the first second is a black screen.

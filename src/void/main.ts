@@ -9,7 +9,7 @@ import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, Agent, VoidSim, Shot } from './sim';
-import { Director } from './director';
+import { Director, smoothDamp, smoothDampAngle } from './director';
 import { LiveVoid } from './live';
 
 const KEY = 'void-look';
@@ -52,7 +52,8 @@ const DEFAULT_LOOK: Look = {
 function loadLook(): Look {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULT_LOOK, ...JSON.parse(raw) };
+    // the drawer is not a preference — `c` opens it, and it starts shut
+    if (raw) return { ...DEFAULT_LOOK, ...JSON.parse(raw), panel: false };
   } catch { /* fresh */ }
   return { ...DEFAULT_LOOK };
 }
@@ -155,12 +156,31 @@ const ME = (() => {
 let yours: Agent | null = null;
 const orbit = { yaw: 0, zoom: 0, idle: 99 };
 
+// The camera's own inertia. Chasing the creature frame by frame is what made
+// it sickening: a beast in a fight circles, jockeys and backs off constantly,
+// and a camera that honours all of that is a camera being shaken. So the rig
+// follows an ANCHOR that only moves when the creature genuinely leaves, and
+// everything else is critically damped over most of a second.
+const rig = {
+  ax: 0, az: 0,                                    // the anchor, not the creature
+  vx: { v: 0 }, vz: { v: 0 }, vy: { v: 0 },
+  vppm: { v: 0 }, vyaw: { v: 0 },
+};
+const DEADZONE = 0.9;   // metres of jockeying the camera simply ignores
+
+const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+let camCold = true;
+
 /** The most recent thing you summoned that is still standing. */
 function yourAgent(sim: VoidSim): Agent | null {
-  if (yours && yours.deadT < 0 && sim.agents.includes(yours)) return yours;
   const mine = sim.agents.filter(a => a.by === ME && a.deadT < 0);
-  yours = mine.length ? mine[mine.length - 1] : null;
-  return yours;
+  if (mine.length) { yours = mine[mine.length - 1]; return yours; }
+  // Nothing of yours is standing. Hold on the body rather than throwing the
+  // camera back to the roaming director in the middle of a fight — watching
+  // your own creature go down is the point, and the cut was sickening.
+  if (yours && sim.agents.includes(yours)) return yours;
+  yours = null;
+  return null;
 }
 
 // --- the summoning box ------------------------------------------------------
@@ -216,22 +236,49 @@ const director = new Director();
 
 function driveCamera(sim: VoidSim, dt: number) {
   const you = yourAgent(sim);
+  if (camCold) {
+    // damping in from a cold camera means a second of looking at nothing
+    camCold = false;
+    const f0 = director.update(sim, dt, {
+      closeness: look.closeness, response: look.response, lead: look.lead,
+      sway: look.orbit, pitch: look.pitch,
+    }, view.size.W, view.size.H);
+    cam.cx = rig.ax = you ? you.x : f0.x;
+    cam.cz = rig.az = you ? you.z : f0.z;
+    cam.cy = you ? you.bulk * 0.55 : f0.cy;
+    cam.ppm = you ? (view.size.H * 0.26 / Math.max(0.7, you.bulk)) * look.zoom : f0.ppm * look.zoom;
+    cam.yaw = you ? 0.5 : f0.yaw;
+    return;
+  }
   if (you) {
     orbit.idle += dt;
-    // a hand on the camera holds it; take it off and it comes home
-    if (orbit.idle > 1.6) {
-      const back = Math.min(1, 0.9 * dt);
-      orbit.yaw += (0 - orbit.yaw) * back;
-      orbit.zoom += (0 - orbit.zoom) * back;
+    if (orbit.idle > 2) {
+      // a hand on the camera holds it; take it off and it comes home slowly
+      orbit.yaw = smoothDamp(orbit.yaw, 0, { v: 0 }, 2.4, dt);
+      orbit.zoom = smoothDamp(orbit.zoom, 0, { v: 0 }, 2.4, dt);
     }
-    const k = Math.min(1, 5 * dt);
-    cam.cx = (cam.cx ?? 0) + (you.x - (cam.cx ?? 0)) * k;
-    cam.cz = (cam.cz ?? 0) + (you.z - (cam.cz ?? 0)) * k;
-    cam.cy += (you.bulk * 0.55 - cam.cy) * k;
+
+    // the anchor only gives when the creature has actually gone somewhere
+    const dx = you.x - rig.ax, dz = you.z - rig.az;
+    const d = Math.hypot(dx, dz);
+    if (d > DEADZONE) {
+      const pull = (d - DEADZONE) / d;
+      rig.ax += dx * pull;
+      rig.az += dz * pull;
+    }
+
+    cam.cx = smoothDamp(cam.cx ?? rig.ax, rig.ax, rig.vx, 0.75, dt);
+    cam.cz = smoothDamp(cam.cz ?? rig.az, rig.az, rig.vz, 0.75, dt);
+    // height comes off its SIZE, never off its bob — following the bounce is
+    // following a spring with a camera bolted to it
+    cam.cy = smoothDamp(cam.cy, you.bulk * 0.55, rig.vy, 1.1, dt);
     const want = (view.size.H * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom);
-    cam.ppm += (want - cam.ppm) * Math.min(1, 2.4 * dt);
-    const wantYaw = 0.5 + orbit.yaw;
-    cam.yaw += (wantYaw - cam.yaw) * Math.min(1, 4 * dt);
+    cam.ppm = smoothDamp(cam.ppm, want, rig.vppm, 1.3, dt);
+    // The director leaves cam.yaw unwrapped — it had wound to 17 radians by
+    // the time a creature died and came back. Interpolating that linearly to
+    // 0.5 spins the camera two and a half times, which is exactly the thing
+    // that makes people feel ill. Always take the short way round.
+    cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), 0.5 + orbit.yaw, rig.vyaw, 1.1, dt);
     return;
   }
   const f = director.update(sim, dt, {
@@ -241,11 +288,17 @@ function driveCamera(sim: VoidSim, dt: number) {
     sway: look.orbit,
     pitch: look.pitch,
   }, view.size.W, view.size.H);
-  cam.cx = f.x;
-  cam.cz = f.z;
-  cam.ppm = f.ppm * look.zoom;
-  cam.yaw = f.yaw;
-  cam.cy = f.cy;
+  // The director cuts between shots, which is right when it is running the
+  // show on its own and very wrong the moment it takes the camera back off a
+  // creature you were watching. Everything it asks for goes through the same
+  // damping the follow rig uses, so a hand-off is a move rather than a jump.
+  cam.cx = smoothDamp(cam.cx ?? f.x, f.x, rig.vx, 0.5, dt);
+  cam.cz = smoothDamp(cam.cz ?? f.z, f.z, rig.vz, 0.5, dt);
+  cam.cy = smoothDamp(cam.cy, f.cy, rig.vy, 0.7, dt);
+  cam.ppm = smoothDamp(cam.ppm, f.ppm * look.zoom, rig.vppm, 0.8, dt);
+  cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), f.yaw, rig.vyaw, 0.7, dt);
+  rig.ax = cam.cx;
+  rig.az = cam.cz;
 }
 
 // --- drawing ----------------------------------------------------------------
@@ -592,7 +645,7 @@ function setPanel(open: boolean) {
   });
   stage.addEventListener('pointermove', e => {
     if (!down) return;
-    orbit.yaw += (e.clientX - lastX) * 0.006;
+    orbit.yaw = Math.max(-Math.PI, Math.min(Math.PI, orbit.yaw + (e.clientX - lastX) * 0.006));
     lastX = e.clientX;
     orbit.idle = 0;
   });

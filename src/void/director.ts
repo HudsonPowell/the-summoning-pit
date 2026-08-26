@@ -32,7 +32,7 @@ const MIN_HOLD = 2.2;   // don't twitch between subjects
 const STALE = 11;       // but don't stare at nothing forever
 
 /** Unity-style critically damped spring: eases in and out, never overshoots. */
-function smoothDamp(
+export function smoothDamp(
   current: number, target: number, vel: { v: number }, smoothTime: number, dt: number,
 ): number {
   const omega = 2 / Math.max(0.0001, smoothTime);
@@ -56,7 +56,7 @@ function wrapPi(a: number): number {
   return a;
 }
 
-function smoothDampAngle(
+export function smoothDampAngle(
   current: number, target: number, vel: { v: number }, smoothTime: number, dt: number,
 ): number {
   return smoothDamp(current, current + wrapPi(target - current), vel, smoothTime, dt);

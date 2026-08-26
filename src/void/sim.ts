@@ -387,6 +387,9 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       if (a.strikeT >= spec.duration) { a.strikeT = -1; a.struck = false; }
     }
 
+    // where it was before it did anything, so the legs can be told the truth
+    const wasX = a.x, wasZ = a.z;
+
     switch (a.state) {
       case 'wander': {
         a.move += (1 - a.move) * Math.min(1, 4 * dt);
@@ -493,9 +496,19 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     }
 
     turnToward(a, dt);
-    // keep the gait cycle honest to distance travelled
+
+    // The legs cycle on DISTANCE, not on a clock. Advancing the phase by
+    // cadence*dt meant a creature backing off, circling, chasing at 1.25x or
+    // fleeing at 1.4x all cycled its legs at exactly the same rate as one
+    // strolling — so the feet slid across the floor. Stride is metres per
+    // cycle, so a cycle is one stride travelled, whatever the speed.
     const eff = effectiveGait(a.genome.gait, { tired: 0, angry: a.state === 'fight' ? 0.7 : 0 });
-    a.phase = (a.phase + eff.cadence * a.move * dt) % 1;
+    const dx = a.x - wasX, dz = a.z - wasZ;
+    const fwd = dx * Math.cos(a.heading) + dz * Math.sin(a.heading);
+    const lat = -dx * Math.sin(a.heading) + dz * Math.cos(a.heading);
+    const stride = Math.max(0.08, eff.stride);
+    // backing up runs the cycle backwards; sidestepping still lifts the feet
+    a.phase = (a.phase + (fwd + Math.abs(lat) * 0.5) / stride + 1) % 1;
 
     // a target holds the head; otherwise it rests where the scan left it
     if (a.target && a.target.deadT < 0 && (a.state === 'fight' || a.state === 'approach')) {
