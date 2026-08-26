@@ -268,7 +268,18 @@ export function solvePose(
       const p = frac(phase + spreadOff + (side < 0 ? 0 : 0.5));
       const t = footTrack(p, g);
       const hip = attachPoint(chain, side);
-      const ankle = v3(hip.x + t.x * mv, t.y * mv + ANKLE_H, hip.z * 0.94);
+      // A PLANTED FOOT DOES NOT MOVE. During stance the track retreats by
+      // exactly stride*stance, which is exactly how far the body travels in
+      // that time — so the foot holds its place in the world and the body
+      // passes over it. Scaling that retreat by `mv` broke it: a creature
+      // circling in a fight has move=0.45 and covers ground at full speed, so
+      // its feet gave back less than half the distance and skated the rest.
+      // The blend is redundant anyway, because phase only advances with
+      // distance travelled — stand still and the feet are already frozen.
+      // It survives only as a settle, easing the legs to neutral when a
+      // creature genuinely stops rather than leaving one in mid-air.
+      const settle = clamp(mv / 0.3, 0, 1);
+      const ankle = v3(hip.x + t.x * settle, t.y * settle + ANKLE_H, hip.z * 0.94);
       const knee = twoBoneIK(hip, ankle, chain.seg[0], chain.seg[1] ?? chain.seg[0], v3(1, 0, 0));
       const swingU = p < g.stance ? 0 : (p - g.stance) / (1 - g.stance);
       const toePitch = (p < g.stance ? 0 : 0.5 * Math.sin(Math.PI * swingU)) * mv;

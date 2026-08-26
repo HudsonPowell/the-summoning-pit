@@ -586,11 +586,20 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       if (o === a || o.deadT >= 0) continue;
       const dx = a.x - o.x, dz = a.z - o.z;
       const d = Math.hypot(dx, dz);
+      // heavier things give less ground: a hound bouncing off a troll should
+      // be the one that moves
       const min = 0.55 * (a.bulk + o.bulk) * 0.5;
       if (d > 0.0001 && d < min) {
-        const push = (min - d) * 0.5;
+        const give = o.bulk / (a.bulk + o.bulk);
+        const push = (min - d) * give;
         a.x += (dx / d) * push;
         a.z += (dz / d) * push;
+        // and it is felt. Bodies used to interpenetrate and slide apart with
+        // the pose completely unaware — the world had no effect on them.
+        if (push > 0.004) {
+          const from = Math.atan2(-dz, -dx) - a.heading;
+          jolt(a.sec, Math.min(0.22, push * 3.2), from, a.bulk);
+        }
       }
     }
   }

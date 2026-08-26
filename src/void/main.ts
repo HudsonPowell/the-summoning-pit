@@ -186,6 +186,7 @@ const DEADZONE = 0.9;   // metres of jockeying the camera simply ignores
 
 const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 let camCold = true;
+let watchYaw = 0.5;   // the observer's slow circle, accumulated
 
 /** The most recent thing you summoned that is still standing. */
 function yourAgent(sim: VoidSim): Agent | null {
@@ -262,15 +263,11 @@ function driveCamera(sim: VoidSim, dt: number) {
   if (camCold) {
     // damping in from a cold camera means a second of looking at nothing
     camCold = false;
-    const f0 = director.update(sim, dt, {
-      closeness: look.closeness, response: look.response, lead: look.lead,
-      sway: look.orbit, pitch: look.pitch,
-    }, view.size.W, view.size.H);
-    cam.cx = rig.ax = you ? you.x : f0.x;
-    cam.cz = rig.az = you ? you.z : f0.z;
-    cam.cy = you ? you.bulk * 0.55 : f0.cy;
-    cam.ppm = you ? (view.size.H * 0.26 / Math.max(0.7, you.bulk)) * look.zoom : f0.ppm * look.zoom;
-    cam.yaw = you ? 0.5 : f0.yaw;
+    cam.cx = rig.ax = you ? you.x : 0;
+    cam.cz = rig.az = you ? you.z : 0;
+    cam.cy = you ? you.bulk * 0.55 : 0.9;
+    cam.ppm = (view.size.H * (you ? 0.26 / Math.max(0.7, you.bulk) : 0.34 / 5)) * look.zoom;
+    cam.yaw = you ? 0.5 : watchYaw;
     return;
   }
   if (you) {
@@ -304,24 +301,30 @@ function driveCamera(sim: VoidSim, dt: number) {
     cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), 0.5 + orbit.yaw, rig.vyaw, 1.1, dt);
     return;
   }
-  const f = director.update(sim, dt, {
-    closeness: look.closeness,
-    response: look.response,
-    lead: look.lead,
-    sway: look.orbit,
-    pitch: look.pitch,
-  }, view.size.W, view.size.H);
-  // The director cuts between shots, which is right when it is running the
-  // show on its own and very wrong the moment it takes the camera back off a
-  // creature you were watching. Everything it asks for goes through the same
-  // damping the follow rig uses, so a hand-off is a move rather than a jump.
-  cam.cx = smoothDamp(cam.cx ?? f.x, f.x, rig.vx, 0.5, dt);
-  cam.cz = smoothDamp(cam.cz ?? f.z, f.z, rig.vz, 0.5, dt);
-  cam.cy = smoothDamp(cam.cy, f.cy, rig.vy, 0.7, dt);
-  cam.ppm = smoothDamp(cam.ppm, f.ppm * look.zoom, rig.vppm, 0.8, dt);
-  cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), f.yaw, rig.vyaw, 0.7, dt);
+  // NOTHING OF YOURS IS IN THERE. You are not in the fight, so the camera
+  // stops pretending you are: it pulls back to take in the whole pool of light
+  // and circles it slowly. An observer's view, not an operator's — the
+  // director's close cutting is for when you have a stake in what it finds.
+  const live = sim.agents.filter(a => a.deadT < 0);
+  let cx = 0, cz = 0;
+  for (const a of live) { cx += a.x; cz += a.z; }
+  if (live.length) { cx /= live.length; cz /= live.length; }
+
+  // far enough out that everything in the pit is inside the frame
+  let reach = 3.2;
+  for (const a of live) reach = Math.max(reach, Math.hypot(a.x - cx, a.z - cz) + a.bulk);
+
+  watchYaw = (watchYaw + dt * 0.045) % (Math.PI * 2);   // a turn every 2.3 min
+
+  cam.cx = smoothDamp(cam.cx ?? cx, cx, rig.vx, 2.2, dt);
+  cam.cz = smoothDamp(cam.cz ?? cz, cz, rig.vz, 2.2, dt);
+  cam.cy = smoothDamp(cam.cy, 0.9, rig.vy, 1.6, dt);
+  const wide = (view.size.H * 0.34 / Math.max(3.2, reach)) * look.zoom * Math.exp(orbit.zoom);
+  cam.ppm = smoothDamp(cam.ppm, wide, rig.vppm, 1.8, dt);
+  cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), wrapAngle(watchYaw + orbit.yaw), rig.vyaw, 1.2, dt);
   rig.ax = cam.cx;
   rig.az = cam.cz;
+
 }
 
 // --- drawing ----------------------------------------------------------------

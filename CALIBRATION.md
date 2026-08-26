@@ -771,3 +771,40 @@ Verified end to end: browser hatches "a brass-plated siege beetle with a spike"
 → genome over the wire → server names it Skimaech the Many-Legged → saved to
 disk → server killed → reopened with it still standing. Pacts survive the same
 trip.
+
+## the feet were never planted (2026-08-26)
+
+Locking gait phase to distance travelled fixed the CADENCE and not the contact.
+The foot was still placed as `hip.x + track.x * mv`, and `mv` is the idle↔walk
+blend — which sits at **0.45 in the fight state**. So a creature circling an
+opponent covered ground at full speed while its feet gave back 45% of it, and
+skated the other 55%. Everything in a fight slid.
+
+`footTrack`'s stance retreat is already exactly `stride * stance`, which is
+exactly how far the body travels in that time — so the foot holds its place in
+the world *if nothing scales it*. The `mv` factor was not just wrong, it was
+redundant: phase only advances with distance now, so a stationary creature's
+feet are already frozen. It survives only as a settle (`clamp(mv/0.3, 0, 1)`)
+so a creature that stops does not leave a leg in mid-air.
+
+Measured, one hound, drift of a foot that is DOWN, per frame, against a body
+travelling 28.5 mm/frame:
+
+| | before | after |
+|---|---|---|
+| walking straight | — | **0.86 mm** median, 3.14 mm p90 |
+| turning | — | 4.61 mm median, 40 mm p90 |
+
+**Turning still slides and I could not fix it.** The foot is placed in
+body-local space, so rotating the body drags a planted foot round the arc. I
+tried counter-rotating it by `turnRate * stanceDuration`: both signs made it
+worse (8.5 mm and 17.9 mm median against a 4.6 mm baseline), because a turn
+rate sampled this frame is a bad estimate of the rotation over a whole stance.
+Doing it properly needs the foot to remember where it was planted — real
+per-foot world-space state, held on the agent, not derived in a stateless
+solver. Reverted rather than shipped.
+
+Separation now also **feels** like something: heavier bodies give less ground
+(`give = other.bulk / (a.bulk + other.bulk)`), and any real shove jolts the
+secondary springs. Bodies used to interpenetrate and slide apart with the pose
+completely unaware.
