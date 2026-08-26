@@ -407,3 +407,27 @@ spotted this immediately.
 - CLASH's arena is deliberately different: native 512×352 is fixed by the
   design doc and its `scale` select is an integer upscale of the whole board,
   which is a true zoom and correct as-is.
+
+### THE VOID — attract mode (2026-08-25)
+A full-bleed viewport where nobody is playing: creatures off the bestiary
+shelf wander a pool of light, notice each other, and brawl, filmed by a
+camera that tries to keep up. `/void.html`, `src/void/`.
+- Agent AI is a small state machine — wander / think / approach / fight /
+  flee / down — with `nerve` per agent deciding whether being noticed means
+  charging or bolting. Continuous space, no grid: this is not the CLASH sim
+  and does not need determinism.
+- **The camera FRAMES the cast**: `focusOf()` returns the centroid, a tension
+  score and the radius the shot needs; ppm is then `res / metresNeeded`,
+  clamped, so a lone creature fills the frame and a brawl pulls in. Because
+  ppm derives from the buffer width, resolution still only changes density.
+- **Never draw a ground shadow as a capsule.** A zero-length capsule is a
+  SPHERE here, so it reads as a black bowling ball at the feet — and worse,
+  its dark ink bleeds into the figure through the colour blend and greys the
+  whole creature out. Shadows need floor-pass support, not a bone.
+- Floor falloff is now controllable: `floorRadius`, `floorPower` (1 linear,
+  higher tightens the pool — 2.4 reads best), `floorLift`. Both renderers.
+- Chrome hides with `c` for a clean grab; `p` saves a PNG straight off the
+  display canvas; the control drawer lives off-canvas on `h`.
+- The browser pane reports `document.hidden` even when fronted, so rAF never
+  runs there. `window.voidScene.run(seconds)` drives and renders it by hand —
+  that is the only way to verify this page from tooling.

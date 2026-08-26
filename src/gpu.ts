@@ -20,6 +20,7 @@ struct U {
   world: vec4f, // ccx, ccz, scroll, ppm
   zr:   vec4f,  // minZ, maxZ, flags (1=flat, 2=nofloor), 0
   blend: vec4f, // softness k (px), depth gate, colour mix, shape fuse
+  floor: vec4f, // radius, power, lift, 0
 };
 struct Cap { a: vec4f, b: vec4f, color: vec4f }; // a.xyz screen+depth, a.w r
 
@@ -145,11 +146,13 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let wx = rx + u.world.x + u.world.z;
     let wz = rz + u.world.y;
     let dist = length(vec2f(rx, rz));
-    if (dist < 10.0) {
+    let radius = u.floor.x;
+    if (dist < radius) {
       let tile = u.res.w;
       let ci = i32(floor(wx / tile + 0.5)) + i32(floor(wz / tile + 0.5));
       let check = ((ci % 2) + 2) % 2;
-      let fade = clamp(1.0 - dist / 10.0, 0.0, 1.0);
+      let lin = clamp(1.0 - dist / radius, 0.0, 1.0);
+      let fade = pow(lin, u.floor.y) * u.floor.z;
       var base = 26.0;
       if (check == 0) { base = 34.0; }
       col = vec3f(12.0 + (base - 4.0) * fade, 13.0 + base * fade, 18.0 + (base + 6.0) * fade);
@@ -218,7 +221,7 @@ export class GpuRenderer {
   private ubuf: any;
   private cbuf: any;
   private bindGroup: any;
-  private uData = new Float32Array(32);
+  private uData = new Float32Array(36);
   private cData = new Float32Array(MAX_CAPS * 12);
   W: number;
   H: number;
@@ -313,6 +316,7 @@ export class GpuRenderer {
     const flags = (cam.flat ? 1 : 0) | (cam.floor === false ? 2 : 0);
     u.set([minZ, maxZ, flags, 0], 24);
     u.set([cam.blend ?? 0, cam.blendDepth ?? 0.35, cam.blendMix ?? 1, cam.blendShape ?? 1], 28);
+    u.set([cam.floorRadius ?? 10, cam.floorPower ?? 1, cam.floorLift ?? 1, 0], 32);
 
     this.device.queue.writeBuffer(this.ubuf, 0, u);
     this.device.queue.writeBuffer(this.cbuf, 0, this.cData, 0, n * 12);

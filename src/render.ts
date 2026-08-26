@@ -27,6 +27,10 @@ export interface Camera {
   blendDepth?: number; // max view-z gap (metres) a part may bleed across
   blendMix?: number;   // 0 = keep the nearest ink, 1 = full weighted mix
   blendShape?: number; // 0 = hard silhouette (colour still blends), 1 = fully fused
+  /** The pool of light the floor sits in, centred on the camera's look-at. */
+  floorRadius?: number; // metres to full darkness (default 10)
+  floorPower?: number;  // 1 = linear ramp, >1 tightens the pool, <1 spreads it
+  floorLift?: number;   // 0..1 brightness of the lit floor
 }
 
 interface Proj {
@@ -238,11 +242,14 @@ export class PixelRenderer {
             const wx = rx + ccx + scroll;
             const wz = rz + ccz;
             const dist = Math.hypot(rx, rz);
-            if (dist < 10) {
+            const radius = cam.floorRadius ?? 10;
+            if (dist < radius) {
               const tile = cam.tile ?? 0.5;
               const check =
                 ((Math.floor(wx / tile + 0.5) + Math.floor(wz / tile + 0.5)) & 1) === 0;
-              const fade = clamp(1 - dist / 10, 0, 1);
+              const power = cam.floorPower ?? 1;
+              const lin = clamp(1 - dist / radius, 0, 1);
+              const fade = (power === 1 ? lin : Math.pow(lin, power)) * (cam.floorLift ?? 1);
               const base = check ? 34 : 26;
               r = 12 + (base - 4) * fade;
               g = 13 + base * fade;
