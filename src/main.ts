@@ -8,6 +8,7 @@ import {
 } from './genome';
 import {
   Character, Behavior, StillSpec, StrikeSpec, makeCharacter, migrateCharacter,
+  STRIKE_STYLES, styleFor,
 } from './character';
 import { solvePose, walkSpeed, Intent, slashWeight, Capsule, PoseExtras } from './pose';
 import { hatchGenome } from './hatch';
@@ -69,7 +70,8 @@ const scaleSetters: [keyof SkeletonScales, (v: number) => void][] = [];
 type InkName = 'torso' | 'limbs' | 'head' | 'accent';
 const paletteSetters: [InkName, (v: string) => void][] = [];
 const stillSetters: [keyof StillSpec, (v: number) => void][] = [];
-const strikeSetters: [Exclude<keyof StrikeSpec, 'posts'>, (v: number) => void][] = [];
+type StrikeNum = 'duration' | 'windup' | 'strike' | 'reachMin' | 'reachMax' | 'twist' | 'lunge';
+const strikeSetters: [StrikeNum, (v: number) => void][] = [];
 let blastSetters: { core: (v: string) => void; edge: (v: string) => void } | null = null;
 let blastDelaySet: (v: number) => void = () => {};
 let blastRadiusSet: (v: number) => void = () => {};
@@ -88,7 +90,7 @@ function refreshEditors() {
     for (const [k, set] of gaitSetters) set(b.gait[k]);
   }
   if (b.type === 'still') for (const [k, set] of stillSetters) set(b.still[k]);
-  if (b.type === 'strike') for (const [k, set] of strikeSetters) set(b.strike[k] as number);
+  if (b.type === 'strike') for (const [k, set] of strikeSetters) set((b.strike[k] as number) ?? 0);
 }
 
 function adoptCharacter(c: Character) {
@@ -278,13 +280,23 @@ for (const [key, mn, mx, st] of stillSliders) {
 }
 
 const gStrike = group(panel, 'strike — edits the selected behaviour');
-const strikeSliders: [Exclude<keyof StrikeSpec, 'posts'>, number, number, number][] = [
+// the styles are just different data through the same machinery
+select(gStrike, 'style', Object.keys(STRIKE_STYLES), 'swipe', name => {
+  const b = currentBehavior();
+  if (b.type !== 'strike') return;
+  b.strike = { ...STRIKE_STYLES[name] };
+  for (const [k, set] of strikeSetters) set((b.strike[k] as number) ?? 0);
+  strikeClock = 0;
+  refreshFile();
+});
+const strikeSliders: [StrikeNum, number, number, number][] = [
   ['duration', 0.15, 1.6, 0.01],
   ['windup', 0.1, 0.7, 0.01],
   ['strike', 0.08, 0.5, 0.01],
   ['reachMin', 0.4, 1, 0.01],
   ['reachMax', 0.5, 1, 0.01],
   ['twist', 0, 1.2, 0.01],
+  ['lunge', 0, 0.6, 0.01],
 ];
 for (const [key, mn, mx, st] of strikeSliders) {
   const set = slider(gStrike, key, mn, mx, st, 0.5, v => {

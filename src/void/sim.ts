@@ -3,7 +3,7 @@
 // fights. Continuous space, no grid, no walls; the only rules are wanting
 // things and bumping into each other.
 
-import { Character, StrikeSpec, DEFAULT_STRIKE_LIGHT } from '../character';
+import { Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT } from '../character';
 import { Genome, effectiveGait, heightOf } from '../genome';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
@@ -28,18 +28,30 @@ export interface Agent {
   deadT: number;             // -1 alive
   target: Agent | null;
   nerve: number;             // 0 timid .. 1 belligerent
+  turnRate: number;          // radians/sec, for secondary motion
   bulk: number;              // rough size, for reach and shoving
   speed: number;             // metres/sec walking
 }
 
 export interface VoidEvent {
-  type: 'strike' | 'hit' | 'die' | 'notice' | 'spawn';
+  type: 'strike' | 'hit' | 'die' | 'notice' | 'spawn' | 'loose' | 'impact';
   x: number; z: number;
   agent?: Agent;
 }
 
+/** Something in flight. Nobody owns it once it leaves. */
+export interface Shot {
+  x: number; z: number; y: number;
+  vx: number; vz: number;
+  life: number;
+  spec: RangedSpec;
+  from: Agent;
+  trail: { x: number; z: number; y: number }[];
+}
+
 export interface VoidSim {
   agents: Agent[];
+  shots: Shot[];
   roster: Character[];
   events: VoidEvent[];
   t: number;
@@ -81,6 +93,7 @@ export function makeAgent(ch: Character, x: number, z: number): Agent {
     deadT: -1,
     target: null,
     nerve: ch.kind === 'beast' ? rnd(0.5, 1) : rnd(0.25, 0.8),
+    turnRate: 0,
     bulk: h,
     speed: Math.max(0.6, eff.stride * eff.cadence),
   };
@@ -88,7 +101,7 @@ export function makeAgent(ch: Character, x: number, z: number): Agent {
 
 export function createVoid(roster: Character[], population = 4): VoidSim {
   const sim: VoidSim = {
-    agents: [], roster, events: [], t: 0, spawnT: 0, population, peace: 0.35,
+    agents: [], shots: [], roster, events: [], t: 0, spawnT: 0, population, peace: 0.35,
   };
   for (let i = 0; i < population; i++) spawnOne(sim, true);
   return sim;
@@ -119,7 +132,10 @@ function turnToward(a: Agent, dt: number): void {
   let d = a.aim - a.heading;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
-  a.heading += d * (1 - Math.exp(-TURN_RATE * dt));
+  const step = d * (1 - Math.exp(-TURN_RATE * dt));
+  a.heading += step;
+  // remembered so the body can bank and the tail can trail
+  a.turnRate += (step / Math.max(1e-4, dt) - a.turnRate) * Math.min(1, 8 * dt);
 }
 
 function walk(a: Agent, dt: number, scale = 1): void {
@@ -144,6 +160,17 @@ function strikeSpecOf(a: Agent): StrikeSpec {
 
 export function strikeDuration(a: Agent): number {
   return strikeSpecOf(a).duration;
+}
+
+export function rangedOf(a: Agent): RangedSpec | undefined {
+  const light = (a.ch.behaviors['attack-light'] as { strike?: StrikeSpec } | undefined)?.strike;
+  return light?.ranged;
+}
+
+/** How far this creature likes to be. Archers keep their distance. */
+export function preferredRange(a: Agent): number {
+  const r = rangedOf(a);
+  return r ? Math.min(r.range * 0.55, 5.5) : FIGHT_R;
 }
 
 function nearest(sim: VoidSim, a: Agent, maxR: number): Agent | null {
@@ -207,7 +234,22 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       if (!a.struck && a.strikeT >= spec.duration * hitAt) {
         a.struck = true;
         const t = a.target;
-        if (t && t.deadT < 0) {
+        if (spec.ranged) {
+          // let go, and stop caring — the shot is on its own now
+          const aim = t && t.deadT < 0 ? Math.atan2(t.z - a.z, t.x - a.x) : a.heading;
+          sim.shots.push({
+            x: a.x + Math.cos(aim) * 0.35,
+            z: a.z + Math.sin(aim) * 0.35,
+            y: a.bulk * 0.62,
+            vx: Math.cos(aim) * spec.ranged.speed,
+            vz: Math.sin(aim) * spec.ranged.speed,
+            life: spec.ranged.range / spec.ranged.speed,
+            spec: spec.ranged,
+            from: a,
+            trail: [],
+          });
+          sim.events.push({ type: 'loose', x: a.x, z: a.z, agent: a });
+        } else if (t && t.deadT < 0) {
           const d = Math.hypot(t.x - a.x, t.z - a.z);
           const facing = Math.cos(Math.atan2(t.z - a.z, t.x - a.x) - a.heading);
           if (d < reachOf(a) + reachOf(t) * 0.5 && facing > 0.3) hurt(sim, t, a.x, a.z);
@@ -235,7 +277,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         if (!t || t.deadT >= 0) { a.target = null; setState(a, 'wander'); break; }
         const d = Math.hypot(t.x - a.x, t.z - a.z);
         a.aim = Math.atan2(t.z - a.z, t.x - a.x);
-        if (d > FIGHT_R) {
+        if (d > preferredRange(a)) {
           a.move += (1 - a.move) * Math.min(1, 5 * dt);
           walk(a, dt, 1.25); // a purposeful stride
         } else {
@@ -249,13 +291,16 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         if (!t || t.deadT >= 0) { a.target = null; setState(a, 'think'); break; }
         const d = Math.hypot(t.x - a.x, t.z - a.z);
         a.aim = Math.atan2(t.z - a.z, t.x - a.x);
-        if (d > FIGHT_R * 1.6) { setState(a, 'approach'); break; }
+        const want = preferredRange(a);
+        if (d > want * 1.5) { setState(a, 'approach'); break; }
+        // an archer backs off when something closes on it
+        if (rangedOf(a) && d < want * 0.55) walk(a, dt, -1.1);
         // circle and jockey rather than stand still
         const circling = Math.sin(sim.t * 1.3 + a.phase * 6) * 0.5;
         a.move += (0.45 - a.move) * Math.min(1, 5 * dt);
         a.x += Math.cos(a.heading + Math.PI / 2) * circling * dt * 0.8;
         a.z += Math.sin(a.heading + Math.PI / 2) * circling * dt * 0.8;
-        if (d < reachOf(a) * 0.75) walk(a, dt, -0.35); // too close, give ground
+        if (!rangedOf(a) && d < reachOf(a) * 0.75) walk(a, dt, -0.35); // too close, give ground
         if (a.strikeT < 0 && a.stateT > 0.35 && Math.random() < dt / STRIKE_PERIOD) {
           a.strikeT = 0;
           a.struck = false;
@@ -309,6 +354,26 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       }
     }
   }
+
+  // things in flight
+  for (const s of sim.shots) {
+    s.trail.unshift({ x: s.x, z: s.z, y: s.y });
+    if (s.trail.length > s.spec.trail) s.trail.pop();
+    s.x += s.vx * dt;
+    s.z += s.vz * dt;
+    if (s.spec.arcing) s.y += (s.life * 0.5 - 0.25) * dt * 3;
+    s.life -= dt;
+    for (const o of sim.agents) {
+      if (o === s.from || o.deadT >= 0) continue;
+      if (Math.hypot(o.x - s.x, o.z - s.z) < 0.45 + s.spec.size) {
+        hurt(sim, o, s.x - s.vx * 0.1, s.z - s.vz * 0.1);
+        sim.events.push({ type: 'impact', x: s.x, z: s.z, agent: o });
+        s.life = -1;
+        break;
+      }
+    }
+  }
+  sim.shots = sim.shots.filter(s => s.life > 0);
 
   // the fallen fade, and the void refills
   const before = sim.agents.length;

@@ -7,7 +7,7 @@ import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { PixelView } from '../view';
-import { createVoid, stepVoid, spawnOne, Agent, VoidSim } from './sim';
+import { createVoid, stepVoid, spawnOne, Agent, VoidSim, Shot } from './sim';
 import { Director } from './director';
 
 const KEY = 'void-look';
@@ -156,6 +156,30 @@ function driveCamera(sim: VoidSim, dt: number) {
 
 // --- drawing ----------------------------------------------------------------
 
+function hexRgb3(h: string): [number, number, number] {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** A shot is its head plus the trail that makes it read as fast. */
+function shotCapsules(s: Shot): Capsule[] {
+  const col = hexRgb3(s.spec.color);
+  const out: Capsule[] = [{
+    a: v3(s.x, s.y, s.z), b: v3(s.x, s.y, s.z),
+    r: s.spec.size, color: col, part: 'shot',
+  }];
+  s.trail.forEach((t, i) => {
+    const f = 1 - (i + 1) / (s.trail.length + 1);
+    out.push({
+      a: v3(t.x, t.y, t.z), b: v3(t.x, t.y, t.z),
+      r: s.spec.size * (0.85 * f + 0.15),
+      color: [col[0] * f, col[1] * f, col[2] * f],
+      part: 'trail',
+    });
+  });
+  return out;
+}
+
 function agentCapsules(a: Agent, t: number): Capsule[] {
   const mood = {
     tired: 0,
@@ -167,10 +191,18 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     const u = Math.min(1, a.strikeT / (spec?.duration ?? 0.5));
     intent = { slash: { t: u, weight: slashWeight(u), spec } };
   }
+  const look = a.target && a.deadT < 0
+    ? Math.atan2(a.target.z - a.z, a.target.x - a.x) - a.heading
+    : 0;
   const caps = solvePose(
     a.genome, mood, a.phase, a.move, a.idleT, intent,
     a.deadT >= 0 ? Math.min(1, a.deadT / 0.5) : 0,
-    { weapon: a.ch.weapon },
+    {
+      weapon: a.ch.weapon,
+      turn: a.turnRate,
+      // heads track what they are dealing with, up to a believable angle
+      lookYaw: Math.max(-0.9, Math.min(0.9, Math.atan2(Math.sin(look), Math.cos(look)))),
+    },
   );
   const flash = a.hurtT > 0 && Math.sin(t * 40) > 0;
   const fade = a.deadT >= 0 ? Math.max(0, 1 - Math.max(0, a.deadT - 2) / 1.5) : 1;
@@ -203,12 +235,13 @@ async function boot() {
     stepVoid(sim, dt);
     for (const e of sim.events) {
       if (e.type === 'die') director.punch(1);
-      else if (e.type === 'hit') director.punch(0.45);
+      else if (e.type === 'hit' || e.type === 'impact') director.punch(0.45);
     }
     driveCamera(sim, dt);
 
     const caps: Capsule[] = [];
     for (const a of sim.agents) caps.push(...agentCapsules(a, sim.t));
+    for (const s of sim.shots) caps.push(...shotCapsules(s));
     view.render(caps, cam, 0);
 
   }

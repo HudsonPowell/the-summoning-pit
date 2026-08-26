@@ -518,3 +518,36 @@ A 70B model would have produced the same sameness.
   Four unmistakably different silhouettes from four prompts.
 - `farm/migrate_check.ts` loads and poses every saved creature (v1/v2/v3) and
   runs in `npm test` — 20/20 clean.
+
+### Weapons, attack styles, ranged, and secondary motion (2026-08-25)
+- **The intent layer now claims ANY chain, not just an arm.** `StrikeSpec.limb`
+  = `arm | head | tail`. That one generalisation gave beasts their bite (an
+  open item since the first arena) and tails their lash, without a special
+  case anywhere. A bite rears the head, snaps it forward and down, and
+  stretches the neck segments by up to 35% — it reads instantly.
+- **The three bezier posts ARE the attack style**, so shape stays data: a
+  thrust is posts running straight out, a slam falls from overhead. Seven
+  named styles ship (swipe, slam, thrust, bite, lash, cast, shoot) and the
+  forge has a style picker. Resist adding a `motion` enum — the posts already
+  say it.
+- `styleFor(weapon, hasArms, hasTail)` picks defaults from what a creature IS:
+  no arms → bite (and lash if it has a tail); bow → shoot; staff/wand → cast;
+  spear → thrust; hammer/axe → slam. New characters get the right attack
+  without anyone choosing one.
+- **Ranged**: `StrikeSpec.ranged` releases a `Shot` at the strike moment
+  instead of testing contact. Shots carry their own speed/range/size/trail and
+  stop caring about their owner. Archers kite: `preferredRange()` is
+  `range * 0.55` (capped 5.5 m) versus 1.5 m for melee, and they back off when
+  something closes inside 55% of it.
+  **Balance note: a kiter currently beats a melee creature untouched** — 4
+  shots, 4 hits, 0 bites taken. Fine for a showcase, needs a cost before it is
+  a game.
+- **Secondary motion** costs almost nothing and does the most for "alive":
+  the caller passes `turn` (rad/s) and `lookYaw`, so the body banks into
+  turns, the tail swings wide behind it, and heads track their target up to
+  0.9 rad. The solver stays pure — the *caller* owns the state, as with the
+  smoothed heading.
+- `lunge` on a strike drives the whole body curve forward through the blow and
+  recovers after: 0.3 m on a bite, 0.22 on a thrust.
+- Check with `farm/attack_test.ts` (all styles, windup vs strike),
+  `farm/bite_test.ts` (frame-by-frame) and `farm/ranged_test.ts` (in the suite).

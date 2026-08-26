@@ -29,6 +29,14 @@ export interface PoseExtras {
   weapon?: WeaponSpec;
   breatheAmp?: number;
   breatheRate?: number;
+  /**
+   * Secondary motion. The caller already knows how fast the creature is
+   * turning and how hard it is moving; handing that over lets the body lean
+   * into a turn and the loose parts trail behind it, which is most of what
+   * separates "animated" from "alive".
+   */
+  turn?: number;    // radians/sec, + turning one way
+  lookYaw?: number; // where the head wants to point, relative to facing
 }
 
 function hex(c: string): [number, number, number] {
@@ -109,6 +117,15 @@ export function solvePose(
   const leanCo = g.lean + co * 0.3;
   const headCo = g.headPitch + co * 0.8;
 
+  // the strike is resolved before the body, because a lunge moves the body
+  const slash0 = intent?.slash;
+  const spec0 = slash0?.spec ?? DEFAULT_STRIKE_LIGHT;
+  const strikeW = slash0 ? slash0.weight : 0;
+  const strikeU = slash0 ? slashU(clamp(slash0.t, 0, 1), spec0) : 0;
+  // drive forward through the strike, recover after it
+  const lungeAmt = (spec0.lunge ?? 0) * strikeW * Math.sin(Math.PI * Math.min(1, strikeU * 1.15));
+  const turnRate = extras?.turn ?? 0;
+
   const legs = sk.chains.filter(c => c.role === 'leg').sort((a, b) => a.at - b.at);
   const N = Math.max(1, sk.body.length);
   const slither = sk.locomotion === 'slither' || legs.length === 0;
@@ -151,7 +168,8 @@ export function solvePose(
       const u = (i + 1) / N;
       const ang = leanCo * (0.6 + 0.7 * u) + slumpCo * u * u;
       p = add(p, v3(Math.sin(ang) * sk.body[i], Math.cos(ang) * sk.body[i], waveAt(i)));
-      nodes.push(p);
+      // banking into a turn, strongest at the top of the spine
+      nodes.push(add(p, v3(lungeAmt * u, 0, -turnRate * 0.06 * u)));
     }
   } else {
     const total = sk.body.reduce((a, b) => a + b, 0);
@@ -162,7 +180,11 @@ export function solvePose(
       const h = supportH(at) * (1 - 0.72 * co) + hover
         + g.bounce * Math.cos(2 * TAU * (phase - 0.3 - at * 0.25)) * mv
         + breathe - slumpCo * 0.12 * at;
-      nodes.push(v3(x, h, waveAt(i) + -g.sway * Math.cos(TAU * (phase - 0.3)) * mv * (1 - at)));
+      nodes.push(v3(
+        x + lungeAmt * (0.35 + 0.65 * at),
+        h,
+        waveAt(i) + -g.sway * Math.cos(TAU * (phase - 0.3)) * mv * (1 - at) - turnRate * 0.05 * at,
+      ));
       if (i < N) x += sk.body[i];
     }
   }
@@ -179,10 +201,14 @@ export function solvePose(
 
   // --- attachment frame -------------------------------------------------
   const hipTwist = g.pelvisTwist * Math.sin(TAU * phase) * mv;
-  const slash = intent?.slash;
-  const spec = slash?.spec ?? DEFAULT_STRIKE_LIGHT;
-  const sw2 = slash ? slash.weight : 0;
-  const su = slash ? slashU(clamp(slash.t, 0, 1), spec) : 0;
+  const slash = slash0;
+  const spec = spec0;
+  const limb = spec.limb ?? 'arm';
+  // only the limb that owns the move gets the weight
+  const sw2 = limb === 'arm' ? strikeW : 0;
+  const headStrike = limb === 'head' ? strikeW : 0;
+  const tailStrike = limb === 'tail' ? strikeW : 0;
+  const su = strikeU;
   const slashTw = sw2 * spec.twist * (su < 0.3 ? -su / 0.3 : Math.sin((Math.PI * (su - 0.3)) / 0.7));
   const chestTwist = -g.shoulderTwist * Math.sin(TAU * phase) * mv - slashTw;
 
@@ -238,17 +264,22 @@ export function solvePose(
     for (const side of sidesOf(chain)) {
       let p = attachPoint(chain, side);
       const ink = inkOf(chain);
-      const baseAng = (chain.angle ?? 0) + headCo + (sk.upright ? 0 : -slumpCo * 0.4);
+      // a bite rears the head back, then snaps it forward and down
+      const bite = headStrike * (spec.reachMin +
+        (spec.reachMax - spec.reachMin) * Math.sin(Math.PI * su));
+      const biteAng = headStrike * (su < 0.3 ? 0.55 : -0.75 * Math.sin(Math.PI * (su - 0.3) / 0.7));
+      const look = (extras?.lookYaw ?? 0) * (1 - headStrike * 0.5);
+      const baseAng = (chain.angle ?? 0) + headCo + (sk.upright ? 0 : -slumpCo * 0.4) + biteAng;
       const fwd = fwdAt(chain.at);
       // splay multiple heads apart, and carry them along the body's direction
-      const yawOff = side * 1.0 * (chain.spread > 0 ? 1 : 0);
+      const yawOff = side * 1.0 * (chain.spread > 0 ? 1 : 0) + look;
       chain.seg.forEach((segLen, i) => {
         const ang = baseAng - i * 0.12 + (sk.upright ? 0 : 0);
         const dir = sk.upright
           ? norm(v3(Math.sin(ang), Math.cos(ang), Math.sin(yawOff) * 0.5))
           : norm(add(scale(fwd, Math.cos(ang)),
               v3(0, Math.sin(ang), Math.sin(yawOff) * 0.6)));
-        const q = add(p, scale(dir, segLen));
+        const q = add(p, scale(dir, segLen * (1 + bite * 0.35)));
         const taper = 1 - 0.18 * (i / Math.max(1, chain.seg.length));
         caps.push({
           a: p, b: q,
@@ -347,9 +378,14 @@ export function solvePose(
       const droop = 0.25 + slumpCo * 0.5 + co * 0.6;
       const ink = inkOf(chain);
       chain.seg.forEach((segLen, i) => {
+        const lash = tailStrike * 2.6 *
+          (su < 0.35 ? -su / 0.35 : Math.sin(Math.PI * (su - 0.35) / 0.65));
         const yaw =
           g.tailWave * Math.sin(TAU * phase - i * 0.9) * (0.35 + 0.65 * mv) +
-          (1 - mv) * 0.15 * Math.sin(TAU * 0.3 * idleT - i * 0.9);
+          (1 - mv) * 0.15 * Math.sin(TAU * 0.3 * idleT - i * 0.9) +
+          lash * (0.4 + 0.6 * (i / Math.max(1, chain.seg.length))) +
+          // the tail swings wide when the body turns under it
+          turnRate * 0.09 * (1 + i);
         const pitch = (sk.upright ? -0.35 : 0.25) - i * 0.28 - droop * 0.4;
         const d = norm(v3(-Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.sin(yaw)));
         const q = add(p, scale(d, segLen));
