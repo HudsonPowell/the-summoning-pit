@@ -431,3 +431,28 @@ camera that tries to keep up. `/void.html`, `src/void/`.
 - The browser pane reports `document.hidden` even when fronted, so rAF never
   runs there. `window.voidScene.run(seconds)` drives and renders it by hand —
   that is the only way to verify this page from tooling.
+
+### THE VOID, take two — built for screen recording (2026-08-25)
+Jody's notes: drawer always open, camera centred on what is actually visible,
+no typography anywhere, colour control over the dark, higher resolution.
+- **The stage is a flex column beside the drawer, not underneath it.** The
+  canvas fills `#stage` only, so "centred" means centred in what you can see.
+  A `ResizeObserver` on the stage re-fits the buffer whenever the drawer
+  opens or the window moves.
+- **Do not transition `width` on the drawer.** A hidden tab pauses CSS
+  transitions, so the panel froze mid-animation at 1px and the stage measured
+  wrong. It snaps now — and snapping is better for recording anyway. Same
+  root cause as the dead rAF loop and the silent ResizeObserver: in a hidden
+  tab there are no rendering opportunities, so rAF, transitions AND observers
+  all stop. `voidScene.run()` / `.refit()` exist to drive it from tooling.
+- **Falloff circularity**: a circle on the ground is an ellipse once the
+  camera tilts — that is the "sideways" pool. `floorSquash` scales the depth
+  axis by `sin(pitch)` so it reads as a true circle on screen; the slider
+  blends 0 (honest ground circle) → 1 (screen circle).
+- Colours are now inputs, not constants: `voidColor`, `floorColorA/B` in both
+  renderers, lerped by the falloff. Defaults reproduce the old palette; the
+  void page ships true black. `document.body` matches so it is seamless.
+- Framing fits BOTH axes — ground spread against buffer width, and the same
+  spread times `sin(pitch)` plus creature height against buffer height —
+  otherwise portrait and ultrawide windows frame badly.
+- `c` toggles the drawer, `p` captures a PNG. Resolution runs to 1600.

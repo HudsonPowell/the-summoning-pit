@@ -21,7 +21,12 @@ interface Look {
   floorPower: number;
   floorLift: number;
   tile: number;
+  round: number;       // 0 = true circle on the ground, 1 = circle on screen
+  voidCol: string;
+  floorColA: string;
+  floorColB: string;
   flat: boolean;
+  panel: boolean;
   pitch: number;
   orbit: number;      // radians/sec of drift
   population: number;
@@ -29,9 +34,12 @@ interface Look {
 }
 
 const DEFAULT_LOOK: Look = {
-  res: 320, zoom: 1, blend: 0.9, blendShape: 0.5, blendMix: 1,
+  res: 480, zoom: 1, blend: 0.9, blendShape: 0.5, blendMix: 1,
   floorRadius: 12, floorPower: 2.4, floorLift: 1, tile: 1,
+  round: 1,
+  voidCol: '#000000', floorColA: '#2a2f3a', floorColB: '#22262f',
   flat: false, pitch: 0.34, orbit: 0.05, population: 4, peace: 0.35,
+  panel: true,
 };
 
 function loadLook(): Look {
@@ -49,8 +57,9 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 // the display canvas matches the window; the low-res buffer inside it is what
 // `resolution` controls, so the pixels stay square and the frame stays full
 function fitCanvas() {
-  const w = Math.max(320, window.innerWidth);
-  const h = Math.max(240, window.innerHeight);
+  const stage = document.getElementById('stage')!;
+  const w = Math.max(240, Math.round(stage.clientWidth));
+  const h = Math.max(200, Math.round(stage.clientHeight));
   canvas.width = w;
   canvas.height = h;
   const aspect = h / w;
@@ -60,10 +69,18 @@ const view = new PixelView(canvas, look.res, Math.round(look.res * 0.625));
 view.init();
 fitCanvas();
 addEventListener('resize', fitCanvas);
+// the stage changes size whenever the drawer opens or the window moves;
+// observing it is more reliable than guessing when the layout settled
+new ResizeObserver(fitCanvas).observe(document.getElementById('stage')!);
 
 const cam: Camera = {
   yaw: 0.6, pitch: look.pitch, ppm: look.zoom, cy: 0.95, cx: 0, cz: 0, tile: look.tile,
 };
+
+function hexRgb(h: string): [number, number, number] {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
 
 function applyLook() {
   cam.pitch = look.pitch;
@@ -76,6 +93,13 @@ function applyLook() {
   cam.floorRadius = look.floorRadius;
   cam.floorPower = look.floorPower;
   cam.floorLift = look.floorLift;
+  // a ground circle is an ellipse once the camera tilts; squashing depth by
+  // sin(pitch) makes the pool read as a true circle on screen
+  cam.floorSquash = Math.max(0.12, 1 + (Math.sin(look.pitch) - 1) * look.round);
+  cam.voidColor = hexRgb(look.voidCol);
+  cam.floorColorA = hexRgb(look.floorColA);
+  cam.floorColorB = hexRgb(look.floorColB);
+  document.body.style.background = look.voidCol;
 }
 applyLook();
 
@@ -120,8 +144,13 @@ function driveCamera(sim: VoidSim, dt: number) {
   // FRAME the cast rather than sitting at a fixed magnification: work out how
   // many metres need to be on screen, then set px-per-metre from the buffer
   // width. Resolution therefore still only changes density, never framing.
-  const need = Math.max(3.4, f.radius * 2 + 2.6) / Math.max(0.2, look.zoom);
-  const wantPpm = Math.min(look.res / need, 46 * look.zoom);
+  // fit BOTH axes: the cast spreads across the ground, but the pitch squashes
+  // that spread vertically while the creatures themselves stand up into it
+  const acrossM = Math.max(3.4, f.radius * 2 + 2.6);
+  const upM = f.radius * 2 * Math.sin(look.pitch) + 2.6;
+  const bufW = view.size.W, bufH = view.size.H;
+  const fit = Math.min(bufW / acrossM, bufH / upM);
+  const wantPpm = Math.min(fit * look.zoom, 60 * look.zoom);
   camState.ppm += (wantPpm - camState.ppm) * (1 - Math.exp(-1.1 * dt));
 
   camState.yaw += look.orbit * (1 + f.tension) * dt;
@@ -171,8 +200,6 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
 
 // --- boot -------------------------------------------------------------------
 
-const nameTag = document.getElementById('cast')!;
-
 async function boot() {
   const roster = await loadRoster();
   const sim = createVoid(roster, look.population);
@@ -190,10 +217,6 @@ async function boot() {
     for (const a of sim.agents) caps.push(...agentCapsules(a, sim.t));
     view.render(caps, cam, 0);
 
-    // who is on screen, quietly
-    const live = sim.agents.filter(a => a.deadT < 0);
-    const fighting = live.some(a => a.state === 'fight');
-    nameTag.textContent = live.map(a => a.ch.name).join('   ·   ') + (fighting ? '   ⚔' : '');
   }
 
   function frame(now: number) {
@@ -208,6 +231,7 @@ async function boot() {
   (window as any).voidScene = {
     sim, cam, look,
     tick,
+    refit: fitCanvas,
     run: (seconds: number, dt = 1 / 60) => {
       for (let i = 0; i < Math.round(seconds / dt); i++) tick(dt);
     },
@@ -217,7 +241,7 @@ async function boot() {
 // --- the control drawer -----------------------------------------------------
 
 function buildPanel(sim: VoidSim) {
-  const panel = document.getElementById('panel')!;
+  const panel = document.getElementById('panelInner')!;
   const row = (label: string, el: HTMLElement, val?: HTMLElement) => {
     const r = document.createElement('label');
     r.className = 'row';
@@ -253,6 +277,14 @@ function buildPanel(sim: VoidSim) {
     row(label, input, val);
   };
 
+  const colour = (label: string, get: () => string, set: (v: string) => void) => {
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = get();
+    input.addEventListener('input', () => { set(input.value); applyLook(); persist(); });
+    row(label, input);
+  };
+
   head('the void');
   sl('cast size', 1, 8, 1, () => look.population, v => { look.population = v; sim.population = v; });
   sl('peace', 0, 1, 0.05, () => look.peace, v => { look.peace = v; sim.peace = v; });
@@ -267,9 +299,13 @@ function buildPanel(sim: VoidSim) {
   sl('falloff', 0.3, 5, 0.1, () => look.floorPower, v => { look.floorPower = v; });
   sl('lift', 0, 1.4, 0.05, () => look.floorLift, v => { look.floorLift = v; });
   sl('grid', 0.25, 4, 0.25, () => look.tile, v => { look.tile = v; });
+  sl('circularity', 0, 1, 0.05, () => look.round, v => { look.round = v; });
+  colour('dark', () => look.voidCol, v => { look.voidCol = v; });
+  colour('floor a', () => look.floorColA, v => { look.floorColA = v; });
+  colour('floor b', () => look.floorColB, v => { look.floorColB = v; });
 
   head('figures');
-  sl('resolution', 128, 640, 16, () => look.res, v => {
+  sl('resolution', 160, 1600, 20, () => look.res, v => {
     look.res = v;
     fitCanvas();
   });
@@ -295,6 +331,16 @@ function buildPanel(sim: VoidSim) {
   mk('stir', () => { for (const a of sim.agents) { a.target = null; a.state = 'wander'; a.stateT = 0; } spawnOne(sim); });
   mk('reset look', () => { look = { ...DEFAULT_LOOK }; persist(); location.reload(); });
   panel.appendChild(btns);
+
+  const links = document.createElement('div');
+  links.id = 'links';
+  for (const [label, href] of [['FORGE', '/'], ['BESTIARY', '/bestiary.html'], ['ARENA', '/clash.html']]) {
+    const a = document.createElement('a');
+    a.textContent = label;
+    a.href = href;
+    links.appendChild(a);
+  }
+  panel.appendChild(links);
 }
 
 /** Straight off the display canvas, so what you see is what you save. */
@@ -308,13 +354,19 @@ function capture() {
 // --- chrome: hide it all for a clean grab ------------------------------------
 
 const shell = document.getElementById('shell')!;
+shell.classList.toggle('open', look.panel);
+
+function setPanel(open: boolean) {
+  look.panel = open;
+  shell.classList.toggle('open', open);
+  persist();
+  fitCanvas();
+}
+
 addEventListener('keydown', e => {
-  if (e.key === 'c' || e.key === 'C') shell.classList.toggle('bare');
-  if (e.key === 'h' || e.key === 'H') shell.classList.toggle('panel-open');
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'c' || e.key === 'C') setPanel(!look.panel);
   if (e.key === 'p' || e.key === 'P') capture();
-});
-document.getElementById('toggle')!.addEventListener('click', () => {
-  shell.classList.toggle('panel-open');
 });
 
 boot();

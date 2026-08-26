@@ -31,6 +31,15 @@ export interface Camera {
   floorRadius?: number; // metres to full darkness (default 10)
   floorPower?: number;  // 1 = linear ramp, >1 tightens the pool, <1 spreads it
   floorLift?: number;   // 0..1 brightness of the lit floor
+  /**
+   * A circle drawn on the ground is an ellipse once the camera tilts — which
+   * reads as a "sideways" pool. Squashing the depth axis by sin(pitch) makes
+   * the falloff a true circle on screen instead.
+   */
+  floorSquash?: number;
+  voidColor?: [number, number, number];   // the dark the world sits in
+  floorColorA?: [number, number, number]; // lit checker, light square
+  floorColorB?: [number, number, number]; // lit checker, dark square
 }
 
 interface Proj {
@@ -41,6 +50,11 @@ interface Proj {
 }
 
 const SHADE_LEVELS = 4;
+
+// the old hardcoded palette, kept as the defaults so nothing else shifts
+const VOID_INK: [number, number, number] = [12, 13, 18];
+const FLOOR_A: [number, number, number] = [42, 47, 58];
+const FLOOR_B: [number, number, number] = [34, 39, 50];
 
 /**
  * Where the capsule's SURFACE is along this pixel's view ray, in metres.
@@ -234,14 +248,16 @@ export class PixelRenderer {
         const ox = o00.x + px * oDx.x + py * oDy.x;
         const oy = o00.y + px * oDx.y + py * oDy.y;
         const oz = o00.z + px * oDx.z + py * oDy.z;
-        let r = 12, g = 13, b = 18; // void
+        const vc = cam.voidColor ?? VOID_INK;
+        let r = vc[0], g = vc[1], b = vc[2];
         if (cam.floor !== false && Math.abs(d.y) > 1e-4) {
           const s = -oy / d.y;
           {
             const rx = ox + s * d.x, rz = oz + s * d.z;
             const wx = rx + ccx + scroll;
             const wz = rz + ccz;
-            const dist = Math.hypot(rx, rz);
+            const squash = cam.floorSquash ?? 1;
+            const dist = Math.hypot(rx, rz * squash);
             const radius = cam.floorRadius ?? 10;
             if (dist < radius) {
               const tile = cam.tile ?? 0.5;
@@ -250,10 +266,10 @@ export class PixelRenderer {
               const power = cam.floorPower ?? 1;
               const lin = clamp(1 - dist / radius, 0, 1);
               const fade = (power === 1 ? lin : Math.pow(lin, power)) * (cam.floorLift ?? 1);
-              const base = check ? 34 : 26;
-              r = 12 + (base - 4) * fade;
-              g = 13 + base * fade;
-              b = 18 + (base + 6) * fade;
+              const fc = check ? (cam.floorColorA ?? FLOOR_A) : (cam.floorColorB ?? FLOOR_B);
+              r = vc[0] + (fc[0] - vc[0]) * fade;
+              g = vc[1] + (fc[1] - vc[1]) * fade;
+              b = vc[2] + (fc[2] - vc[2]) * fade;
             }
           }
         }

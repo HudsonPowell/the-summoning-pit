@@ -20,7 +20,10 @@ struct U {
   world: vec4f, // ccx, ccz, scroll, ppm
   zr:   vec4f,  // minZ, maxZ, flags (1=flat, 2=nofloor), 0
   blend: vec4f, // softness k (px), depth gate, colour mix, shape fuse
-  floor: vec4f, // radius, power, lift, 0
+  floor: vec4f, // radius, power, lift, depth-squash
+  voidCol: vec4f,
+  floorA: vec4f,
+  floorB: vec4f,
 };
 struct Cap { a: vec4f, b: vec4f, color: vec4f }; // a.xyz screen+depth, a.w r
 
@@ -137,7 +140,7 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let p = pos.xy;
   let flags = u32(u.zr.z);
   // floor: orthographic ray onto y=0
-  var col = vec3f(12.0, 13.0, 18.0);
+  var col = u.voidCol.rgb;
   let o = u.rayO.xyz + pos.x * u.rayDx.xyz + pos.y * u.rayDy.xyz;
   if ((flags & 2u) == 0u && abs(u.rayD.y) > 1e-4) {
     let s = -o.y / u.rayD.y;
@@ -145,7 +148,7 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let rz = o.z + s * u.rayD.z;
     let wx = rx + u.world.x + u.world.z;
     let wz = rz + u.world.y;
-    let dist = length(vec2f(rx, rz));
+    let dist = length(vec2f(rx, rz * u.floor.w));
     let radius = u.floor.x;
     if (dist < radius) {
       let tile = u.res.w;
@@ -153,9 +156,9 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
       let check = ((ci % 2) + 2) % 2;
       let lin = clamp(1.0 - dist / radius, 0.0, 1.0);
       let fade = pow(lin, u.floor.y) * u.floor.z;
-      var base = 26.0;
-      if (check == 0) { base = 34.0; }
-      col = vec3f(12.0 + (base - 4.0) * fade, 13.0 + base * fade, 18.0 + (base + 6.0) * fade);
+      var fc = u.floorB.rgb;
+      if (check == 0) { fc = u.floorA.rgb; }
+      col = mix(u.voidCol.rgb, fc, fade);
     }
   }
   // bone field
@@ -221,7 +224,7 @@ export class GpuRenderer {
   private ubuf: any;
   private cbuf: any;
   private bindGroup: any;
-  private uData = new Float32Array(36);
+  private uData = new Float32Array(48);
   private cData = new Float32Array(MAX_CAPS * 12);
   W: number;
   H: number;
@@ -316,7 +319,13 @@ export class GpuRenderer {
     const flags = (cam.flat ? 1 : 0) | (cam.floor === false ? 2 : 0);
     u.set([minZ, maxZ, flags, 0], 24);
     u.set([cam.blend ?? 0, cam.blendDepth ?? 0.35, cam.blendMix ?? 1, cam.blendShape ?? 1], 28);
-    u.set([cam.floorRadius ?? 10, cam.floorPower ?? 1, cam.floorLift ?? 1, 0], 32);
+    u.set([cam.floorRadius ?? 10, cam.floorPower ?? 1, cam.floorLift ?? 1, cam.floorSquash ?? 1], 32);
+    const vc = cam.voidColor ?? [12, 13, 18];
+    const fa = cam.floorColorA ?? [42, 47, 58];
+    const fb = cam.floorColorB ?? [34, 39, 50];
+    u.set([vc[0], vc[1], vc[2], 0], 36);
+    u.set([fa[0], fa[1], fa[2], 0], 40);
+    u.set([fb[0], fb[1], fb[2], 0], 44);
 
     this.device.queue.writeBuffer(this.ubuf, 0, u);
     this.device.queue.writeBuffer(this.cbuf, 0, this.cData, 0, n * 12);
