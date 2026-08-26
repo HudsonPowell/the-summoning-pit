@@ -8,7 +8,7 @@ import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { PixelView } from '../view';
-import { createVoid, stepVoid, spawnOne, spawnChar, Agent, VoidSim, Shot, PlayerInput } from './sim';
+import { createVoid, stepVoid, spawnOne, spawnChar, Agent, VoidSim, Shot } from './sim';
 import { Director } from './director';
 import { LiveVoid } from './live';
 
@@ -137,27 +137,6 @@ async function loadRoster(): Promise<Character[]> {
   return out;
 }
 
-// --- the keyboard -----------------------------------------------------------
-// ?play hands you one of the creatures. Everything else in the void carries on
-// exactly as it did: the beasts do not know a person is holding one of them.
-
-const PLAY = new URLSearchParams(location.search).has('play');
-const held = new Set<string>();
-const input: PlayerInput = { mx: 0, mz: 0, strike: false, heavy: false };
-
-function readInput() {
-  // screen axes: up is -z, right is +x, matched to the camera's yaw so
-  // "up" means away from you no matter where the camera has swung to
-  let ix = 0, iz = 0;
-  if (held.has('arrowleft') || held.has('a')) ix -= 1;
-  if (held.has('arrowright') || held.has('d')) ix += 1;
-  if (held.has('arrowup') || held.has('w')) iz -= 1;
-  if (held.has('arrowdown') || held.has('s')) iz += 1;
-  const c = Math.cos(cam.yaw), sn = Math.sin(cam.yaw);
-  input.mx = ix * c + iz * sn;
-  input.mz = -ix * sn + iz * c;
-}
-
 // --- the summoning box ------------------------------------------------------
 // The one verb. You type, something that has never existed walks into the pit.
 // The words are yours and stay yours — nothing keeps them, and the creature is
@@ -213,45 +192,11 @@ function buildSummon(sim: VoidSim, panel: HTMLElement): void {
   });
 }
 
-function takeOver(a: Agent | null): void {
-  if (!a) return;
-  a.player = true;
-  a.hp = a.maxHp = Math.max(a.maxHp, 6);
-}
-
-/**
- * Dying is not the end of the session. After a beat you come back as whatever
- * the pit hands you next — which is also how you meet the bestiary.
- */
-function handleDeath(sim: VoidSim, dt: number): void {
-  const you = sim.agents.find(a => a.player);
-  if (!you) { takeOver(spawnOne(sim, true)); return; }
-  if (you.deadT >= 1.6) {
-    you.player = false;
-    takeOver(spawnOne(sim, true));
-  }
-}
-
 // --- camera: a operator who likes the action centred and slightly circled ---
 
 const director = new Director();
 
 function driveCamera(sim: VoidSim, dt: number) {
-  // when a person is playing, the camera is theirs — the director's job is to
-  // find the story, and in play mode you ARE the story
-  const you = sim.agents.find(a => a.player);
-  if (you) {
-    const k = Math.min(1, 6 * dt);
-    cam.cx = (cam.cx ?? 0) + (you.x - (cam.cx ?? 0)) * k;
-    cam.cz = (cam.cz ?? 0) + (you.z - (cam.cz ?? 0)) * k;
-    cam.cy += (you.bulk * 0.55 - cam.cy) * k;
-    // close enough to read your own creature: it should stand about half the
-    // height of the frame whatever size it hatched at
-    const want = (view.size.H * 0.42 / Math.max(0.7, you.bulk)) * look.zoom;
-    cam.ppm += (want - cam.ppm) * Math.min(1, 2.5 * dt);
-    cam.yaw += (0.5 - cam.yaw) * Math.min(1, 1.5 * dt);
-    return;
-  }
   const f = director.update(sim, dt, {
     closeness: look.closeness,
     response: look.response,
@@ -378,25 +323,12 @@ async function boot() {
   const sim = live ? live.sim : createVoid(roster, look.population);
   sim.peace = look.peace;
 
-  if (PLAY && !live) {
-    // you are one of the crowd, not a special case: same spawn, same rules
-    takeOver(sim.agents[0] ?? spawnOne(sim, true));
-    sim.input = input;
-    // a pit with three others in it is a diorama; this is a fight
-    look.population = Math.max(look.population, 6);
-    sim.population = look.population;
-  }
-
   buildPanel(sim, live);
   buildSummon(sim, document.getElementById('panelInner')!);
 
   let last = performance.now();
   function tick(dt: number) {
-    if (PLAY) readInput();
     if (live) live.update(dt); else stepVoid(sim, dt);
-    if (PLAY && !live) handleDeath(sim, dt);
-    input.strike = false;
-    input.heavy = false;
     pushFeed(sim.events);
     if (live) sim.events.length = 0;
     for (const e of sim.events) {
@@ -577,13 +509,6 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'c') setPanel(!look.panel);
   if (k === 'p') capture();
-  if (!PLAY) return;
-  held.add(k);
-  if (k === ' ') { input.strike = true; e.preventDefault(); }
-  if (k === 'shift') input.heavy = true;
-  if (k.startsWith('arrow')) e.preventDefault();
 });
-addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
-addEventListener('blur', () => held.clear());
 
 boot();

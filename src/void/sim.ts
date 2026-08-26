@@ -5,6 +5,7 @@
 
 import { Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT } from '../character';
 import { Genome, effectiveGait, heightOf } from '../genome';
+import { Temper, temperOf } from '../temper';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
 
@@ -29,18 +30,11 @@ export interface Agent {
   heavy: boolean;            // this swing is the heavy one
   deadT: number;             // -1 alive
   target: Agent | null;
-  nerve: number;             // 0 timid .. 1 belligerent
+  nerve: number;             // aggression, kept under its old name for the AI
+  temper: Temper;            // what it is like, read off what it is made of
   turnRate: number;          // radians/sec, for secondary motion
   bulk: number;              // rough size, for reach and shoving
   speed: number;             // metres/sec walking
-  player?: boolean;          // driven by a person, not by the state machine
-}
-
-/** What a person is asking their creature to do this frame. */
-export interface PlayerInput {
-  mx: number; mz: number;    // -1..1 movement intent, world axes
-  strike: boolean;           // light
-  heavy: boolean;
 }
 
 export type EventKind =
@@ -74,7 +68,6 @@ export interface Shot {
 }
 
 export interface VoidSim {
-  input?: PlayerInput;       // set by whoever is holding the keyboard
   agents: Agent[];
   shots: Shot[];
   roster: Character[];
@@ -100,6 +93,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
   const g = ch.genome;
   const eff = effectiveGait(g.gait, { tired: 0, angry: 0 });
   const h = heightOf(g);
+  const temper = temperOf(g);
   return {
     id: nextAgentId++,
     by,
@@ -113,18 +107,21 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     state: 'wander',
     stateT: 0,
     // beasts are tougher and keener; heroes are cagier
-    hp: ch.kind === 'beast' ? 4 : 5,
-    maxHp: ch.kind === 'beast' ? 4 : 5,
+    // a braver thing is usually a bigger thing, and takes more killing
+    hp: Math.round(3 + temper.bravery * 3),
+    maxHp: Math.round(3 + temper.bravery * 3),
     hurtT: 0,
     strikeT: -1,
     struck: false,
     heavy: false,
     deadT: -1,
     target: null,
-    nerve: ch.kind === 'beast' ? rnd(0.5, 1) : rnd(0.25, 0.8),
+    nerve: temper.aggression,
+    temper,
     turnRate: 0,
     bulk: h,
-    speed: Math.max(0.6, eff.stride * eff.cadence),
+    // the gait says how fast it CAN move; temperament says how much it does
+    speed: Math.max(0.45, eff.stride * eff.cadence) * (0.55 + temper.speed * 0.95),
   };
 }
 
@@ -257,7 +254,7 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
     a.strikeT = -1;
     a.target = null;
     sim.events.push({ kind: 'kill', ...common });
-  } else if (a.hp <= 1 && Math.random() > a.nerve) {
+  } else if (a.hp <= 1 && Math.random() > a.temper.bravery) {
     // losing and not brave enough for this
     a.state = 'flee';
     a.stateT = 0;
@@ -321,44 +318,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       if (a.strikeT >= spec.duration) { a.strikeT = -1; a.struck = false; }
     }
 
-    // A player's creature runs on intent, not on the state machine. Everything
-    // around it is unchanged: the AI notices it, closes on it, and flees it
-    // exactly as it would any other agent, because it IS any other agent.
-    if (a.player) {
-      const inp = sim.input;
-      const mag = inp ? Math.hypot(inp.mx, inp.mz) : 0;
-      if (inp && mag > 0.1) {
-        a.aim = Math.atan2(inp.mz, inp.mx);
-        a.move += (1 - a.move) * Math.min(1, 8 * dt);
-        walk(a, dt, Math.min(1, mag) * 1.15);
-      } else {
-        a.move += (0 - a.move) * Math.min(1, 9 * dt);
-      }
-      if (inp && (inp.strike || inp.heavy) && a.strikeT < 0) {
-        // swing at whoever is closest and roughly in front, else at the air
-        const t = nearest(sim, a, reachOf(a) * 2.2 + 1.2);
-        a.target = t ?? null;
-        // you swing at what you meant to swing at. Without this you strike
-        // whichever way you last walked, and every swing misses the thing
-        // standing next to you.
-        if (t) {
-          const want = Math.atan2(t.z - a.z, t.x - a.x);
-          a.aim = want;
-          const d = ((want - a.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-          a.heading += d * 0.75;
-        }
-        a.strikeT = 0;
-        a.struck = false;
-        a.heavy = inp.heavy;
-        sim.events.push({
-          kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
-          target: t ? whoOf(t) : undefined, how: styleName(a),
-          range: t ? Math.hypot(t.x - a.x, t.z - a.z) : undefined,
-        });
-      }
-    }
-
-    if (!a.player) switch (a.state) {
+    switch (a.state) {
       case 'wander': {
         a.move += (1 - a.move) * Math.min(1, 4 * dt);
         walk(a, dt);
@@ -401,10 +361,12 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         a.x += Math.cos(a.heading + Math.PI / 2) * circling * dt * 0.8;
         a.z += Math.sin(a.heading + Math.PI / 2) * circling * dt * 0.8;
         if (!rangedOf(a) && d < reachOf(a) * 0.75) walk(a, dt, -0.35); // too close, give ground
-        if (a.strikeT < 0 && a.stateT > 0.35 && Math.random() < dt / STRIKE_PERIOD) {
+        // an aggressive thing swings oftener, and swings heavy
+        const period = STRIKE_PERIOD * (1.5 - a.temper.aggression * 0.85);
+        if (a.strikeT < 0 && a.stateT > 0.35 && Math.random() < dt / period) {
           a.strikeT = 0;
           a.struck = false;
-          a.heavy = Math.random() < 0.3;
+          a.heavy = Math.random() < 0.15 + a.temper.aggression * 0.4;
           sim.events.push({
             kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
             target: t ? whoOf(t) : undefined, how: styleName(a),
@@ -426,7 +388,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     }
 
     // noticing: only while going about your business
-    if (!a.player && (a.state === 'wander' || a.state === 'think') && a.stateT > 0.5) {
+    if ((a.state === 'wander' || a.state === 'think') && a.stateT > 0.5) {
       const other = nearest(sim, a, NOTICE_R);
       if (other && Math.random() < dt * 0.9 * (1 - sim.peace) * (0.4 + a.nerve)) {
         a.target = other;
@@ -435,7 +397,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         // being stalked is worth reacting to
         if (other.state === 'wander' || other.state === 'think') {
           other.target = a;
-          setState(other, Math.random() < other.nerve ? 'approach' : 'flee');
+          setState(other, Math.random() < other.temper.bravery ? 'approach' : 'flee');
         }
       }
     }

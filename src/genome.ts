@@ -82,6 +82,8 @@ export interface Genome {
   palette: Palette;
   weapon?: Weapon;
   offhand?: Weapon;   // shield, buckler, torch, or a second blade
+  /** How it behaves. Derived from the body when absent — see src/temper.ts. */
+  temper?: { aggression: number; bravery: number; speed: number };
 }
 
 // --- palette helpers -------------------------------------------------------
@@ -411,6 +413,7 @@ export function migrateGenome(raw: any): Genome {
       palette: raw.palette,
       weapon: raw.weapon,
       offhand: raw.offhand,
+      temper: raw.temper,
     };
   }
 
@@ -436,6 +439,7 @@ export function migrateGenome(raw: any): Genome {
     palette: raw.palette ?? base.palette,
     weapon: raw.weapon,
     offhand: raw.offhand,
+    temper: raw.temper,
   };
 }
 

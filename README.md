@@ -20,27 +20,26 @@ One creature, moving, changeable while it moves. No play button — it never sto
 Mood sliders are adverbs: they re-weight the same drivers, they are not new animations.
 The camera is proof the skeleton is 3D: yaw around it, pitch to top-down, same genome.
 
-## Play the void
+## The void
 
 ```bash
 PORT=5180 npm run dev
 ```
 
-Then open `/void.html?play`. Arrows or WASD to move, **space** to strike,
-**shift+space** for the heavy one, **c** for the controls, **p** to grab a PNG.
+Open `/void.html`. **`/` to summon**, **c** for the controls, **p** for a PNG.
 
-**Press `/` to summon.** Type anything; a creature that has never existed walks
-into the pit and is marked as yours. Your words are not kept — not on the
-genome, not in a filename, not over the wire. The thing that answers is named
-by its body (`src/naming.ts`), so nobody can read your prompt back off it.
+You do not walk around. You type, and something that has never existed walks
+into the pit and fights on its own — the verb is summoning, not punching. Your
+words are not kept: not on the genome, not in a filename, not over the wire.
+What answers is named by its body (`src/naming.ts`), so nobody can read your
+prompt back off it.
 
-You are handed one of the creatures on the shelf and dropped into the pit with
-five others. Nothing else changes: the beasts notice you, close on you and run
-from you exactly as they do each other, because your creature IS one of them —
-the only difference is that its intent comes from a keyboard instead of the
-state machine. Swing near something and you turn to face it. Die and you come
-back after a beat as whatever the pit hands you next, which is also how you
-meet the bestiary.
+How it behaves comes from what it is made of (`src/temper.ts`): three numbers —
+aggression, bravery, speed — read off armament, horns, extra heads, mass, leg
+length and cadence. A horned armed heavy thing starts fights; a small unarmed
+one keeps its distance; long legs and a quick cadence make it fast. The words
+nudge those numbers once at hatch (savage, timid, swift, lumbering) and are then
+discarded, so a savage thing stays savage without anything remembering why.
 
 ## The pit (multiplayer)
 

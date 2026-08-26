@@ -12,6 +12,7 @@ import {
 } from './genome';
 import { titleFor } from './naming';
 import { weaponsFromWords } from './smith';
+import { temperOf, temperFromWords } from './temper';
 
 export const HATCH_MODEL =
   (typeof process !== 'undefined' && process.env?.HATCH_MODEL) || 'llama3.2:3b';
@@ -456,6 +457,12 @@ export function validateGenome(raw: any, desc: string): Genome {
     if (main) genome.weapon = main;
     if (off) genome.offhand = off;
   }
+  // Temperament is the last thing the words do. They set three numbers — how
+  // readily it starts a fight, whether it holds when hurt, how fast it moves —
+  // and are then gone. A "savage" thing is savage forever after; nothing keeps
+  // the word that made it so.
+  genome.temper = temperFromWords(desc, temperOf(genome));
+
   return genome;
 }
 
