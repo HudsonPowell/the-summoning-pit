@@ -339,7 +339,7 @@ function log(e: VoidEvent): void {
 }
 
 http.listen(PORT, '0.0.0.0', () => {
-  console.log(`the pit is open on :${PORT} — ${roster.length} creatures in the catalogue`);
+  console.log(`THE SUMMONING PIT is open on :${PORT} — ${roster.length} creatures in the catalogue`);
 });
 
 // A pit that loses the last few seconds on every deploy is a pit nobody trusts

@@ -1,4 +1,8 @@
-# rig
+# THE SUMMONING PIT
+
+You type, and something that has never existed walks into the pit and fights
+for its life. Whoever is left standing holds the pit until someone beats them —
+sleeping in there, alone, until the next person arrives.
 
 A creature is a genome: skeleton proportions + gait drivers + palette, ~750 bytes.
 Nothing is keyframed. Nothing is drawn. The skeleton is resolved from drivers every
