@@ -14,11 +14,12 @@ import { defaultBiped } from '../src/genome';
 import { createVoid, stepVoid, spawnOne, spawnChar, makeAgent, VoidSim, VoidEvent, Agent } from '../src/void/sim';
 import { declare } from '../src/void/pacts';
 import { titleFor } from '../src/naming';
-import { hatchGenome } from '../src/hatch';
+import { hatchGenome, OLLAMA_URL, HATCH_MODEL, HATCH_API_KEY } from '../src/hatch';
 import { mintKey, ownerOf, looksLikeKey } from './keys';
 import { sanitiseGenome } from './sanitise';
 import { load as loadPit, save as savePit, SavedPit } from './persist';
 import { serveStatic } from './static';
+import { warm, warmModel } from './warm';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_HZ = 30;
@@ -121,6 +122,11 @@ function snapshotState(): SavedPit {
 
 restore();
 
+// the model downloads in the background; the pit opens immediately
+if (SERVER_HATCH && !HATCH_API_KEY) {
+  void warmModel(OLLAMA_URL, HATCH_MODEL);
+}
+
 // --- who is here ------------------------------------------------------------
 
 const lastSummon = new Map<string, number>();   // owner id -> sim time
@@ -180,6 +186,7 @@ const http = createServer((req, res) => {
       watchers: wss.clients.size,
       openFor: Math.round((Date.now() - wallBase) / 1000),
       oldest: Math.round(Math.max(0, ...sim.agents.filter(a => a.deadT < 0).map(a => sim.t - a.deeds.born))),
+      model: HATCH_API_KEY ? 'hosted' : warm.ready ? 'ready' : warm.error ? `error: ${warm.error}` : warm.progress || 'starting',
     }));
     return;
   }
@@ -267,6 +274,13 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   if (!raw && typeof m.desc === 'string' && m.desc.trim()) {
     if (!SERVER_HATCH) {
       ws.send(JSON.stringify({ t: 'nope', why: 'this pit cannot hatch for you — run a model locally' }));
+      return;
+    }
+    if (!HATCH_API_KEY && !warm.ready) {
+      ws.send(JSON.stringify({
+        t: 'nope',
+        why: warm.error ? 'the pit has no mind yet' : `still waking up — ${warm.progress || 'loading'}`,
+      }));
       return;
     }
     // claim the slot BEFORE the slow part, or one client can have twenty in
