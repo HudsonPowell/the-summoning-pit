@@ -25,6 +25,7 @@ interface Snap {
 export class LiveVoid {
   sim: VoidSim;
   connected = false;
+  everConnected = false;  // gates the 'far away' line: never shown before first contact
   watchers = 0;
   private ws?: WebSocket;
   private cast: Character[] = [];
@@ -55,6 +56,7 @@ export class LiveVoid {
     this.ws = ws;
     ws.onopen = () => {
       this.connected = true;
+      this.everConnected = true;
       // anything said while the socket was still opening is said now — the
       // first thing the client ever sends is its key, and dropping that
       // silently means it never gets one

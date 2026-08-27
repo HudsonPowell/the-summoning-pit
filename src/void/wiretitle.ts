@@ -190,7 +190,9 @@ export class WireTitle {
     }
 
     this.out.length = 0;
-    const fwd = rotY(v3(0, 0, 2.2), -camYaw);
+    // 4.6m toward the camera (orthographic, so free): 2.2 left the word on the
+  // plane creatures idle on, and the lord stood INSIDE it, blended to soup.
+  const fwd = rotY(v3(0, 0, 4.6), -camYaw);
     this.lines.forEach((ln, li) => {
       for (const cap of ln.wire.frame()) {
         if (cap.a.y < 0.015 && cap.b.y < 0.015) continue;

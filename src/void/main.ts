@@ -295,14 +295,58 @@ function myModel(): { model?: string; url?: string } {
  * answer, and the disabled field already says why you cannot type.
  */
 let summoning = false;
+let summonAt = 0;             // when the current summon left the box
 
-function summonUI(sim: VoidSim): void {
+/**
+ * The status line is the pit's only voice, and it speaks in whispers: a
+ * refusal, a fall, the socket going quiet. A whisper outranks the lord line
+ * for its few seconds (or, for a death, until you reach for the box again);
+ * with nothing to say and no hero of yours in play, the line names whoever
+ * holds the pit so a first look has stakes.
+ */
+const whisperState = { text: '', until: 0, sticky: false };
+function whisper(text: string, secs: number, sticky = false): void {
+  whisperState.text = text;
+  whisperState.until = performance.now() / 1000 + secs;
+  whisperState.sticky = sticky;
+}
+function hushWhisper(): void { whisperState.text = ''; whisperState.sticky = false; }
+
+// the fall of YOUR creature is the loop's biggest beat; carry enough of it
+// to say something when the agent is suddenly not there any more. The absence
+// must LAST before it is called a death — a snapshot boundary can lose the
+// whole cast for a frame, and that is not a funeral.
+let heldMine: { name: string; kills: number; since: number; goneAt: number } | null = null;
+
+const SUMMON_MURMURS = ['the pit listens…', 'something forms…', 'it is coming…'];
+
+function summonUI(sim: VoidSim, net: LiveVoid | null): void {
   const box = document.getElementById('summonBox') as HTMLInputElement | null;
   const status = document.getElementById('summonStatus');
   if (!box || !status) return;
 
   const mine = sim.agents.find(a => a.by === ME && a.deadT < 0) ?? null;
   if (mine) yours = mine;
+  const now = performance.now() / 1000;
+
+  // watch for the fall — but never while the socket is down, when the whole
+  // cast can flicker out of the snapshot without anyone having died
+  if (!net || net.connected) {
+    if (mine) {
+      if (!heldMine || heldMine.name !== mine.ch.name) heldMine = { name: mine.ch.name, kills: 0, since: now, goneAt: 0 };
+      heldMine.kills = mine.deeds.kills;
+      heldMine.goneAt = 0;
+    } else if (heldMine && !summoning) {
+      if (!heldMine.goneAt) heldMine.goneAt = now;
+      if (now - heldMine.goneAt > 1) {
+        const stood = heldMine.goneAt - heldMine.since;
+        const age = stood >= 90 ? `${Math.round(stood / 60)}m` : `${stood | 0}s`;
+        const glory = heldMine.kills === 1 ? '1 kill' : `${heldMine.kills} kills`;
+        whisper(`${heldMine.name} fell — ${glory}, stood ${age}`, 30, true);
+        heldMine = null;
+      }
+    }
+  }
 
   const state = summoning ? 'summoning' : mine ? 'inplay' : 'active';
   if (box.dataset.state !== state) {
@@ -313,12 +357,30 @@ function summonUI(sim: VoidSim): void {
       : state === 'inplay' ? `${mine!.ch.name} is in play`
       : 'summon…';
   }
+  // the wait is a ritual, not a spinner: the placeholder murmurs while it lasts
+  if (state === 'summoning') {
+    const murmur = SUMMON_MURMURS[Math.floor((now - summonAt) / 2.8) % SUMMON_MURMURS.length];
+    if (box.placeholder !== murmur) box.placeholder = murmur;
+  }
 
-  const lordText = mine
-    ? (mine.id === lordId ? 'YOU ARE PIT LORD' : 'you are not pit lord')
-    : '';
+  let lordText = '';
+  let amLord = false;
+  if (whisperState.text && (whisperState.sticky || now < whisperState.until)) {
+    lordText = whisperState.text;
+  } else if (net?.everConnected && !net.connected) {
+    lordText = 'the pit is far away…';
+  } else if (mine) {
+    amLord = mine.id === lordId;
+    lordText = amLord ? 'YOU ARE PIT LORD' : 'you are not pit lord';
+  } else {
+    const lord = sim.agents.find(a => a.id === lordId && a.deadT < 0);
+    if (lord) {
+      const glory = lord.deeds.kills === 1 ? '1 kill' : `${lord.deeds.kills} kills`;
+      lordText = `${lord.ch.name} holds the pit — ${glory}`;
+    }
+  }
   if (status.textContent !== lordText) status.textContent = lordText;
-  status.classList.toggle('lord', !!mine && mine.id === lordId);
+  status.classList.toggle('lord', amLord);
 }
 
 function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
@@ -334,6 +396,8 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
     const desc = box.value.trim();
     if (!desc || summoning) return;
     summoning = true;
+    summonAt = performance.now() / 1000;
+    hushWhisper();
     box.value = '';
     box.blur();          // the phone keyboard goes away the moment you commit
     // a lost packet must not wedge the field shut forever
@@ -364,6 +428,7 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
   }
   (buildSummon as any).finish = done;
 
+  box.addEventListener('focus', hushWhisper);
   box.addEventListener('keydown', e => {
     e.stopPropagation();
     if (e.key === 'Enter') summon();
@@ -853,6 +918,7 @@ async function boot() {
     };
     live.onNope = why => {
       console.log('[pit]', why);
+      whisper(why, 7);
       (buildSummon as any).finish?.();
     };
     live.onSworn = () => { /* pacts are silent by design */ };
@@ -926,7 +992,7 @@ async function boot() {
     if (muteFrame === 0) muteIcon?.draw(muted, sim.t);
 
     findLord(sim);
-    summonUI(sim);
+    summonUI(sim, live);
     const caps: Capsule[] = [];
     if (title && !title.done) caps.push(...title.caps(dt, cam.yaw));
     else title = null;

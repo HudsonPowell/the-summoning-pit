@@ -315,8 +315,15 @@ function refuse(ws: WebSocket, owner: string, why: string): void {
  * only they can summon into is not a pit. The server hatches it and throws the
  * words away — they are never stored, never logged, never sent on.
  */
+// Owners with a summon mid-hatch. The 2s SUMMON_GAP only covers rapid-fire;
+// a hosted hatch takes 5-12s, and in that window a re-sent summon passed every
+// guard (nothing living yet, gap elapsed) and minted a SECOND creature for the
+// same owner. One in flight each, and the refusal says so.
+const hatching = new Set<string>();
+
 async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   const owner = ownerOf(m.key);
+  if (hatching.has(owner)) { refuse(ws, owner, 'yours is already forming'); return; }
   const since = sim.t - (lastSummon.get(owner) ?? -1e9);
   // also used to return silently, which is indistinguishable from a dead pit
   if (since < SUMMON_GAP) { refuse(ws, owner, 'just a moment'); return; }
@@ -349,12 +356,15 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
     // claim the slot BEFORE the slow part, or one client can have twenty in
     // flight at once while the cooldown has not started
     lastSummon.set(owner, sim.t);
+    hatching.add(owner);
     try {
       raw = await hatchGenome(m.desc.slice(0, 200));
     } catch (e) {
       lastSummon.set(owner, -1e9);
       refuse(ws, owner, `nothing answered: ${(e as Error).message.slice(0, 120)}`);
       return;
+    } finally {
+      hatching.delete(owner);
     }
   }
 
