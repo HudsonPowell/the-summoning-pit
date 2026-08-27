@@ -26,6 +26,10 @@ export class LiveVoid {
   sim: VoidSim;
   connected = false;
   everConnected = false;  // gates the 'far away' line: never shown before first contact
+  private pauseUntil = 0;  // performance.now()/1000 when hosted summoning resumes
+
+  /** Seconds until hosted summoning resumes; 0 when it is running. */
+  pauseFor(): number { return Math.max(0, this.pauseUntil - performance.now() / 1000); }
   watchers = 0;
   private ws?: WebSocket;
   private cast: Character[] = [];
@@ -79,7 +83,12 @@ export class LiveVoid {
   }
 
   private receive(m: any): void {
+    if (m.t === 'pause') {
+      this.pauseUntil = performance.now() / 1000 + (m.for ?? 0);
+      return;
+    }
     if (m.t === 'hello') {
+      this.pauseUntil = performance.now() / 1000 + (m.pauseFor ?? 0);
       this.cast = m.cast.map((c: any) => {
         try { return migrateCharacter(c.ch); } catch { return null; }
       }).filter(Boolean) as Character[];

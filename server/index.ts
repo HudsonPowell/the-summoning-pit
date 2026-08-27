@@ -182,6 +182,7 @@ function hello() {
     ...snapshot(),
     t: 'hello',
     cast: cast.map((c, i) => ({ id: i, ch: c })),
+    pauseFor: pauseFor(),
   };
 }
 
@@ -199,6 +200,7 @@ const http = createServer((req, res) => {
       openFor: Math.round((Date.now() - wallBase) / 1000),
       oldest: Math.round(Math.max(0, ...sim.agents.filter(a => a.deadT < 0).map(a => sim.t - a.deeds.born))),
       model: HATCH_API_KEY ? 'hosted' : warm.ready ? 'ready' : warm.error ? `error: ${warm.error}` : warm.progress || 'starting',
+      paused: pauseFor(),
     }));
     return;
   }
@@ -315,6 +317,33 @@ function refuse(ws: WebSocket, owner: string, why: string): void {
  * only they can summon into is not a pit. The server hatches it and throws the
  * words away — they are never stored, never logged, never sent on.
  */
+// The hosted model runs on credit, and credit runs out. When the provider
+// starts answering with billing errors, the pit does not break — it PAUSES:
+// summons are refused with one honest line, everyone's box says so before
+// they even type, and every ten minutes one summon is allowed through to
+// probe whether the account lives again. Bodies hatched on a player's own
+// model are never gated — the pause is only about OUR credit.
+let pausedUntil = 0;                       // wall-clock ms
+const PAUSE_RETRY = 10 * 60_000;
+const PAUSE_LINE = 'summoning is paused — back soon';
+
+function pauseWorthy(msg: string): boolean {
+  return /hatch api (401|402|403)/.test(msg)
+    || /credit|balance|billing|payment|quota|insufficient/i.test(msg);
+}
+
+function pauseFor(): number {
+  return Math.max(0, Math.ceil((pausedUntil - Date.now()) / 1000));
+}
+
+function setPaused(on: boolean): void {
+  const was = pauseFor() > 0;
+  pausedUntil = on ? Date.now() + PAUSE_RETRY : 0;
+  const line = { t: 'pause', for: pauseFor() };
+  if (was !== (pauseFor() > 0) || on) broadcast(line);
+  if (on) console.log('[pit] summoning paused — the model answered with a billing error');
+}
+
 // Owners with a summon mid-hatch. The 2s SUMMON_GAP only covers rapid-fire;
 // a hosted hatch takes 5-12s, and in that window a re-sent summon passed every
 // guard (nothing living yet, gap elapsed) and minted a SECOND creature for the
@@ -355,13 +384,24 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
     }
     // claim the slot BEFORE the slow part, or one client can have twenty in
     // flight at once while the cooldown has not started
+    if (pauseFor() > 0) {
+      refuse(ws, owner, PAUSE_LINE);
+      return;
+    }
     lastSummon.set(owner, sim.t);
     hatching.add(owner);
     try {
       raw = await hatchGenome(m.desc.slice(0, 200));
+      if (pausedUntil) setPaused(false);   // the probe got through: credit lives
     } catch (e) {
       lastSummon.set(owner, -1e9);
-      refuse(ws, owner, `nothing answered: ${(e as Error).message.slice(0, 120)}`);
+      const msg = (e as Error).message;
+      if (pauseWorthy(msg)) {
+        setPaused(true);
+        refuse(ws, owner, PAUSE_LINE);
+      } else {
+        refuse(ws, owner, `nothing answered: ${msg.slice(0, 120)}`);
+      }
       return;
     } finally {
       hatching.delete(owner);

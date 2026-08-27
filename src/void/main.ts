@@ -348,13 +348,17 @@ function summonUI(sim: VoidSim, net: LiveVoid | null): void {
     }
   }
 
-  const state = summoning ? 'summoning' : mine ? 'inplay' : 'active';
+  // the pause only gates the pit's own model — with credit gone the box says
+  // so up front instead of letting people type into a wall of refusals
+  const paused = !mine && !summoning && (net?.pauseFor() ?? 0) > 0;
+  const state = summoning ? 'summoning' : mine ? 'inplay' : paused ? 'paused' : 'active';
   if (box.dataset.state !== state) {
     box.dataset.state = state;
     box.disabled = state !== 'active';
     box.placeholder =
       state === 'summoning' ? 'summoning…'
       : state === 'inplay' ? `${mine!.ch.name} is in play`
+      : state === 'paused' ? 'summoning paused — back soon'
       : 'summon…';
   }
   // the wait is a ritual, not a spinner: the placeholder murmurs while it lasts
