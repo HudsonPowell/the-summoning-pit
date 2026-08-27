@@ -11,6 +11,7 @@ import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
 import { Pit, Bank } from './voice';
+import { MuteIcon } from './icon';
 import { CROWN } from '../gear';
 import { LiveVoid } from './live';
 
@@ -605,6 +606,23 @@ function healthCapsules(a: Agent, mine: boolean): Capsule[] {
 const pit = new Pit();
 let voicesReady = false;
 
+// The mute control, drawn by the same renderer as the creatures. Its state
+// outlives the tab, because being silenced by a page you reopen is a small
+// betrayal.
+const MUTE_KEY = 'pit-muted';
+let muted = (() => { try { return localStorage.getItem(MUTE_KEY) === '1'; } catch { return false; } })();
+const muteCanvas = document.getElementById('muteIcon') as HTMLCanvasElement | null;
+const muteIcon = muteCanvas ? new MuteIcon(muteCanvas, hexRgb(look.voidCol)) : null;
+function paintMute(): void { muteIcon?.draw(muted); }
+paintMute();
+muteCanvas?.addEventListener('click', () => {
+  muted = !muted;
+  try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch { /* private */ }
+  pit.mute(muted);
+  paintMute();
+  if (!muted) void wakeAudio();
+});
+
 async function wakeAudio(): Promise<void> {
   if (voicesReady) { pit.resume(); return; }
   voicesReady = true;
@@ -612,6 +630,7 @@ async function wakeAudio(): Promise<void> {
     const res = await fetch('voices/manifest.json');
     const names: string[] = res.ok ? await res.json() : [];
     if (names.length) await pit.start(names);
+    pit.mute(muted);
   } catch { /* no voices is a silent pit, not a broken one */ }
 }
 // browsers will not make a sound until a person has done something

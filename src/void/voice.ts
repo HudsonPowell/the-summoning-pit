@@ -31,7 +31,8 @@ export class Pit {
   private dry: GainNode | null = null;
   private wet: GainNode | null = null;
   private verb: ConvolverNode | null = null;
-  private air: BiquadFilterNode | null = null;
+  private air: GainNode | null = null;
+  private toneIn: BiquadFilterNode | null = null;
   private lastAt = 0;
   private lastStepAt = 0;
   private dripTimer = 0;
@@ -49,21 +50,26 @@ export class Pit {
     // --- the room ---------------------------------------------------------
     const out = ctx.destination;
     // a gentle roll-off at the top: the pit is underground, not a studio
-    this.air = ctx.createBiquadFilter();
-    this.air.type = 'lowpass';
-    this.air.frequency.value = 7200;
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 7200;
+    // a gain after the filter is the pit's master, and the one thing mute needs
+    this.air = ctx.createGain();
+    this.air.gain.value = this.muted ? 0 : 1;
+    tone.connect(this.air);
     this.air.connect(out);
+    this.toneIn = tone;
 
     this.dry = ctx.createGain();
     this.dry.gain.value = 0.62;
-    this.dry.connect(this.air);
+    this.dry.connect(this.toneIn!);
 
     this.verb = ctx.createConvolver();
     this.verb.buffer = makeRoom(ctx, 2.6, 0.62);
     this.wet = ctx.createGain();
     this.wet.gain.value = 0.85;
     this.verb.connect(this.wet);
-    this.wet.connect(this.air);
+    this.wet.connect(this.toneIn!);
 
     // --- the floor of grain -----------------------------------------------
     // A silent room reads as a bug. A quiet moving hiss reads as a place.
@@ -76,7 +82,7 @@ export class Pit {
     grainFilter.Q.value = 0.5;
     const grainGain = ctx.createGain();
     grainGain.gain.value = 0.012;
-    grain.connect(grainFilter).connect(grainGain).connect(this.air);
+    grain.connect(grainFilter).connect(grainGain).connect(this.toneIn!);
     grain.start();
     // and the floor breathes, so it never sits perfectly still
     const drift = ctx.createOscillator();
@@ -131,7 +137,7 @@ export class Pit {
       sweep.start();
 
       src.connect(band).connect(g);
-      g.connect(this.air!);
+      g.connect(this.toneIn!);
       const send = ctx.createGain();
       send.gain.value = 0.5;
       g.connect(send).connect(this.verb!);
@@ -179,7 +185,7 @@ export class Pit {
     // barely any dry signal — a drip is mostly the room answering it
     const dry = ctx.createGain();
     dry.gain.value = 0.25;
-    place.connect(dry).connect(this.air!);
+    place.connect(dry).connect(this.toneIn!);
     place.connect(this.verb!);
 
     osc.start(now);
@@ -251,6 +257,17 @@ export class Pit {
   resume(): void {
     if (this.ctx?.state === 'suspended') void this.ctx.resume();
   }
+
+  /** Everything goes through `air`, so silencing it silences the pit. */
+  mute(on: boolean): void {
+    this.muted = on;
+    if (!this.air || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.air.gain.cancelScheduledValues(now);
+    // a ramp, because a hard cut on a running reverb tail clicks
+    this.air.gain.setTargetAtTime(on ? 0 : 1, now, 0.06);
+  }
+  muted = false;
 
   /**
    * @param pan  -1..1, where it is relative to the middle of the frame
