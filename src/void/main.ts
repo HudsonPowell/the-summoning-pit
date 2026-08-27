@@ -571,6 +571,28 @@ function voiceFor(a: Agent | undefined) {
   };
 }
 
+/**
+ * Footfalls, taken from the gait rather than guessed at. Phase 0 and 0.5 are
+ * when the two sides plant — the same instants the foot-planting fix is built
+ * around — so the sound lands exactly when the foot does, and a creature that
+ * stops walking stops making noise without anything being told to stop it.
+ */
+const lastPhase = new Map<number, number>();
+function footfalls(sim: VoidSim): void {
+  for (const a of sim.agents) {
+    const prev = lastPhase.get(a.id);
+    lastPhase.set(a.id, a.phase);
+    if (prev === undefined || a.deadT >= 0 || a.move < 0.12) continue;
+    // did the phase cross a plant this frame? (it wraps, so mind the seam)
+    const crossed = (p: number) =>
+      prev < p ? a.phase >= p && a.phase - prev < 0.5 : a.phase < prev - 0.5 && a.phase >= 0;
+    if (!crossed(0.5) && !(prev > a.phase && a.phase >= 0)) continue;
+    const { pan, dist } = placeOf(a.x, a.z);
+    if (dist > 0.95) continue;
+    pit.step(a.bulk, pan, dist, 0.35 + a.move * 0.5);
+  }
+}
+
 /** Where it happened, relative to what the camera is looking at. */
 function placeOf(x: number, z: number): { pan: number; dist: number } {
   const dx = x - (cam.cx ?? 0), dz = z - (cam.cz ?? 0);
@@ -694,6 +716,7 @@ async function boot() {
       else if (e.kind === 'hit') director.punch(0.45);
       speak(sim, e);
     }
+    footfalls(sim);
     driveCamera(sim, dt);
 
     const caps: Capsule[] = [];

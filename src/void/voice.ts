@@ -33,6 +33,9 @@ export class Pit {
   private verb: ConvolverNode | null = null;
   private air: BiquadFilterNode | null = null;
   private lastAt = 0;
+  private lastStepAt = 0;
+  private dripTimer = 0;
+  private scuff: AudioBuffer | null = null;
   ready = false;
 
   /** Nothing starts until a person has touched the page — browsers insist. */
@@ -83,8 +86,152 @@ export class Pit {
     drift.connect(driftAmt).connect(grainGain.gain);
     drift.start();
 
+    this.wind();
+    this.dripLoop();
+
     await this.load(manifest);
     this.ready = this.clips.length > 0;
+  }
+
+  // --- the place itself ---------------------------------------------------
+  // None of this is sampled. Wind is noise that will not sit still, a drip is a
+  // pitch falling off a cliff into a resonant tail, and a footfall is a burst
+  // shaped by how heavy the thing making it is. Synthesis suits an engine where
+  // nothing else is drawn either.
+
+  private wind(): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = makeGrain(ctx, 6);
+    src.loop = true;
+
+    // two bands, moving against each other, so it never reads as a loop
+    for (const [freq, q, level, rate] of [[240, 1.4, 0.05, 0.037], [820, 2.2, 0.022, 0.023]]) {
+      const band = ctx.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = freq;
+      band.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.value = level;
+
+      // the gust: slow, and deliberately not in step with the other band
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = rate;
+      const amt = ctx.createGain();
+      amt.gain.value = level * 0.8;
+      lfo.connect(amt).connect(g.gain);
+      lfo.start();
+
+      // and the band itself wanders, which is what stops it sounding like a filter
+      const sweep = ctx.createOscillator();
+      sweep.frequency.value = rate * 0.6;
+      const sweepAmt = ctx.createGain();
+      sweepAmt.gain.value = freq * 0.35;
+      sweep.connect(sweepAmt).connect(band.frequency);
+      sweep.start();
+
+      src.connect(band).connect(g);
+      g.connect(this.air!);
+      const send = ctx.createGain();
+      send.gain.value = 0.5;
+      g.connect(send).connect(this.verb!);
+    }
+    src.start();
+  }
+
+  /** Water off stone: rare, irregular, and always wetter than anything else. */
+  private dripLoop(): void {
+    const ctx = this.ctx!;
+    const next = () => {
+      const wait = 2.5 + Math.random() * 9;
+      this.dripTimer = window.setTimeout(() => { this.drip(); next(); }, wait * 1000);
+    };
+    next();
+  }
+
+  private drip(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // a drip is a pitch falling fast into nothing
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    const top = 900 + Math.random() * 1400;
+    osc.frequency.setValueAtTime(top, now);
+    osc.frequency.exponentialRampToValueAtTime(top * 0.35, now + 0.055);
+
+    // the plink: a resonance that rings a moment longer than the pitch does
+    const ring = ctx.createBiquadFilter();
+    ring.type = 'bandpass';
+    ring.frequency.value = top * 0.8;
+    ring.Q.value = 9;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(0.035 + Math.random() * 0.03, now + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+    const place = ctx.createStereoPanner();
+    place.pan.value = (Math.random() * 2 - 1) * 0.85;
+
+    osc.connect(ring).connect(env).connect(place);
+    // barely any dry signal — a drip is mostly the room answering it
+    const dry = ctx.createGain();
+    dry.gain.value = 0.25;
+    place.connect(dry).connect(this.air!);
+    place.connect(this.verb!);
+
+    osc.start(now);
+    osc.stop(now + 0.3);
+  }
+
+  /**
+   * A foot going down. The rig knows exactly when this happens — the gait
+   * phase crossing into stance — which most games have to approximate.
+   */
+  step(mass: number, pan = 0, dist = 0.3, hard = 0.5): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const m = Math.max(0.3, Math.min(2.6, mass));
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.scuff ??= makeScuff(ctx);
+    src.playbackRate.value = (1.5 / (0.6 + m)) * (0.85 + Math.random() * 0.3);
+
+    // heavier feet land lower and duller
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 2600 / (0.5 + m * 0.7);
+    tone.Q.value = 0.7;
+
+    // a thump under it, which is the mass rather than the surface
+    const body = ctx.createOscillator();
+    body.type = 'sine';
+    body.frequency.setValueAtTime(90 / (0.6 + m * 0.35), now);
+    body.frequency.exponentialRampToValueAtTime(40, now + 0.09);
+    const bodyEnv = ctx.createGain();
+    bodyEnv.gain.setValueAtTime(0, now);
+    bodyEnv.gain.linearRampToValueAtTime(0.05 * m * hard / (1 + dist), now + 0.006);
+    bodyEnv.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+
+    const env = ctx.createGain();
+    env.gain.value = (0.06 + m * 0.03) * hard / (1 + dist * 2);
+
+    const place = ctx.createStereoPanner();
+    place.pan.value = Math.max(-1, Math.min(1, pan)) * 0.6;
+
+    src.connect(tone).connect(env).connect(place);
+    body.connect(bodyEnv).connect(place);
+    place.connect(this.dry!);
+    const send = ctx.createGain();
+    send.gain.value = 0.2 + dist * 0.5;
+    place.connect(send).connect(this.verb!);
+
+    src.start(now);
+    body.start(now);
+    body.stop(now + 0.16);
   }
 
   private async load(manifest: string[]): Promise<void> {
@@ -225,6 +372,22 @@ function makeGrain(ctx: AudioContext, seconds: number): AudioBuffer {
   for (let i = 0; i < f; i++) {
     const k = i / f;
     d[i] = d[i] * k + d[n - f + i] * (1 - k);
+  }
+  return buf;
+}
+
+/** Grit on stone: a short noise burst that decays fast and unevenly. */
+function makeScuff(ctx: AudioContext): AudioBuffer {
+  const rate = ctx.sampleRate;
+  const n = Math.floor(rate * 0.13);
+  const buf = ctx.createBuffer(1, n, rate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    // two decays layered: the scrape, and the grit inside it
+    const scrape = Math.pow(1 - t, 3.5);
+    const grit = Math.random() < 0.35 ? 1.6 : 1;
+    d[i] = (Math.random() * 2 - 1) * scrape * grit * 0.8;
   }
   return buf;
 }

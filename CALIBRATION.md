@@ -1078,3 +1078,23 @@ not volume.
 So a harvest needs a **supervisor**: generate in a child process, kill it on a
 timeout, restart and resume. Not a longer timeout — the process does not
 survive to be waited on.
+
+## the pit has weather (2026-08-27)
+
+Ambience is synthesised, not harvested — drips, wind and scuffs are better made
+than recorded, and it suits an engine where nothing else is drawn either.
+
+- **Wind** is two noise bands moving against each other on deliberately
+  unrelated LFO rates (0.037 Hz and 0.023 Hz), with the band centres wandering
+  too. One band reads as a filter; two that disagree read as air.
+- **A drip** is a pitch falling off a cliff — 900–2300 Hz down to a third of
+  that in 55 ms — into a Q=9 resonance that rings past it. Almost no dry
+  signal: a drip is mostly the room answering it. Every 2.5–11 s, never regular.
+- **A footfall** is a noise burst with a sine thump under it, both scaled by
+  mass: heavier feet land lower, duller and slower.
+
+**Footfalls come from the gait, not from a timer.** Phase 0 and 0.5 are exactly
+when the two sides plant — the same instants the foot-planting fix is built
+around — so the sound lands on the frame the foot does, and a creature that
+stops walking goes quiet without anything being told to stop it. Most games
+approximate this; the rig already knew.
