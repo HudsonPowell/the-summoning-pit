@@ -147,6 +147,90 @@ def walk(skel):
     return paths
 
 
+def rejoin(paths, stroke):
+    """
+    Put the smith's strokes back together across the crossings.
+
+    Cutting at every junction is right for finding pieces but wrong for
+    describing them: where the 6's loop closes onto its own stem, or the 8
+    crosses at the waist, one continuous bend comes back as four stubs. At each
+    crossing the two ends that carry on in the same direction are the same
+    piece of wire, so pair the incident ends by how nearly anti-parallel their
+    tangents are, and splice. What is left is what was actually bent — which is
+    then cut deliberately, by arc length, when the letters are assembled.
+    """
+    ends = []          # (cluster key, path index, which end)
+    def tip(p, at_end):
+        q = p[::-1] if at_end else p
+        k = min(len(q) - 1, max(2, int(stroke)))
+        return np.array(q[0], float), np.array(q[0], float) - np.array(q[k], float)
+
+    for i, p in enumerate(paths):
+        for e in (0, 1):
+            ends.append([i, e, *tip(p, e == 1)])
+
+    # cluster ends that sit on the same crossing
+    groups = []
+    used = [False] * len(ends)
+    for i, a in enumerate(ends):
+        if used[i]:
+            continue
+        g = [i]; used[i] = True
+        for j in range(i + 1, len(ends)):
+            if not used[j] and np.hypot(*(ends[j][2] - a[2])) <= stroke * 1.9:
+                g.append(j); used[j] = True
+        if len(g) > 1:
+            groups.append(g)
+
+    mate = {}
+    for g in groups:
+        free = list(g)
+        while len(free) >= 2:
+            best, score = None, 0.35     # must be a real carry-through, not a corner
+            for x in range(len(free)):
+                for y in range(x + 1, len(free)):
+                    a, b = ends[free[x]], ends[free[y]]
+                    if a[0] == b[0] and len(paths[a[0]]) < 6:
+                        continue
+                    da = a[3] / (np.linalg.norm(a[3]) or 1)
+                    db = b[3] / (np.linalg.norm(b[3]) or 1)
+                    v = -float(da @ db)
+                    if v > score:
+                        best, score = (x, y), v
+            if not best:
+                break
+            x, y = best
+            mate[(ends[free[x]][0], ends[free[x]][1])] = (ends[free[y]][0], ends[free[y]][1])
+            mate[(ends[free[y]][0], ends[free[y]][1])] = (ends[free[x]][0], ends[free[x]][1])
+            for k in sorted((x, y), reverse=True):
+                free.pop(k)
+
+    out, done = [], set()
+    for i in range(len(paths)):
+        if i in done:
+            continue
+        # walk back to an open end so the chain is traversed once, in order
+        cur, side = i, 0
+        guard = 0
+        while (cur, side) in mate and mate[(cur, side)][0] not in done and guard < 64:
+            nxt = mate[(cur, side)]
+            if nxt[0] == i:
+                break
+            cur, side = nxt[0], 1 - nxt[1]
+            guard += 1
+        chain, at = [], (cur, side)
+        guard = 0
+        while at and at[0] not in done and guard < 64:
+            j, e = at
+            done.add(j)
+            seg = paths[j][::-1] if e == 1 else paths[j]
+            chain.extend(seg if not chain else seg[1:])
+            at = mate.get((j, 1 - e))
+            guard += 1
+        out.append(chain)
+    return out
+
+
 def prune(paths, stroke):
     """Thinning grows whiskers at every cut end. Anything shorter than the wire
     is thick is a whisker, not a piece."""
@@ -197,7 +281,7 @@ for pid, (name, row) in PIECES.items():
     length = sk.sum()
     stroke = area / max(1.0, length)          # wire gauge in pixels
     gauges.append(stroke)
-    paths = prune(walk(sk), stroke)
+    paths = rejoin(prune(walk(sk), stroke * 0.9), stroke)
     if not paths:
         print(f"  ! {name}: nothing traced", file=sys.stderr)
         continue

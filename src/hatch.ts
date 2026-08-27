@@ -176,6 +176,12 @@ export function buildPrompt(desc: string): string {
  * Server-side only, because it needs a key. The browser path is always Ollama,
  * which is exactly right: your model, your machine, your words.
  */
+/** Worth asking again: overloaded, rate limited, or a gateway having a moment. */
+function retryable(status: number, body: string): boolean {
+  return status === 429 || status === 503 || status === 502 || status === 500
+    || /service unavailable|overloaded|rate.?limit|try again/i.test(body);
+}
+
 export async function askOpenAI(
   desc: string,
   model: string,
@@ -203,12 +209,20 @@ export async function askOpenAI(
   // models support it at all. Ask for the strong guarantee, and if the provider
   // refuses it, fall back to plain JSON mode — the validator was always going
   // to have to repair whatever came back anyway.
-  let r = await ask({
-    type: 'json_schema',
-    json_schema: { name: 'genome', strict: false, schema: GENOME_SCHEMA },
-  });
+  const schema = { type: 'json_schema', json_schema: { name: 'genome', strict: false, schema: GENOME_SCHEMA } };
+  let r = await ask(schema);
   if (!r.ok && /json_schema|response_format|schema/i.test(r.body)) {
     r = await ask({ type: 'json_object' });
+  }
+
+  // A free tier under load says "Service unavailable" and means "not right
+  // now". Several people summoning at once hit that constantly, and losing a
+  // creature to it feels like the pit is broken rather than busy. Back off and
+  // ask again — the words are still here, and nobody is watching the clock
+  // that closely.
+  for (let tryAgain = 0; tryAgain < 3 && !r.ok && retryable(r.status, r.body); tryAgain++) {
+    await new Promise(done => setTimeout(done, 700 * (tryAgain + 1) + Math.random() * 500));
+    r = await ask(schema);
   }
   if (!r.ok) throw new Error(`hatch api ${r.status}: ${r.body.slice(0, 140)}`);
 
