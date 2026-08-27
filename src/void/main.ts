@@ -43,7 +43,7 @@ interface Look {
 // bodies read as one mass, and flat ink so the figures sit as silhouettes
 // rather than shaded forms.
 const DEFAULT_LOOK: Look = {
-  res: 360, zoom: 1, blend: 1.8, blendShape: 0.6, blendMix: 1,
+  res: 1120, zoom: 1, blend: 1.8, blendShape: 0.6, blendMix: 1,
   floorRadius: 12, floorPower: 2.4, floorLift: 1, tile: 1,
   round: 1,
   closeness: 0.72, response: 0.5, lead: 0.5,
@@ -52,16 +52,32 @@ const DEFAULT_LOOK: Look = {
   panel: false,
 };
 
+/**
+ * Bumped whenever the baked-in look changes. A stored look is a preference and
+ * should win — but only until the defaults move underneath it, or someone who
+ * nudged one slider months ago is stuck with an old look forever and every
+ * change we make is invisible to exactly the people using it most.
+ */
+const LOOK_VERSION = 2;
+
 function loadLook(): Look {
   try {
     const raw = localStorage.getItem(KEY);
-    // the drawer is not a preference — `c` opens it, and it starts shut
-    if (raw) return { ...DEFAULT_LOOK, ...JSON.parse(raw), panel: false };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (saved?.v === LOOK_VERSION) {
+        // the drawer is not a preference — `c` opens it, and it starts shut
+        return { ...DEFAULT_LOOK, ...saved, panel: false };
+      }
+    }
   } catch { /* fresh */ }
   return { ...DEFAULT_LOOK };
 }
 let look = loadLook();
-const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(look)); } catch { /* full */ } };
+const persist = () => {
+  try { localStorage.setItem(KEY, JSON.stringify({ ...look, v: LOOK_VERSION })); }
+  catch { /* full */ }
+};
 
 const REF_RES = 320;
 const canvas = document.getElementById('view') as HTMLCanvasElement;
