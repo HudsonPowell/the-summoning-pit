@@ -21,8 +21,8 @@
     .frame { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow: hidden; }
     canvas { display: block; image-rendering: pixelated; }
     #hero { width: 760px; height: 260px; }
-    #chart { width: 760px; height: 300px; }
-    #chart2 { width: 760px; height: 190px; }
+    #chart, #chart2 { width: 760px; height: 300px; }
+    #chart3 { width: 760px; height: 190px; }
     #meta { color: var(--brass); font-size: 11px; }
     .bar { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; width: 760px; }
     label { display: flex; align-items: center; gap: 7px; }
@@ -49,7 +49,7 @@
   <div id="meta">—</div>
 
   <div class="bar">
-    <input type="text" id="text" value="THE SUMMONING PIT" spellcheck="false" />
+    <input type="text" id="text" value="the summoning pit" spellcheck="false" />
     <button id="replay">summon</button>
     <button id="drop">cut loose</button>
     <button id="reseed">re-hammer</button>
@@ -65,14 +65,18 @@
   </div>
 
   <div class="frame"><canvas id="chart" width="760" height="300"></canvas></div>
-  <div class="frame"><canvas id="chart2" width="760" height="190"></canvas></div>
+  <div class="frame"><canvas id="chart2" width="760" height="300"></canvas></div>
+  <div class="frame"><canvas id="chart3" width="760" height="190"></canvas></div>
 
   <p class="note">
-    Each glyph is one to three lengths of inextensible wire, resampled into beads at a fixed
-    spacing and settled by a Verlet rod with length, bend and home constraints. <b>Hover the word</b>
-    to shove it. <b>Cut loose</b> drops the bend memory. Nothing is drawn as an outline; every link
-    is a capsule going through the same field renderer as the creatures, so the blur is the
-    engine's own smooth-min, not a filter.
+    Every glyph obeys the plate: circle or dead-straight line and nothing between; one continuous
+    wire, with the stem rolling into its bowl rather than butting against a separate ring; small
+    round parts on long limbs; loops that stop a seam short of closing; free ends that overshoot.
+    The lowercase is the direct extrapolation — the plate's <b>1</b> is this <b>n</b>, its
+    <b>10</b> is this <b>nb</b>, its <b>0</b> is this <b>o</b>. <b>Hover the word</b> to shove it;
+    <b>cut loose</b> drops the bend memory. Nothing is drawn as an outline: every link is a capsule
+    going through the same field renderer as the creatures, so the blur is the engine's own
+    smooth-min, not a filter.
   </p>
 
   <script type="module" src="/src/type/main.ts"></script>

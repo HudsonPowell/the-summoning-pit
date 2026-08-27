@@ -285,9 +285,10 @@ export const GLYPHS: Record<string, Glyph> = {
     ]),
   ]),
 
-  // bar and circle are one wire: the bar runs left straight into the tangent
-  e: gl(0.60, [
-    s([{ x: 0.60, y: 0.34 }, ...ring(0.29, 0.34, 0.29, 180, -150)]),
+  // bar and circle are one wire: the bar runs left to right and springs off its
+  // own far end, up over the top and round to a terminal at the lower right
+  e: gl(0.58, [
+    s([{ x: 0, y: 0.34 }, ...ring(0.29, 0.34, 0.29, 0, 320)]),
   ]),
 
   f: gl(0.42, [

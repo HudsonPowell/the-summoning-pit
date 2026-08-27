@@ -17,15 +17,17 @@ const hero = new PixelView(heroCanvas, HERO_W, HERO_H);
 // the whole set in a single buffer silently loses its last rows.
 const sheets = [
   { view: new PixelView($<HTMLCanvasElement>('chart'), CHART_W, 300), h: 300,
+    rows: ['abcdefghijklm', 'nopqrstuvwxyz'], texts: [] as WireText[], caps: [] as Capsule[] },
+  { view: new PixelView($<HTMLCanvasElement>('chart2'), CHART_W, 300), h: 300,
     rows: ['ABCDEFGHIJKLM', 'NOPQRSTUVWXYZ'], texts: [] as WireText[], caps: [] as Capsule[] },
-  { view: new PixelView($<HTMLCanvasElement>('chart2'), CHART_W, 190), h: 190,
-    rows: ['0123456789', "-.,:'!?"], texts: [] as WireText[], caps: [] as Capsule[] },
+  { view: new PixelView($<HTMLCanvasElement>('chart3'), CHART_W, 190), h: 190,
+    rows: ['1234567890', "-.,:'!?"], texts: [] as WireText[], caps: [] as Capsule[] },
 ];
 
 const VOID: [number, number, number] = [8, 8, 12];
 
 const cfg = {
-  text: 'THE SUMMONING PIT',
+  text: 'the summoning pit',
   gauge: 0.078,
   hand: 1,
   tracking: 0.0,
@@ -71,9 +73,9 @@ function buildSheet(): void {
 
 function heroCam(): Camera {
   const pad = 0.86;
-  const ppm = Math.min(HERO_W * pad / Math.max(0.4, word.width), HERO_H * 0.42);
+  const ppm = Math.min(HERO_W * pad / Math.max(0.4, word.width), HERO_H * 0.36);
   return {
-    yaw: 0, pitch: 0, ppm, cy: 0.5, cx: 0, cz: 0,
+    yaw: 0, pitch: 0, ppm, cy: 0.44, cx: 0, cz: 0,
     floor: false, flat: !cfg.shade,
     blend: cfg.blend, blendDepth: 0.5, blendMix: 1, blendShape: 0.62,
     voidColor: VOID,
@@ -83,9 +85,9 @@ function heroCam(): Camera {
 function chartCam(sh: typeof sheets[number]): Camera {
   const w = Math.max(0.5, ...sh.texts.map(s => s.width));
   const h = (sh.rows.length - 1) * GAP + 1;
-  const ppm = Math.min(CHART_W * 0.88 / w, sh.h * 0.84 / h);
+  const ppm = Math.min(CHART_W * 0.88 / w, sh.h * 0.74 / h);
   return {
-    yaw: 0, pitch: 0, ppm, cy: h / 2 - 0.06, cx: 0, cz: 0,
+    yaw: 0, pitch: 0, ppm, cy: h / 2 - 0.12, cx: 0, cz: 0,
     floor: false, flat: !cfg.shade,
     blend: cfg.blend, blendDepth: 0.5, blendMix: 1, blendShape: 0.62,
     voidColor: VOID,

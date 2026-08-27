@@ -1140,3 +1140,18 @@ events, so the pit sounded alive while being completely deaf.
 
 This is the second time this ordering has bitten. Whoever clears the queue
 clears it AFTER everyone who reads it.
+
+## a lone creature was mute (2026-08-27)
+
+Every voice hung off a combat event — strike, hit, kill, notice, flee — and the
+pit is nearly always ONE creature, alone, asleep. So the sound system worked
+perfectly and the pit was silent, which is indistinguishable from broken.
+
+Idle voices now fire on a slow timer whether anything is happening or not:
+every 9–31s asleep (quiet, the `die` bank, which is mostly long breaths), every
+5–19s awake (the `growl` bank). Skipped while fighting, because a fight has its
+own voices.
+
+Diagnosing this needed the rig exposed on `voidScene`: `ready: true, clips: 7`
+plus a direct `say()` that produced sound proved the audio was fine, and a
+wrapped `say` counting zero calls proved nothing was asking it to speak.

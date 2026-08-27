@@ -590,6 +590,28 @@ function voiceFor(a: Agent | undefined) {
 }
 
 /**
+ * A creature alone in the pit made no sound at all, because every voice hung
+ * off a fight — and one creature alone is what the pit is nearly always doing.
+ * So a thing that is not fighting still breathes, grumbles, and mutters at
+ * nothing, rarely and quietly. That is the difference between an empty room
+ * and an occupied one.
+ */
+const nextIdle = new Map<number, number>();
+function idleVoices(sim: VoidSim, dt: number): void {
+  for (const a of sim.agents) {
+    if (a.deadT >= 0) continue;
+    const due = (nextIdle.get(a.id) ?? 4 + Math.random() * 10) - dt;
+    if (due > 0) { nextIdle.set(a.id, due); continue; }
+    // sleeping things breathe slower and quieter than restless ones
+    const asleep = a.state === 'rest';
+    nextIdle.set(a.id, (asleep ? 9 : 5) + Math.random() * (asleep ? 22 : 14));
+    if (a.state === 'fight' || a.state === 'approach') continue;
+    const { pan, dist } = placeOf(a.x, a.z);
+    pit.say(asleep ? 'die' : 'growl', voiceFor(a), pan, dist, asleep ? 0.18 : 0.3);
+  }
+}
+
+/**
  * Footfalls, taken from the gait rather than guessed at. Phase 0 and 0.5 are
  * when the two sides plant — the same instants the foot-planting fix is built
  * around — so the sound lands exactly when the foot does, and a creature that
@@ -739,6 +761,7 @@ async function boot() {
     // gait rather than from events. Second time this exact ordering has bitten.
     if (live) sim.events.length = 0;
     footfalls(sim);
+    idleVoices(sim, dt);
     driveCamera(sim, dt);
 
     findLord(sim);
