@@ -147,7 +147,7 @@ function snapshot() {
       i: a.id,
       c: castId(a.ch),
       x: r2(a.x), z: r2(a.z), h: r2(a.heading),
-      mv: r2(a.move), hp: a.hp, st: a.state,
+      mv: r2(a.move), hp: a.hp, mx: a.maxHp, st: a.state,
       d: a.deadT >= 0 ? r2(a.deadT) : -1,
       tr: r2(a.turnRate),
       tg: a.target?.id ?? 0,

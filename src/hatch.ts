@@ -8,7 +8,7 @@
 
 import {
   defaultBiped, imp, hound, troll, ogre, hippo, serpent, raptor, spider, hydra,
-  Genome, Skeleton, Gait, ChainSpec, ChainRole, Locomotion, Palette,
+  Genome, Skeleton, Gait, ChainSpec, ChainRole, Locomotion, Palette, girthAt,
 } from './genome';
 import { titleFor } from './naming';
 import { weaponsFromWords } from './smith';
@@ -283,6 +283,29 @@ const SERPENTINE = /snake|serpent|worm|eel|naga|slither|legless|python|viper|cob
 const MANY_HEADED = /two[- ]head|three[- ]head|multi[- ]head|hydra|heads\b/i;
 const MANY_ARMED = /four[- ]arm|six[- ]arm|multi[- ]arm|extra arm|many arms/i;
 
+/**
+ * The JSON a model actually produces, rather than the JSON it was asked for.
+ * Together does not enforce the schema strictly, so things like `"lean": 0,5`
+ * arrive — a comma where a decimal point belongs — and one stray character
+ * throws away an entire summon. These are the failures worth surviving; a
+ * genuinely unparseable body is still an error.
+ */
+export function parseLoose(text: string): any {
+  try { return JSON.parse(text); } catch { /* try harder */ }
+  let t = text.trim();
+  // some models wrap the object in prose or a fence
+  const open = t.indexOf('{'), close = t.lastIndexOf('}');
+  if (open > 0 || close < t.length - 1) t = t.slice(open, close + 1);
+  const fixes: [RegExp, string][] = [
+    [/(\d),(\d)/g, '$1.$2'],          // 0,5  ->  0.5
+    [/,\s*([}\]])/g, '$1'],            // trailing comma
+    [/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":'],  // single-quoted keys
+    [/:\s*\.(\d)/g, ': 0.$1'],        // .5 -> 0.5
+  ];
+  for (const [re, to] of fixes) t = t.replace(re, to);
+  return JSON.parse(t);
+}
+
 export function validateGenome(raw: any, desc: string): Genome {
   const base = defaultBiped();
   const sk = raw?.skeleton ?? {};
@@ -429,6 +452,20 @@ export function validateGenome(raw: any, desc: string): Genome {
       : { role: 'tail', at: 0, seg: [0.22, 0.18, 0.13], r: 0.04, spread: 0 });
   }
 
+  // A limb hangs off the BODY. `spread` is how far out to the side it
+  // attaches, and the model returns the maximum every single time — 0.5
+  // against a torso 0.17 wide puts the legs three times the body's own radius
+  // out into the air, which is exactly what "the legs aren't attached" looks
+  // like. Bound it to the thing it is attached to.
+  {
+    const at = (u: number) => girthAt({ ...sk, body, girth } as Skeleton, u * Math.max(1, body.length));
+    for (const c of chains) {
+      if (c.role === 'head' || c.role === 'tail') continue;
+      const room = at(c.at) * 1.35 + 0.02;
+      c.spread = Math.min(c.spread, room);
+    }
+  }
+
   // --- proportion ---------------------------------------------------------
   // The schema never said a torso has a sane shape, so the model spends its
   // budget at the extremes: pills (girth as wide as the body is long) and
@@ -545,5 +582,5 @@ export async function hatchGenome(
   const text = HATCH_API_KEY
     ? await askOpenAI(desc, model ?? HATCH_MODEL, HATCH_API_URL, HATCH_API_KEY, temperature)
     : await askOllama(desc, model, url, onProgress, temperature);
-  return validateGenome(JSON.parse(text), desc);
+  return validateGenome(parseLoose(text), desc);
 }

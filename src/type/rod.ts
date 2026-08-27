@@ -243,7 +243,12 @@ export class Rod {
   hx: Float32Array; hy: Float32Array;  // home — the letterform
   private sx: Float32Array; private sy: Float32Array;  // pre-constraint scratch
   stiff: Float32Array;                  // per interior joint
-  rest: Float32Array;                   // per interior joint, signed radians
+  /**
+   * How far apart bead i-1 and bead i+1 sit when the joint is bent the way the
+   * letter wants it. This is the bend memory, held as a length rather than an
+   * angle — see solveBend for why.
+   */
+  span: Float32Array;
   pinned: Uint8Array;
   z: number;
   /** Ink for the whole strand; set by the typesetter. */
@@ -261,28 +266,20 @@ export class Rod {
     this.sx = new Float32Array(n); this.sy = new Float32Array(n);
     this.pinned = new Uint8Array(n);
     this.stiff = new Float32Array(Math.max(0, n - 2));
-    this.rest = new Float32Array(Math.max(0, n - 2));
+    this.span = new Float32Array(Math.max(0, n - 2));
     for (let i = 0; i < n; i++) {
       this.x[i] = this.px[i] = this.hx[i] = pts[i].x;
       this.y[i] = this.py[i] = this.hy[i] = pts[i].y;
     }
-    for (let i = 1; i < n - 1; i++) {
-      this.stiff[i - 1] = pts[i].k;
-      this.rest[i - 1] = this.angleAt(this.hx, this.hy, i);
-    }
-  }
-
-  private angleAt(X: Float32Array, Y: Float32Array, i: number): number {
-    const ax = X[i] - X[i - 1], ay = Y[i] - Y[i - 1];
-    const bx = X[i + 1] - X[i], by = Y[i + 1] - Y[i];
-    return Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
+    for (let i = 1; i < n - 1; i++) this.stiff[i - 1] = pts[i].k;
+    this.reseat();
   }
 
   /**
    * Even out the curvature before anything else sees the letter.
    *
    * An arc authored as a polygon has curvature that steps; a real sprung wire
-   * has curvature that flows. Averaging each soft joint's rest angle with its
+   * has curvature that flows. Nudging each soft bead toward the midpoint of its
    * neighbours converges on the elastica — the shape a bent rod actually takes
    * — and it is the difference between a letter that looks plotted and one
    * that looks bent. Hard joints are excluded: the mitre must stay a mitre.
@@ -355,9 +352,11 @@ export class Rod {
     this.reseat();
   }
 
-  /** Re-read rest angles from wherever home now is. */
+  /** Re-read the bend memory from wherever home now is. */
   reseat(): void {
-    for (let i = 1; i < this.n - 1; i++) this.rest[i - 1] = this.angleAt(this.hx, this.hy, i);
+    for (let i = 1; i < this.n - 1; i++) {
+      this.span[i - 1] = hyp(this.hx[i + 1] - this.hx[i - 1], this.hy[i + 1] - this.hy[i - 1]);
+    }
     this.snap();
   }
 
@@ -463,33 +462,41 @@ export class Rod {
     }
   }
 
-  /** Rotate the two neighbours about the joint until the angle is the rest angle. */
+  /**
+   * Bending, held as the distance across the joint rather than the angle at it.
+   *
+   * The obvious formulation — measure the angle at bead i, rotate its two
+   * neighbours until it matches — buckles. Straightening joint i is done by
+   * moving i-1 and i+1, which bends joints i-1 and i+1, and on a long straight
+   * run those corrections chase each other into a standing zigzag that
+   * satisfies every length constraint exactly and never decays. Every stem in
+   * the word grows a sawtooth.
+   *
+   * Two beads either side of a joint sit a fixed distance apart for a given
+   * bend, so the same information is a plain distance constraint between i-1
+   * and i+1 — which cannot buckle, because ANY zigzag pulls those two beads
+   * closer together and the constraint pushes straight back. It also costs less
+   * than the angular form. The one thing it gives up is the sign of the bend,
+   * so a piece with no memory of where it belongs may flip a curl the wrong
+   * way; for a length of wire that has been cut loose, that is not a lie.
+   */
   private solveBend(amt: number): void {
     const n = this.n;
     for (let i = 1; i < n - 1; i++) {
       const k = this.stiff[i - 1] * amt;
       if (k <= 0) continue;
-      let err = this.rest[i - 1] - this.angleAt(this.x, this.y, i);
-      while (err > Math.PI) err -= TAU;
-      while (err < -Math.PI) err += TAU;
-      if (Math.abs(err) < 1e-5) continue;
-
-      const wa = this.pinned[i - 1] ? 0 : 1;
-      const wc = this.pinned[i + 1] ? 0 : 1;
+      const a = i - 1, c = i + 1;
+      let dx = this.x[c] - this.x[a], dy = this.y[c] - this.y[a];
+      const d = hyp(dx, dy);
+      if (d < 1e-9) continue;
+      const wa = this.pinned[a] ? 0 : 1, wc = this.pinned[c] ? 0 : 1;
       const w = wa + wc;
       if (w === 0) continue;
-      const t = err * k * 0.3;
-      const bx = this.x[i], by = this.y[i];
-      if (wa) this.rot(i - 1, bx, by, -t * (2 * wa / w) * 0.5);
-      if (wc) this.rot(i + 1, bx, by, t * (2 * wc / w) * 0.5);
+      const corr = (d - this.span[i - 1]) / d * k * 0.5;
+      dx *= corr; dy *= corr;
+      this.x[a] += dx * (2 * wa / w); this.y[a] += dy * (2 * wa / w);
+      this.x[c] -= dx * (2 * wc / w); this.y[c] -= dy * (2 * wc / w);
     }
-  }
-
-  private rot(i: number, cx: number, cy: number, a: number): void {
-    const s = Math.sin(a), c = Math.cos(a);
-    const dx = this.x[i] - cx, dy = this.y[i] - cy;
-    this.x[i] = cx + dx * c - dy * s;
-    this.y[i] = cy + dx * s + dy * c;
   }
 
   /** Shove the wire away from a point — a cursor, a blast, a falling body. */

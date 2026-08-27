@@ -296,7 +296,7 @@ export class WireText {
   }
 
   /** A gentle draught, for the hold after the word has arrived. */
-  breathe(t: number, amount = 0.0035): void {
+  breathe(t: number, amount = 0.0022): void {
     for (const p of this.pieces) {
       const rod = p.rod;
       const ph = p.u * 6.0;

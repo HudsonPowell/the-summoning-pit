@@ -55,6 +55,26 @@ export const CREST: GearPiece = {
   ],
 };
 
+/**
+ * The pit lord's crown. Not part of any genome — it is drawn onto whoever
+ * currently holds the pit, and it moves the moment someone takes the title.
+ * Worn ABOVE the skull rather than around it, so it reads at a distance and on
+ * a body of any shape, including ones with no obvious head to sit on.
+ */
+export const CROWN: GearPiece = {
+  name: 'crown', at: 'head',
+  parts: [
+    // the band, crossed so it reads as a ring from any angle
+    { a: [-0.34, 0.62, 0], b: [0.34, 0.62, 0], r: 0.17, color: '#e8c14a' },
+    { a: [0, 0.62, -0.34], b: [0, 0.62, 0.34], r: 0.17, color: '#e0b63c' },
+    // and the points
+    { a: [0.3, 0.66, 0], b: [0.36, 1.0, 0], r: 0.08, color: '#f2d264' },
+    { a: [-0.3, 0.66, 0], b: [-0.36, 1.0, 0], r: 0.08, color: '#f2d264' },
+    { a: [0, 0.66, 0.3], b: [0, 1.0, 0.36], r: 0.08, color: '#f2d264' },
+    { a: [0, 0.66, -0.3], b: [0, 1.0, -0.36], r: 0.08, color: '#f2d264' },
+  ],
+};
+
 export const HOOD: GearPiece = {
   name: 'hood', at: 'head',
   parts: [

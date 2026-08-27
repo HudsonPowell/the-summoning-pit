@@ -113,13 +113,17 @@ function loop(now: number): void {
   t += dt;
 
   if (phase === 'summon') {
-    word.step(dt, t, { stagger: 0.11, rise: 1.15, gravity: -2.6 });
-    if (t > 0.11 * cfg.text.length + 2.2) phase = 'hold';
+    word.step(dt, t, { stagger: 0.075, rise: 0.95, gravity: -2.8 });
+    if (t > 0.075 * cfg.text.length + 1.8) phase = 'hold';
   } else {
-    word.simulate(dt, { home: 0.12, bend: 1 });
+    // Brass is stiff. A loose hold leaves the rod trembling a couple of percent
+    // of a cap height off the letter forever, which reads as a hairy edge next
+    // to the same word rendered static — so hold it hard and let the spring
+    // show only when something actually pushes it.
+    word.simulate(dt, { home: 0.4, bend: 1 });
     word.breathe(t);
   }
-  if (mouse) word.push(mouse.x, mouse.y, 0.22, 0.055);
+  if (mouse) word.push(mouse.x, mouse.y, 0.26, 0.075);
 
   hero.render(word.frame(), heroCam(), 0);
 

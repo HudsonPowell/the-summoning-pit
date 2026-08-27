@@ -11,6 +11,7 @@ import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
 import { Pit, Bank } from './voice';
+import { CROWN } from '../gear';
 import { LiveVoid } from './live';
 
 const KEY = 'void-look';
@@ -413,6 +414,22 @@ function shotCapsules(s: Shot): Capsule[] {
   return out;
 }
 
+/**
+ * Who holds the pit. Most kills, and the older one wins a tie — a champion who
+ * has been standing there for hours has earned it over a newcomer who matched
+ * them this afternoon.
+ */
+let lordId = -1;
+function findLord(sim: VoidSim): void {
+  let best: Agent | null = null;
+  for (const a of sim.agents) {
+    if (a.deadT >= 0 || a.deeds.kills < 1) continue;
+    if (!best || a.deeds.kills > best.deeds.kills
+      || (a.deeds.kills === best.deeds.kills && a.deeds.born < best.deeds.born)) best = a;
+  }
+  lordId = best ? best.id : -1;
+}
+
 function agentCapsules(a: Agent, t: number): Capsule[] {
   const mood = {
     tired: 0,
@@ -432,7 +449,8 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     {
       weapon: a.ch.weapon,
       offhand: a.ch.offhand,
-      gear: a.ch.gear,
+      // the crown belongs to the title, not to the creature
+      gear: a.id === lordId ? [...(a.ch.gear ?? []), CROWN] : a.ch.gear,
       turn: a.turnRate,
       // the head has already been through its own spring — it arrives late
       // and goes past, rather than snapping onto the target
@@ -719,6 +737,7 @@ async function boot() {
     footfalls(sim);
     driveCamera(sim, dt);
 
+    findLord(sim);
     const caps: Capsule[] = [];
     // scenery first: it never moves, so it is the same list every frame
     for (const pr of sim.props) caps.push(...pr.caps);

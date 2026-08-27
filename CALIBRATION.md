@@ -1098,3 +1098,31 @@ when the two sides plant — the same instants the foot-planting fix is built
 around — so the sound lands on the frame the foot does, and a creature that
 stops walking goes quiet without anything being told to stop it. Most games
 approximate this; the rig already knew.
+
+## a bigger model brings bigger bugs (2026-08-27)
+
+Llama-3.3-70B is a large improvement in creature quality and it broke three
+things that llama3.2:3b never exercised.
+
+- **`spread: 0.5` on every limb.** The model returns the maximum every time,
+  and 0.5 against a torso 0.17 wide puts the legs three times the body's own
+  radius out into the air. That is what "the legs aren't attached" looks like.
+  Spread is now bounded by the girth at the attachment point:
+  `min(spread, girthAt(at) * 1.35 + 0.02)`.
+- **`"lean": 0,5`** — a comma where a decimal belongs. Together does NOT
+  enforce a JSON schema strictly, so malformed JSON reaches `JSON.parse` and
+  one stray character throws away a whole summon. `parseLoose()` repairs the
+  handful of failures worth surviving: digit-comma-digit, trailing commas,
+  single-quoted keys, leading-dot numbers, and prose wrapped round the object.
+- **maxHp never crossed the wire.** It GROWS as a creature takes trophies, so
+  every client divided a champion's 12 hp by the 4 it was born with, got 3,
+  clamped it to full, and drew every health bar as untouched. A creature that
+  cannot be shown losing looks invincible — and this one nearly was: 12 kills,
+  4.7 hours old, 12 max hp against a newcomer's 3 to 6.
+
+## the crown
+
+Worn by whoever holds the pit — most kills, oldest wins a tie — and drawn at
+render time rather than baked into a genome, so it passes to whoever takes the
+title. It sits ABOVE the skull rather than around it, which is what lets one
+spec fit a biped and a quadruped without either knowing about the other.

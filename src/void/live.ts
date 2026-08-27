@@ -173,6 +173,11 @@ export class LiveVoid {
       a.move = p.mv + (row.mv - p.mv) * u;
       a.turnRate = row.tr;
       a.hp = row.hp;
+      // maxHp GROWS as a creature takes trophies, and it used to stay behind on
+      // the server — so every client divided a champion's 12 hp by the 4 it was
+      // born with, got 3, clamped it to full, and drew every health bar as
+      // untouched. A creature that could not be shown losing looked invincible.
+      if (typeof row.mx === 'number') a.maxHp = row.mx;
       // deeds cross the wire so a veteran reads as one on every screen
       if (typeof row.k === 'number') a.deeds.kills = row.k;
       a.state = row.st;
