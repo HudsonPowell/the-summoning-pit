@@ -31,14 +31,13 @@ const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
 const SAVE_EVERY = 5;                 // seconds
 const MAX_PER_OWNER = 1;              // one hero each — the pit is not a kennel
 /**
- * A summon should land the moment it is typed. The only reason to make anyone
- * wait is a creature that dies almost immediately: without that, a bad summon
- * can be re-rolled endlessly and every re-roll costs a model call. So there is
- * no standing cooldown — just a penalty for a hero that did not last.
+ * A summon should land the moment it is typed. Measured cost is about £0.0015
+ * a creature, so this was never really about credit — it is only here to stop
+ * one person spamming re-rolls. Short enough that people keep playing.
  */
 const SUMMON_GAP = 2;                 // seconds, only to swallow a double-press
-const SHORT_LIFE = 12;                // a hero gone this fast was barely a hero
-const SHORT_PENALTY = 25;             // seconds before that owner may try again
+const SHORT_LIFE = 10;                // a hero gone this fast was barely a hero
+const SHORT_PENALTY = 6;              // a beat, not a punishment
 const STIR_CAP = 7;                   // house creatures a stirred pit may hold
 const STIR_GAP = 1500;                // ms between stirs, from anyone
 let lastStir = 0;

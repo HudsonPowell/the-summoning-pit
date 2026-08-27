@@ -37,6 +37,12 @@ export interface Curl {
 
 export interface Strand {
   nodes: Node[];
+  /**
+   * These points are already a centreline — traced off the plate — not a
+   * bending sheet. Take them as they are; the corner-filleting that turns
+   * instructions into wire would only round off the smith's own mitres.
+   */
+  raw?: boolean;
   closed?: boolean;
   curlA?: Curl; // grows backwards off the first node
   curlB?: Curl; // grows forwards off the last node
@@ -184,6 +190,40 @@ function spiral(path: Sample[], c: Curl, atEnd: boolean): Sample[] {
   return out;
 }
 
+/**
+ * A traced centreline, with stiffness read off its own curvature.
+ *
+ * The authored glyphs say how hard each corner was squeezed; a trace has to be
+ * asked. Turn per unit length gives it away: nothing is a straight run, a lot
+ * over a short distance is a hammered mitre, and the easy middle is the wire's
+ * own spring.
+ */
+function traced(nodes: Node[]): Sample[] {
+  const n = nodes.length;
+  const out: Sample[] = [];
+  for (let i = 0; i < n; i++) {
+    let k = K_STRAIGHT;
+    if (i > 0 && i < n - 1) {
+      const ax = nodes[i].x - nodes[i - 1].x, ay = nodes[i].y - nodes[i - 1].y;
+      const bx = nodes[i + 1].x - nodes[i].x, by = nodes[i + 1].y - nodes[i].y;
+      const la = hyp(ax, ay), lb = hyp(bx, by);
+      if (la > 1e-9 && lb > 1e-9) {
+        const turn = Math.abs(Math.atan2(ax * by - ay * bx, ax * bx + ay * by));
+        const curv = turn / ((la + lb) * 0.5);   // radians per em
+        k = curv < 1.2 ? K_STRAIGHT
+          : curv < 16 ? K_ARC_SOFT + (K_STRAIGHT - K_ARC_SOFT) * (1 - (curv - 1.2) / 14.8)
+          : K_ARC_SOFT + (K_ARC_HARD - K_ARC_SOFT) * Math.min(1, (curv - 16) / 26);
+      }
+    }
+    out.push({ x: nodes[i].x, y: nodes[i].y, k });
+  }
+  // curvature off single samples is noisy; the stiffness field should not be
+  for (let p = 0; p < 3; p++) {
+    for (let i = 1; i < n - 1; i++) out[i].k = (out[i - 1].k + 2 * out[i].k + out[i + 1].k) / 4;
+  }
+  return out;
+}
+
 /** Even spacing is what makes it a rope rather than a drawing. */
 function resample(path: Sample[], step: number): Sample[] {
   if (path.length < 2) return path.slice();
@@ -215,7 +255,7 @@ function resample(path: Sample[], step: number): Sample[] {
 
 /** Build the full centreline for a strand, at a given bead spacing. */
 export function centreline(s: Strand, step: number): Sample[] {
-  let path = fillet(s.nodes, !!s.closed);
+  let path = s.raw ? traced(s.nodes) : fillet(s.nodes, !!s.closed);
   if (s.curlA) path = spiral(path, s.curlA, false).reverse().concat(path);
   if (s.curlB) path = path.concat(spiral(path, s.curlB, true));
   return resample(path, step);
