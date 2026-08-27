@@ -206,8 +206,8 @@ export const GLYPHS: Record<string, Glyph> = {
 
   k: G([
     { p: 'four.stem', s: STEM_A, a: 'bl', at: [0, 0] },
-    { p: 'four.bent', i: 0, fx: true, s: 0.40 / 0.44, a: 'tr', at: [0.44, 0.70], z: 0.006 },
-    { p: 'four.bent', i: 0, fx: true, s: 0.34 / 0.44, a: 'tl', at: [0.09, 0.34], z: 0.009 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.38 / 0.44, a: 'tr', at: [0.38, 0.71], z: 0.006 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.34 / 0.44, a: 'tl', at: [0.02, 0.34], z: 0.009 },
   ]),
 
   // the 3's two bowls, the top one turned over
@@ -247,9 +247,9 @@ export const GLYPHS: Record<string, Glyph> = {
   // ====================================================================
 
   A: G([
-    { p: 'seven', from: 0.06, to: 0.66, fx: true, s: 0.88, a: 'br', at: [0.36, 0] },
-    { p: 'seven', from: 0.06, to: 0.66, s: 0.88, a: 'bl', at: [0.36, 0], z: 0.006 },
-    { p: 'four.bent', i: 1, s: 0.56 / 0.35, a: 'cl', at: [0.06, 0.27], z: 0.009 },
+    { p: 'seven', from: 0.06, to: 0.66, s: 0.95, a: 'tr', at: [0.36, 1.0] },
+    { p: 'seven', from: 0.06, to: 0.66, fx: true, s: 0.95, a: 'tl', at: [0.36, 1.0], z: 0.006 },
+    { p: 'four.bent', i: 1, s: 0.58 / 0.35, a: 'cl', at: [0.05, 0.26], z: 0.009 },
   ]),
   B: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
@@ -259,7 +259,7 @@ export const GLYPHS: Record<string, Glyph> = {
   C: G([{ p: 'ring', from: 0.17, to: 0.95, s: RING_C, a: 'bl', at: [0, 0] }]),
   D: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
-    { p: 'ring', from: 0.62, to: 1.12, fx: true, s: RING_C, sy: RING_C, a: 'cl', at: [0.01, 0.50], z: 0.006 },
+    { p: 'ring', from: 0.84, to: 1.32, s: RING_C, a: 'cl', at: [0.01, 0.50], z: 0.006 },
   ]),
   E: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
@@ -273,8 +273,8 @@ export const GLYPHS: Record<string, Glyph> = {
     { p: 'three', i: 2, s: 0.46 / 0.51, a: 'cl', at: [-0.02, 0.55], z: 0.009 },
   ]),
   G: G([
-    { p: 'ring', from: 0.17, to: 0.99, s: RING_C, a: 'bl', at: [0, 0] },
-    { p: 'four.bent', i: 1, s: 0.42 / 0.35, a: 'cr', at: [1.02, 0.50], z: 0.006 },
+    { p: 'ring', from: 0.12, to: 0.99, s: RING_C, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.44 / 0.35, a: 'cr', at: [1.04, 0.36], z: 0.006 },
   ]),
   H: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
@@ -288,8 +288,8 @@ export const GLYPHS: Record<string, Glyph> = {
   ]),
   K: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
-    { p: 'four.bent', i: 0, fx: true, s: 0.56 / 0.44, a: 'tr', at: [0.60, 1.0], z: 0.006 },
-    { p: 'four.bent', i: 0, fx: true, s: 0.48 / 0.44, a: 'tl', at: [0.07, 0.48], z: 0.009 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.54 / 0.44, a: 'tr', at: [0.54, 1.01], z: 0.006 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.48 / 0.44, a: 'tl', at: [0.03, 0.48], z: 0.009 },
   ]),
   L: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
@@ -297,13 +297,13 @@ export const GLYPHS: Record<string, Glyph> = {
   ]),
   M: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
-    { p: 'seven', from: 0.06, to: 0.62, fx: true, s: 0.62, a: 'tl', at: [0.01, 1.0], z: 0.006 },
-    { p: 'seven', from: 0.06, to: 0.62, s: 0.62, a: 'tr', at: [0.72, 1.0], z: 0.009 },
-    { p: 'four.stem.b', s: 1.47, a: 'bl', at: [0.72, 0], z: 0.012 },
+    { p: 'seven', from: 0.06, to: 0.62, fx: true, s: 0.76 / 1.05, a: 'tl', at: [0.02, 1.0], z: 0.006 },
+    { p: 'seven', from: 0.06, to: 0.62, s: 0.76 / 1.05, a: 'bl', at: [0.35, 0.24], z: 0.009 },
+    { p: 'four.stem.b', s: 1.47, a: 'bl', at: [0.68, 0], z: 0.012 },
   ]),
   N: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
-    { p: 'seven', from: 0.06, to: 0.70, fx: true, s: 0.82, a: 'tl', at: [0, 1.0], z: 0.006 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.58 / 0.38, sy: 0.98 / 0.44, a: 'tl', at: [0.02, 1.0], z: 0.006 },
     { p: 'four.stem.b', s: 1.47, a: 'bl', at: [0.60, 0], z: 0.009 },
   ]),
   O: G([{ p: 'ring', s: RING_C, a: 'bl', at: [0, 0] }]),
@@ -313,12 +313,12 @@ export const GLYPHS: Record<string, Glyph> = {
   ]),
   Q: G([
     { p: 'ring', s: RING_C, a: 'bl', at: [0, 0] },
-    { p: 'four.bent', i: 0, s: 0.44 / 0.44, a: 'tl', at: [0.62, 0.34], z: 0.009 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.44 / 0.44, a: 'tl', at: [0.60, 0.36], z: 0.009 },
   ]),
   R: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
     { p: 'ten', i: 1, s: 0.52 / 0.38, a: 'cl', at: [0.02, 0.73], z: 0.006 },
-    { p: 'four.bent', i: 0, s: 0.50 / 0.44, a: 'tl', at: [0.08, 0.50], z: 0.009 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.50 / 0.44, a: 'tl', at: [0.13, 0.50], z: 0.009 },
   ]),
   S: G([
     { p: 'three', i: 0, fx: true, s: 1.78, a: 'tl', at: [0, 1.0] },
@@ -344,9 +344,9 @@ export const GLYPHS: Record<string, Glyph> = {
     { p: 'four.bent', i: 0, fx: true, s: DIAG_C, a: 'br', at: [0.86, 0], z: 0.009 },
   ]),
   Y: G([
-    { p: 'four.bent', i: 0, s: 0.50 / 0.44, a: 'bl', at: [0.02, 0.50] },
-    { p: 'four.bent', i: 0, fx: true, s: 0.50 / 0.44, a: 'br', at: [0.88, 0.50], z: 0.006 },
-    { p: 'bar.short', s: 0.54 / 0.48, a: 'cb', at: [0.45, -0.02], z: 0.009 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.50 / 0.44, a: 'tl', at: [0, 1.0] },
+    { p: 'four.bent', i: 0, s: 0.50 / 0.44, a: 'bl', at: [0.44, 0.50], z: 0.006 },
+    { p: 'bar.short', s: 0.54 / 0.48, a: 'ct', at: [0.45, 0.52], z: 0.009 },
   ]),
   Z: G([
     { p: 'seven', from: 0.08, s: SEV_C, a: 'bl', at: [0, 0] },
@@ -362,9 +362,9 @@ export const GLYPHS: Record<string, Glyph> = {
   "'": G([{ p: 'bar.short', from: 0, to: 0.35, s: 0.9, a: 'ct', at: [0, 1.0] }]),
   '!': G([{ p: 'bar.short', from: 0.1, s: 1.62, a: 'bl', at: [0, 0.22] }], [{ x: 0.01, y: 0.05, r: 0.55 }]),
   '?': G([
-    { p: 'two', from: 0.0, to: 0.42, s: 0.72, a: 'ct', at: [0.22, 1.0] },
-    { p: 'bar.short', from: 0, to: 0.3, s: 0.9, a: 'ct', at: [0.22, 0.42], z: 0.006 },
-  ], [{ x: 0.22, y: 0.05, r: 0.55 }]),
+    { p: 'two', from: 0.0, to: 0.46, s: 0.80, a: 'ct', at: [0.26, 1.0] },
+    { p: 'bar.short', from: 0, to: 0.55, s: 0.9, a: 'ct', at: [0.28, 0.54], z: 0.006 },
+  ], [{ x: 0.28, y: 0.05, r: 0.55 }]),
 };
 
 /**

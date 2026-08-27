@@ -11,7 +11,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Character, migrateCharacter, makeCharacter } from '../src/character';
 import { defaultBiped } from '../src/genome';
-import { createVoid, stepVoid, spawnOne, spawnChar, makeAgent, VoidSim, VoidEvent, Agent } from '../src/void/sim';
+import { createVoid, stepVoid, spawnOne, spawnChar, makeAgent, whoOf, VoidSim, VoidEvent, Agent } from '../src/void/sim';
 import { declare } from '../src/void/pacts';
 import { titleFor } from '../src/naming';
 import { hatchGenome, OLLAMA_URL, HATCH_MODEL, HATCH_API_KEY } from '../src/hatch';
@@ -300,9 +300,18 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
     refuse(ws, owner, `that one did not last — ${Math.ceil(held - sim.t)}s`);
     return;
   }
-  if (livingOf(owner).length >= MAX_PER_OWNER) {
-    refuse(ws, owner, 'yours is still standing');
-    return;
+  // One hero each — but REFUSING when yours is alive locks you out of playing
+  // for as long as it survives, and a champion can hold the pit for hours. So
+  // summoning again retires the one you have: it walks out, and the new one
+  // walks in. You are never blocked from playing by your own success.
+  for (const old of livingOf(owner)) {
+    old.deadT = 0;
+    old.state = 'down';
+    old.target = null;
+    sim.events.push({
+      kind: 'despawn', t: sim.t, x: old.x, z: old.z, actor: whoOf(old),
+    });
+    console.log(`[pit] ${owner} recalled ${old.ch.name}`);
   }
 
   let raw: unknown = m.genome;

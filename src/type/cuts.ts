@@ -60,8 +60,23 @@ const lengths = (t: Trace): number[] => {
   return d;
 };
 
-/** The sub-length between two fractions, with the ends landing exactly. */
+/**
+ * The sub-length between two fractions, with the ends landing exactly.
+ *
+ * `to` may run past 1, which wraps back through the start — the only way to
+ * cut the right-hand half out of the 0, since the ring's own seam sits at the
+ * top and the wire has to be followed through it.
+ */
 function slice(t: Trace, from: number, to: number): Pt[] {
+  if (to > 1) {
+    const head = sliceOnce(t, from, 1);
+    const tail = sliceOnce(t, 0, to - 1);
+    return head.concat(tail.slice(1));
+  }
+  return sliceOnce(t, from, to);
+}
+
+function sliceOnce(t: Trace, from: number, to: number): Pt[] {
   const d = lengths(t);
   const L = d[d.length - 1];
   if (L < 1e-9) return t.map(([x, y]) => ({ x, y }));
