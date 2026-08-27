@@ -239,12 +239,23 @@ wss.on('connection', ws => {
     }
 
     if (m.t === 'stir') {
-      for (const a of sim.agents) { a.target = null; a.state = 'wander'; a.stateT = 0; }
-      spawnOne(sim);
+      // This spawned a creature for anyone who asked, with no key, no cooldown
+      // and no limit — so seven watchers clicking a button filled the pit with
+      // twelve house creatures and buried every real summon among them. It
+      // wakes the pit now; it does not populate it.
+      for (const a of sim.agents) {
+        if (a.state === 'rest') { a.state = 'think'; a.stateT = 0; }
+      }
     }
   });
 });
 
+
+/** Say no out loud. A refusal nobody can see is a bug report nobody can file. */
+function refuse(ws: WebSocket, owner: string, why: string): void {
+  console.log(`[pit] refused ${owner}: ${why}`);
+  ws.send(JSON.stringify({ t: 'nope', why }));
+}
 
 /**
  * A summon may arrive as a BODY or as WORDS.
@@ -266,21 +277,18 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
     return;
   }
   if (livingOf(owner).length >= MAX_PER_OWNER) {
-    ws.send(JSON.stringify({ t: 'nope', why: 'you already have three in the pit' }));
+    refuse(ws, owner, 'you already have three in the pit');
     return;
   }
 
   let raw: unknown = m.genome;
   if (!raw && typeof m.desc === 'string' && m.desc.trim()) {
     if (!SERVER_HATCH) {
-      ws.send(JSON.stringify({ t: 'nope', why: 'this pit cannot hatch for you — run a model locally' }));
+      refuse(ws, owner, 'this pit cannot hatch for you — run a model locally');
       return;
     }
     if (!HATCH_API_KEY && !warm.ready) {
-      ws.send(JSON.stringify({
-        t: 'nope',
-        why: warm.error ? 'the pit has no mind yet' : `still waking up — ${warm.progress || 'loading'}`,
-      }));
+      refuse(ws, owner, warm.error ? 'the pit has no mind yet' : `still waking up — ${warm.progress || 'loading'}`);
       return;
     }
     // claim the slot BEFORE the slow part, or one client can have twenty in
@@ -290,14 +298,14 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
       raw = await hatchGenome(m.desc.slice(0, 200));
     } catch (e) {
       lastSummon.set(owner, -1e9);
-      ws.send(JSON.stringify({ t: 'nope', why: 'nothing answered' }));
+      refuse(ws, owner, `nothing answered: ${(e as Error).message.slice(0, 120)}`);
       return;
     }
   }
 
   const g = sanitiseGenome(raw);
   if (!g) {
-    ws.send(JSON.stringify({ t: 'nope', why: 'that is not a creature' }));
+    refuse(ws, owner, 'that is not a creature');
     return;
   }
   g.name = titleFor(g.skeleton);
@@ -305,6 +313,7 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   castId(ch);
   const a = spawnChar(sim, ch, owner);
   lastSummon.set(owner, sim.t);
+  console.log(`[pit] ${owner} summoned ${g.name}`);
   ws.send(JSON.stringify({ t: 'yours', id: a.id, name: g.name, owner }));
   broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
 }

@@ -1155,3 +1155,21 @@ own voices.
 Diagnosing this needed the rig exposed on `voidScene`: `ready: true, clips: 7`
 plus a direct `say()` that produced sound proved the audio was fine, and a
 wrapped `say` counting zero calls proved nothing was asking it to speak.
+
+## four people in the pit (2026-08-27)
+
+**Concurrent summons work** — four separate keys, four creatures, 4/4 accepted.
+But they SERIALISE: 5.5s, 7.2s, 12.7s, 13.6s. That is Together's free tier
+running one request at a time, and with four people it feels exactly like
+"only one summon at a time". The server is not the bottleneck; the hosted model
+is, and a deposit would likely lift it.
+
+**`stir` was an open flood valve.** It spawned a creature for anyone who asked
+— no key, no cooldown, no limit — so seven watchers clicking a button put
+twelve house creatures in the pit and buried every real summon among them. The
+tell was a snapshot where all twelve standing creatures were unowned. It wakes
+sleepers now; it does not populate.
+
+**Refusals were invisible.** Every `nope` went to one socket and nowhere else,
+so with people actually playing there was no way to tell a rate limit from a
+cooldown from a broken hatch. They are logged now, with the reason.
