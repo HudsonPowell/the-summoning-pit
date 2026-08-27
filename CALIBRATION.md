@@ -1022,3 +1022,23 @@ neither could see the other — the shared pit was behind a flag left over from
 development. The deployed origin now defaults to live; `?solo` opts out; a dev
 server keeps the opt-in, because there is no pit behind it unless one is
 running.
+
+## self-hosted Ollama on Railway: measured, and it is memory not speed (2026-08-27)
+
+Deployed `ollama/ollama` as a second service with a volume at `/root/.ollama`,
+pointed the pit at `http://ollama.railway.internal:11434`, and had the pit pull
+its own model on boot (no public port on the model server).
+
+Ollama's own boot log settles it:
+
+    inference compute  id=cpu  library=cpu  total="953.7 MiB"  available="935.0 MiB"
+
+**954 MiB.** `llama3.2:3b` needs ~2 GB and cannot load regardless of patience —
+the pull also died early (`POST /api/pull` returned 200 in 6.5s for a 2 GB
+model, and `/api/tags` was then empty). The estimate of 40–70s per summon was
+never tested, because nothing got that far.
+
+So the ceiling on the trial is RAM, not tokens/sec. Self-hosting needs a paid
+plan for memory before speed is even a question. A ~0.5B model would fit in
+954 MiB, but 3B is already the weak link in creature quality — going smaller
+trades the whole point away.
