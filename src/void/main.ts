@@ -504,12 +504,34 @@ function sigilColor(by: string): [number, number, number] {
 function sigilCapsules(a: Agent, t: number): Capsule[] {
   if (!a.by || a.deadT >= 0) return [];
   const col = sigilColor(a.by);
+  const mine = a.by === ME;
   const y = a.bulk * 1.16 + 0.1 + Math.sin(t * 2.2 + a.id) * 0.025;
-  const r = Math.max(0.035, a.bulk * 0.035);
-  return [
+  const r = Math.max(0.035, a.bulk * 0.035) * (mine ? 1.35 : 1);
+  const out: Capsule[] = [
     { a: v3(a.x, y, a.z), b: v3(a.x, y, a.z), r, color: col, part: 'sigil' },
     { a: v3(a.x, y - r * 2.4, a.z), b: v3(a.x, y - r * 1.1, a.z), r: r * 0.34, color: col, part: 'sigil' },
   ];
+  if (!mine) return out;
+
+  // YOURS. A pip above the head is not enough to find in a scrum of twelve, so
+  // your own creature also stands in a ring on the floor — a shape nothing else
+  // in the pit makes, readable at any zoom and from directly overhead, which is
+  // where the camera usually is.
+  const rad = Math.max(0.28, a.bulk * 0.42);
+  const seg = 14;
+  const spin = t * 0.5;
+  for (let i = 0; i < seg; i++) {
+    // a dashed ring: gaps make it read as a marker rather than a puddle
+    if (i % 2) continue;
+    const a0 = spin + (i / seg) * TAU;
+    const a1 = spin + ((i + 1) / seg) * TAU;
+    out.push({
+      a: v3(a.x + Math.cos(a0) * rad, 0.015, a.z + Math.sin(a0) * rad),
+      b: v3(a.x + Math.cos(a1) * rad, 0.015, a.z + Math.sin(a1) * rad),
+      r: 0.028, color: col, part: 'sigil',
+    });
+  }
+  return out;
 }
 
 /**

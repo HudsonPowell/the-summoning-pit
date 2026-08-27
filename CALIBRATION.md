@@ -1173,3 +1173,20 @@ sleepers now; it does not populate.
 **Refusals were invisible.** Every `nope` went to one socket and nowhere else,
 so with people actually playing there was no way to tell a rate limit from a
 cooldown from a broken hatch. They are logged now, with the reason.
+
+## one hero each, and knowing which one is yours (2026-08-27)
+
+Three creatures per person made the pit a kennel and made every summon harder
+to find. One each.
+
+**No standing cooldown.** A summon should land the moment it is typed. The only
+reason to make anyone wait is a hero that dies almost immediately, because
+without that a bad summon can be re-rolled endlessly and every re-roll is a
+model call. So: 2s to swallow a double-press, and a 25s hold only if your hero
+died inside 12 seconds.
+
+**Finding your own creature.** A pip floating over its head is invisible in a
+scrum of twelve. Yours now stands in a slowly turning dashed ring on the floor —
+a shape nothing else in the pit makes, readable at any zoom and from directly
+overhead, which is where the camera usually is. The dashes matter: a solid ring
+reads as a puddle.

@@ -29,8 +29,16 @@ const STATE_FILE = process.env.PIT_STATE ?? 'pit-state.json';
 /** Can this pit hatch for people who have no model of their own? */
 const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
 const SAVE_EVERY = 5;                 // seconds
-const MAX_PER_OWNER = 3;              // living creatures one key may hold
-const SUMMON_COOLDOWN = 20;           // seconds between summons from one key
+const MAX_PER_OWNER = 1;              // one hero each — the pit is not a kennel
+/**
+ * A summon should land the moment it is typed. The only reason to make anyone
+ * wait is a creature that dies almost immediately: without that, a bad summon
+ * can be re-rolled endlessly and every re-roll costs a model call. So there is
+ * no standing cooldown — just a penalty for a hero that did not last.
+ */
+const SUMMON_GAP = 2;                 // seconds, only to swallow a double-press
+const SHORT_LIFE = 12;                // a hero gone this fast was barely a hero
+const SHORT_PENALTY = 25;             // seconds before that owner may try again
 const STIR_CAP = 7;                   // house creatures a stirred pit may hold
 const STIR_GAP = 1500;                // ms between stirs, from anyone
 let lastStir = 0;
@@ -133,6 +141,7 @@ if (SERVER_HATCH && !HATCH_API_KEY) {
 // --- who is here ------------------------------------------------------------
 
 const lastSummon = new Map<string, number>();   // owner id -> sim time
+const penaltyUntil = new Map<string, number>(); // owner id -> sim time
 
 function livingOf(owner: string): Agent[] {
   return sim.agents.filter(a => a.by === owner && a.deadT < 0);
@@ -344,7 +353,18 @@ setInterval(() => {
   // the story, so they must not wait for the next position tick
   if (sim.events.length) {
     broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
-    for (const e of sim.events) log(e);
+    for (const e of sim.events) {
+      log(e);
+      // A hero that barely arrived costs its owner a wait, so a bad summon
+      // cannot be re-rolled forever at a model call a time.
+      if (e.kind !== 'kill' || !e.target) continue;
+      const dead = sim.agents.find(a => a.id === e.target!.id);
+      if (!dead?.by) continue;
+      if (sim.t - dead.deeds.born < SHORT_LIFE) {
+        penaltyUntil.set(dead.by, sim.t + SHORT_PENALTY);
+        console.log(`[pit] ${dead.by} lost ${dead.ch.name} in ${(sim.t - dead.deeds.born).toFixed(0)}s — held ${SHORT_PENALTY}s`);
+      }
+    }
   }
 
   sinceSnap += dt;
