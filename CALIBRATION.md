@@ -950,3 +950,39 @@ its ground, leggy runs, armed starts things. The same dwarf now reads bravery
 
 So: a better model buys **fidelity**, and fidelity is now worth having. It
 cannot buy stats — those are derived here, from the body, under a mass cap.
+
+## gear, colour, and checking the work (2026-08-27)
+
+**Gear** (`src/gear.ts`, `npm run gear`). Helm, horned helm, crest, hood,
+pauldrons, breastplate, rags, cloak, shell — capsules again, so they blend into
+the body instead of sitting on it like a decal. Placed in ANCHOR space and
+scaled by whatever they hang off, so one helmet spec fits a hound and an ogre.
+This is what makes a knight look different from a nomad; palette alone never
+did.
+
+Two placement bugs, same root cause: **`fwdAt()` runs along the SPINE, and on an
+upright creature the spine points at the sky.** A breastplate placed "forward"
+was driven up into its own neck and vanished inside the blend. Gear uses the
+creature's FACING (`+x` when upright, the body curve otherwise). And torso gear
+has to stand proud of the chest — inside the body's own radius the field
+swallows it whole.
+
+**Palette** (`src/palette.ts`). Small models pick a mood and return four shades
+of it: an orange creature with orange limbs, an orange head and an orange
+accent renders as one undifferentiated lump whatever the shape is doing. The
+four colours are pushed apart in HSL, keeping the intended hue — limbs a step
+down from the torso, head clearly separated, and the accent thrown ~0.42 across
+the wheel. `#c86a2a/#c8722f/#cc7a35/#c96e2c` becomes torso orange, light limbs,
+a dark head and a teal accent.
+
+**Checking the work** (`src/audit.ts`). The instinct is to hand the genome back
+to the model and ask it to check itself. Wrong tool: these failures are
+structural and enumerable — no wings on a winged thing, one head on a
+two-headed thing, three legs on a six-legged one — and a 3B model re-reading
+its own JSON is less reliable than a list of ifs that is right every time and
+costs nothing. The audit finds it and, where the fix is obvious, makes it;
+anything left unmet is recorded on `genome.missing` rather than invented.
+
+What a checklist CANNOT judge is whether the thing looks like a hippo. That is
+the CLIP judge in `farm/judge.ts`, and it is the only place a second opinion
+from a model earns its latency.

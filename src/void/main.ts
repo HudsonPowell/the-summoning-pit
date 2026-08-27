@@ -409,6 +409,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     {
       weapon: a.ch.weapon,
       offhand: a.ch.offhand,
+      gear: a.ch.gear,
       turn: a.turnRate,
       // the head has already been through its own spring — it arrives late
       // and goes past, rather than snapping onto the target

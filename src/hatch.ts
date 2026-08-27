@@ -14,6 +14,9 @@ import { titleFor } from './naming';
 import { weaponsFromWords } from './smith';
 import { HATCH_MODEL, OLLAMA_URL, HATCH_API_KEY, HATCH_API_URL } from './ollama';
 import { temperOf, temperFromWords } from './temper';
+import { gearFromWords } from './gear';
+import { separate } from './palette';
+import { auditGenome } from './audit';
 
 export { HATCH_MODEL, OLLAMA_URL, HATCH_API_KEY, HATCH_API_URL } from './ollama';
 
@@ -482,7 +485,8 @@ export function validateGenome(raw: any, desc: string): Genome {
   // the creature's identity, it should not travel to other players in a kill
   // feed, and it should not sit in a filename on a disk somewhere. The body
   // names itself — see src/naming.ts.
-  const genome: Genome = { name: titleFor(skeleton), skeleton, gait, palette };
+  // four colours that are actually four colours
+  const genome: Genome = { name: titleFor(skeleton), skeleton, gait, palette: separate(palette) };
 
   // The words name the weapon, and the armoury builds a real one — a crossbow
   // with limbs, a scimitar that curves, a shield in the off hand. This used to
@@ -498,6 +502,19 @@ export function validateGenome(raw: any, desc: string): Genome {
   // and are then gone. A "savage" thing is savage forever after; nothing keeps
   // the word that made it so.
   genome.temper = temperFromWords(desc, temperOf(genome));
+
+  // and what it is wearing. Armour, a helm, a hood, a cloak — the things that
+  // make a knight look different from a nomad, which palette alone never did.
+  const worn = gearFromWords(desc);
+  if (worn.length) genome.gear = worn;
+
+  // The last thing before it leaves: check it against what was asked for, and
+  // fix what is cheaply fixable. A winged thing gets wings; a two-headed thing
+  // gets its second head. Anything left unmet is reported, not invented.
+  genome.missing = auditGenome(genome, desc)
+    .filter(c => !c.met)
+    .map(c => c.want);
+  if (!genome.missing.length) delete genome.missing;
 
   return genome;
 }

@@ -84,6 +84,10 @@ export interface Genome {
   offhand?: Weapon;   // shield, buckler, torch, or a second blade
   /** How it behaves. Derived from the body when absent — see src/temper.ts. */
   temper?: { aggression: number; bravery: number; speed: number };
+  /** Anything the words asked for that could not be supplied. Diagnostic. */
+  missing?: string[];
+  /** What it is wearing — helm, plate, cloak. See src/gear.ts. */
+  gear?: { name: string; at: string; mirror?: boolean; parts: { a: [number,number,number]; b: [number,number,number]; r: number; color: string }[] }[];
 }
 
 // --- palette helpers -------------------------------------------------------
@@ -414,6 +418,7 @@ export function migrateGenome(raw: any): Genome {
       weapon: raw.weapon,
       offhand: raw.offhand,
       temper: raw.temper,
+      gear: raw.gear,
     };
   }
 
@@ -440,6 +445,7 @@ export function migrateGenome(raw: any): Genome {
     weapon: raw.weapon,
     offhand: raw.offhand,
     temper: raw.temper,
+    gear: raw.gear,
   };
 }
 

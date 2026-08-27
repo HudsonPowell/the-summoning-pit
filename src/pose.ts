@@ -12,6 +12,7 @@ import {
   Genome, Gait, Mood, ChainSpec, effectiveGait, inkList, defaultInk, mirrorsByDefault, girthAt,
 } from './genome';
 import { StrikeSpec, WeaponSpec, DEFAULT_STRIKE_LIGHT } from './character';
+import { GearPiece } from './gear';
 
 export interface Capsule {
   a: V3;
@@ -43,6 +44,7 @@ export interface PoseExtras {
    * bank that overshoots the turn, the torso dragged round after the feet,
    * weight landing, and flesh still moving after the frame stopped.
    */
+  gear?: GearPiece[];
   lean?: number;
   twist?: number;
   bob?: number;
@@ -141,6 +143,10 @@ export function solvePose(
   const sJig = extras?.jiggle ?? 0;
   // the wobble travels along the body rather than moving all of it at once
   const jigAt = (u: number) => sJig * Math.sin(u * 3.1 + 0.6) * 0.5;
+
+  interface AnchorPoint { at: V3; size: number; dir: V3; side: number }
+  const anchors: { head?: AnchorPoint } = {};
+  const shoulders: AnchorPoint[] = [];
 
   const legs = sk.chains.filter(c => c.role === 'leg').sort((a, b) => a.at - b.at);
   const N = Math.max(1, sk.body.length);
@@ -297,6 +303,7 @@ export function solvePose(
   for (const chain of sk.chains.filter(c => c.role === 'head')) {
     for (const side of sidesOf(chain)) {
       let p = attachPoint(chain, side);
+      let lastHeadDir = v3(0, 1, 0);
       const ink = inkOf(chain);
       // a bite rears the head back, then snaps it forward and down
       const bite = headStrike * (spec.reachMin +
@@ -309,11 +316,11 @@ export function solvePose(
       const yawOff = side * 1.0 * (chain.spread > 0 ? 1 : 0) + look;
       chain.seg.forEach((segLen, i) => {
         const ang = baseAng - i * 0.12 + (sk.upright ? 0 : 0);
-        const dir = sk.upright
+        lastHeadDir = sk.upright
           ? norm(v3(Math.sin(ang), Math.cos(ang), Math.sin(yawOff) * 0.5))
           : norm(add(scale(fwd, Math.cos(ang)),
               v3(0, Math.sin(ang), Math.sin(yawOff) * 0.6)));
-        const q = add(p, scale(dir, segLen * (1 + bite * 0.35)));
+        const q = add(p, scale(lastHeadDir, segLen * (1 + bite * 0.35)));
         const taper = 1 - 0.18 * (i / Math.max(1, chain.seg.length));
         caps.push({
           a: p, b: q,
@@ -324,6 +331,8 @@ export function solvePose(
         p = q;
       });
       caps.push({ a: p, b: p, r: chain.r, color: ink, part: 'head' });
+      // where a helmet goes, and how big it has to be
+      if (!anchors.head) anchors.head = { at: p, size: chain.r * 2.1, dir: sk.upright ? v3(1, 0, 0) : lastHeadDir, side: 1 };
     }
   }
 
@@ -355,6 +364,7 @@ export function solvePose(
 
       const shade = (s < 0 ? 0.8 : 1.0) * (1 - pair * 0.12);
       const ink = inkOf(chain);
+      if (pair === 0) shoulders.push({ at: shoulder, size: chain.r * 2.6, dir: fwdAt(chain.at), side: s });
       caps.push({ a: shoulder, b: elbow, r: chain.r, color: mul(ink, shade * 1.05), part: 'upperArm' });
       caps.push({ a: elbow, b: hand, r: chain.r * 0.9, color: mul(ink, shade * 0.95), part: 'forearm' });
       caps.push({ a: hand, b: hand, r: chain.r * 1.05, color: mul(inks[2], shade * 0.95), part: 'hand' });
@@ -459,6 +469,56 @@ export function solvePose(
         caps.push({ a: p, b: q, r: chain.r * (1 - i * 0.3), color: ink, part: chain.role });
         p = q;
       });
+    }
+  }
+
+  // --- what it is wearing -------------------------------------------------
+  // Placed in ANCHOR space and scaled by the part it hangs off, so one helmet
+  // spec fits a hound and an ogre without either knowing about the other. It
+  // goes through the same field as the body, so it reads as worn rather than
+  // stuck on.
+  const worn = extras?.gear;
+  if (worn && worn.length) {
+    const chestAt = curveAt(sk.upright ? 0.72 : 0.6);
+    // FACING, not the body curve. fwdAt() runs along the spine, which on an
+    // upright creature points at the sky — so a breastplate placed "forward"
+    // was being driven up into its own neck and vanished inside the blend.
+    const facing = sk.upright ? v3(1, 0, 0) : fwdAt(0.6);
+    const chestSize = fattest * 2.2;
+
+    const place = (
+      origin: V3, size: number, fwd: V3, side: number, p: [number, number, number],
+    ): V3 => {
+      // +x along facing, +y up, +z out to the side
+      const up = v3(0, 1, 0);
+      let out = cross(fwd, up);
+      if (len(out) < 1e-3) out = v3(0, 0, 1);
+      out = norm(out);
+      return add(origin, v3(
+        (fwd.x * p[0] + out.x * p[2] * side) * size,
+        (p[1] + fwd.y * p[0]) * size,
+        (fwd.z * p[0] + out.z * p[2] * side) * size,
+      ));
+    };
+
+    for (const piece of worn) {
+      const spots: { at: V3; size: number; dir: V3; side: number }[] =
+        piece.at === 'head' ? (anchors.head ? [anchors.head] : [])
+        : piece.at === 'shoulder' ? shoulders
+        : piece.at === 'back'
+          ? [{ at: add(chestAt, scale(facing, -chestSize * 0.3)), size: chestSize, dir: facing, side: 1 }]
+          : [{ at: chestAt, size: chestSize, dir: facing, side: 1 }];
+      for (const spot of spots) {
+        for (const part of piece.parts) {
+          caps.push({
+            a: place(spot.at, spot.size, spot.dir, spot.side, part.a),
+            b: place(spot.at, spot.size, spot.dir, spot.side, part.b),
+            r: part.r * spot.size,
+            color: hex(part.color),
+            part: 'gear',
+          });
+        }
+      }
     }
   }
 

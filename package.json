@@ -18,7 +18,8 @@
     "fight": "tsx farm/fight_strip.ts",
     "props": "tsx farm/prop_sheet.ts",
     "start": "tsx server/index.ts",
-    "bakeoff": "tsx farm/bakeoff.ts"
+    "bakeoff": "tsx farm/bakeoff.ts",
+    "gear": "tsx farm/gear_sheet.ts"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",

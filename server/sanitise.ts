@@ -70,6 +70,23 @@ export function sanitiseGenome(raw: unknown): Genome | null {
       if (typeof w.name === 'string') w.name = w.name.slice(0, 24);
     }
   }
+  // Gear is decorative but it is still geometry off a socket
+  if (Array.isArray((g as any).gear)) {
+    (g as any).gear = (g as any).gear.slice(0, 4).map((piece: any) => ({
+      name: typeof piece?.name === 'string' ? piece.name.slice(0, 24) : 'gear',
+      at: ['head', 'shoulder', 'torso', 'back'].includes(piece?.at) ? piece.at : 'torso',
+      mirror: !!piece?.mirror,
+      parts: (Array.isArray(piece?.parts) ? piece.parts : []).slice(0, 6).map((q: any) => ({
+        a: [num(q?.a?.[0], -2, 2, 0), num(q?.a?.[1], -2, 2, 0), num(q?.a?.[2], -2, 2, 0)],
+        b: [num(q?.b?.[0], -2, 2, 0), num(q?.b?.[1], -2, 2, 0), num(q?.b?.[2], -2, 2, 0)],
+        r: num(q?.r, 0.05, 1.4, 0.4),
+        color: hex(q?.color, '#8c939d'),
+      })),
+    })).filter((piece: any) => piece.parts.length);
+  } else {
+    delete (g as any).gear;
+  }
+
   // Temperament is NOT taken from the wire. It was clamped to 0..1 and
   // otherwise believed, which meant anyone could claim aggression 1, bravery 1
   // and speed 1 with no body to justify any of it — a straight cheat, and the

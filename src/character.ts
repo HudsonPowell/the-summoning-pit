@@ -100,6 +100,7 @@ export interface Character {
   behaviors: Record<string, Behavior>;
   weapon?: WeaponSpec;
   offhand?: WeaponSpec;                 // shield / buckler / torch / second blade
+  gear?: any[];                         // helm, plate, cloak — see src/gear.ts
   blast: BlastSpec;
 }
 
@@ -234,6 +235,7 @@ export function makeCharacter(genome: Genome, kind: 'hero' | 'beast' = 'beast'):
     behaviors: defaultBehaviors(genome.gait, styleFor(weapon?.name ?? genome.name, hasArms, hasTail)),
     weapon: migrateWeapon(genome.weapon),
     offhand: migrateWeapon(genome.offhand),
+    gear: genome.gear,
     blast: { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame', delay: 2.5, radius: 2 },
   };
 }
@@ -245,6 +247,7 @@ export function migrateCharacter(raw: any): Character {
     c.genome = migrateGenome(c.genome);
     c.weapon = migrateWeapon(c.weapon);
     c.offhand = migrateWeapon(c.offhand);
+    c.gear ??= c.genome.gear;
     c.blast ??= { core: '#fff3c4', edge: '#ffd25e', pattern: 'flame', delay: 2.5, radius: 2 };
     c.blast.delay ??= 2.5;
     c.blast.radius ??= 2;

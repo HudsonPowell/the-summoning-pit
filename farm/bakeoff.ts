@@ -98,7 +98,7 @@ function shoot(g: Genome, tag: string): Cell {
   if (!clean) return { d: new Uint8ClampedArray(CELL * CELL * 4), label: tag + ' — rejected', ok: false };
   const ch = makeCharacter(clean, 'beast');
   const caps = solvePose(clean, { tired: 0, angry: 0 }, 0.24, 1, 0, undefined, 0,
-    { weapon: ch.weapon, offhand: ch.offhand });
+    { weapon: ch.weapon, offhand: ch.offhand, gear: ch.gear });
   let reach = 0.2, minY = Infinity, maxY = -Infinity;
   for (const c of caps) for (const p of [c.a, c.b]) {
     reach = Math.max(reach, Math.hypot(p.x, p.z) + c.r);
