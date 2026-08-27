@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- maximum-scale=1: without it iOS pinches the PAGE, not the pit, and the
+       game's own pinch handler never hears a thing -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>The Summoning Pit</title>
   <style>
     :root {
@@ -29,7 +31,9 @@
       border-bottom: 1px solid var(--line); padding-bottom: 4px;
     }
     #panel h2:first-child { margin-top: 0; }
-    #stage { position: relative; touch-action: none; }
+    html, body { overscroll-behavior: none; }
+    body { position: fixed; inset: 0; overflow: hidden; }
+    #stage { position: relative; touch-action: none; -webkit-user-select: none; user-select: none; }
     #stage canvas#view { touch-action: none; }
     #buildTag {
       position: absolute; bottom: 8px; right: 10px; z-index: 6;

@@ -1097,6 +1097,15 @@ function setPanel(open: boolean) {
 // dragging the stage orbits; the wheel pushes in and out; two fingers pinch
 (() => {
   const stage = document.getElementById('stage')!;
+
+  // Safari's own page-pinch fires proprietary gesture events that ignore
+  // touch-action entirely; if they are not cancelled, iOS zooms the page and
+  // the game's pinch never hears a thing. Likewise touchmove must be
+  // non-passive or the document rubber-bands instead of orbiting.
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) {
+    document.addEventListener(ev, e => e.preventDefault());
+  }
+  stage.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
   let down = false, lastX = 0;
   // pinch state: the wheel does not exist on a phone
   const touches = new Map<number, { x: number; y: number }>();

@@ -1415,3 +1415,19 @@ else; casters with no named implement get a wand so they cast; seven new
 weapons (greataxe, katana, warpick, javelin, tome, orb, cleaver) with
 longest-match-first synonyms so "greataxe" never falls through to "axe". And
 the floor light gutters like a flame every 4-16s — layered sines, no noise.
+
+## why pinch and orbit "worked" and did not work (2026-08-27)
+
+The pointer handlers were correct all along — verified by dispatching real
+touch-type PointerEvents at a mobile viewport: drag orbits, pinch zooms. What
+broke on an actual phone was that the gestures never REACHED them:
+
+- Without `maximum-scale=1, user-scalable=no` in the viewport meta, iOS pinches
+  the PAGE, whatever `touch-action` says on the element.
+- Safari's proprietary `gesturestart/change/end` events drive that page-pinch
+  and ignore touch-action entirely — they must be preventDefault'd.
+- Single-finger drags rubber-band the document unless the body is fixed,
+  `overscroll-behavior: none`, and touchmove on the stage is non-passive.
+
+Element-level touch-action is necessary but nowhere near sufficient on iOS.
+The page has to give up its own gestures before the game can have them.
