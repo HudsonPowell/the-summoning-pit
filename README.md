@@ -50,30 +50,66 @@ PORT=5180 npm run dev
 
 Open `/void.html?live`. Everyone is in the same pit; there are no rooms.
 
+**There is always someone in there.** The pit holds the last one standing and
+nothing else — whoever won stays, whether anyone is watching or not. Nothing
+spawns while something is alive, so a challenger has to be summoned by a person;
+only an empty pit refills itself. Left alone the keeper lives its own life: it
+wanders, looks at nothing in particular, and after a while lies down and sleeps.
+It is on its feet within a second of anything arriving.
+
 **No accounts. The URL is the account.** The pit mints you a key the first time
 you arrive and writes it into your address bar — bookmark that and you are you.
-Lose it and your creatures carry on without anyone able to claim them. The
-server stores a *hash* of your key, never the key, so the state file cannot be
-used to claim anything.
+The server stores a *hash* of your key, never the key, so the state file cannot
+be used to claim anything.
 
-**Your prompt never reaches the pit.** Creatures are hatched in your browser and
-only the finished body crosses the wire. The server renames whatever arrives
-after its own skeleton, so a name cannot smuggle the words back out either.
-Everything inbound is clamped (`server/sanitise.ts`) because a socket is not a
-friend: three living creatures per key, one summon every twenty seconds.
+**Bring your own model.** Creatures are hatched in your browser, so the model is
+yours: `?model=qwen2.5:14b` and `?ollama=http://localhost:11434` are remembered.
+Only the finished body crosses the wire — the pit never learns what you typed.
+If you have no model at all, the words go to the pit and it hatches for you.
+
+A better model gets you a better creature, but only in one direction. The server
+**derives temperament from the body** and never takes it from the wire, and it
+**caps mass** — so a better model wins you proportion, coherence, a weapon that
+suits and limbs that make sense. It cannot win you numbers. Everyone gets the
+same amount of creature to spend; being big costs speed.
 
 **Pacts are links.** Send someone `?pact=<your owner id>` and their creatures
-will spare yours. Send `?feud=<id>` and they will come for you. One-way — they
-need not reciprocate and nothing tells you whether they have — and not
-transitive, so the pit fills with a web rather than two blocs. Nothing is ever
-announced on screen. You find out who is in by messaging them.
+will spare yours; `?feud=<id>` and they will come for you. One-way — they need
+not reciprocate and nothing tells you whether they have — and not transitive.
+Nothing is ever announced on screen. You find out who is in by messaging them.
 
-**It keeps running.** The pit saves every five seconds and on shutdown; on boot
-it reopens with everyone still standing, still carrying their kills and still
-wearing what they took. `/health` reports how long it has been open and the age
+## Deploying it
+
+One image, one service, one domain: the client is built at image-build time and
+served by the pit itself, so the websocket is same-origin and gets `wss://` from
+the platform's TLS with nothing to configure.
+
+```bash
+npm run build && npm start        # exactly what the container does
+```
+
+**Mount a volume, or the pit forgets everything on every deploy.** Container
+filesystems do not survive a restart. Point `PIT_STATE` at the volume:
+
+| variable | what it does |
+|---|---|
+| `PORT` | supplied by the platform |
+| `PIT_STATE` | `/data/pit-state.json` — **must be on a mounted volume** |
+| `PIT_HATCH` | `off` to refuse word-summons (body-only pit, no model needed) |
+| `HATCH_API_KEY` | hatch through an OpenAI-compatible endpoint |
+| `HATCH_API_URL` | defaults to Groq's; any `/v1` endpoint works |
+| `HATCH_MODEL` | model name for whichever backend |
+| `PIT_POPULATION` | how many the pit refills to when empty (default 1) |
+
+There is no GPU on a normal container, so a deployed pit that hatches for
+visitors needs `HATCH_API_KEY` pointed at a hosted model. Without one, set
+`PIT_HATCH=off` and the pit accepts only bodies — which still works for anyone
+running a model locally, and costs nothing to run.
+
+`/health` reports agents, watchers, how long the pit has been open and the age
 of its oldest creature.
 
-## Play CLASH (arena mode)## Play CLASH (arena mode)
+## Play CLASH (arena mode)## Play CLASH (arena mode)## Play CLASH (arena mode)
 
 `npm test` runs the sim suite: a 900-tick replay must hash identically
 (determinism is what netcode will rest on) plus one assertion per class rule.

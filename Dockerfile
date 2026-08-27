@@ -1,0 +1,27 @@
+# One image: the client is built at image-build time and served by the pit, so
+# there is one service, one domain, and the websocket is same-origin.
+FROM node:22-slim AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:22-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+# tsx is a devDependency and the server runs from TypeScript, so keep them
+RUN npm ci && npm cache clean --force
+COPY --from=build /app/dist ./dist
+COPY server ./server
+COPY src ./src
+COPY characters ./characters
+COPY genomes ./genomes
+COPY tsconfig.json ./
+
+# Railway supplies PORT. PIT_STATE must point at a mounted volume or the pit
+# forgets everything on every deploy — see README.
+ENV PIT_STATE=/data/pit-state.json
+EXPOSE 8787
+CMD ["npx", "tsx", "server/index.ts"]

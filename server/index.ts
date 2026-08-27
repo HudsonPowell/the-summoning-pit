@@ -14,15 +14,19 @@ import { defaultBiped } from '../src/genome';
 import { createVoid, stepVoid, spawnOne, spawnChar, makeAgent, VoidSim, VoidEvent, Agent } from '../src/void/sim';
 import { declare } from '../src/void/pacts';
 import { titleFor } from '../src/naming';
+import { hatchGenome } from '../src/hatch';
 import { mintKey, ownerOf, looksLikeKey } from './keys';
 import { sanitiseGenome } from './sanitise';
 import { load as loadPit, save as savePit, SavedPit } from './persist';
+import { serveStatic } from './static';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_HZ = 30;
 const SNAP_HZ = 12;
-const POPULATION = Number(process.env.PIT_POPULATION ?? 5);
+const POPULATION = Number(process.env.PIT_POPULATION ?? 1);
 const STATE_FILE = process.env.PIT_STATE ?? 'pit-state.json';
+/** Can this pit hatch for people who have no model of their own? */
+const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
 const SAVE_EVERY = 5;                 // seconds
 const MAX_PER_OWNER = 3;              // living creatures one key may hold
 const SUMMON_COOLDOWN = 20;           // seconds between summons from one key
@@ -165,8 +169,10 @@ function hello() {
 
 // --- the room ---------------------------------------------------------------
 
+const CLIENT_DIR = process.env.PIT_CLIENT ?? 'dist';
+
 const http = createServer((req, res) => {
-  if (req.url === '/health') {
+  if ((req.url ?? '').split('?')[0] === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
       ok: true,
@@ -177,6 +183,7 @@ const http = createServer((req, res) => {
     }));
     return;
   }
+  if (serveStatic(CLIENT_DIR, req, res)) return;
   res.writeHead(404).end();
 });
 
@@ -210,30 +217,7 @@ wss.on('connection', ws => {
 
     if (m.t === 'summon') {
       if (!looksLikeKey(m.key)) return;
-      const owner = ownerOf(m.key);
-      const since = sim.t - (lastSummon.get(owner) ?? -1e9);
-      if (since < SUMMON_COOLDOWN) {
-        ws.send(JSON.stringify({ t: 'nope', why: `wait ${Math.ceil(SUMMON_COOLDOWN - since)}s` }));
-        return;
-      }
-      if (livingOf(owner).length >= MAX_PER_OWNER) {
-        ws.send(JSON.stringify({ t: 'nope', why: 'you already have three in the pit' }));
-        return;
-      }
-      const g = sanitiseGenome(m.genome);
-      if (!g) {
-        ws.send(JSON.stringify({ t: 'nope', why: 'that is not a creature' }));
-        return;
-      }
-      // the body names itself here too — whatever the client called it is
-      // discarded, so a name cannot smuggle in the words that made it
-      g.name = titleFor(g.skeleton);
-      const ch = makeCharacter(g, 'beast');
-      castId(ch);
-      const a = spawnChar(sim, ch, owner);
-      lastSummon.set(owner, sim.t);
-      ws.send(JSON.stringify({ t: 'yours', id: a.id, name: g.name, owner }));
-      broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
+      void handleSummon(ws, m);
       return;
     }
 
@@ -253,6 +237,63 @@ wss.on('connection', ws => {
     }
   });
 });
+
+
+/**
+ * A summon may arrive as a BODY or as WORDS.
+ *
+ * A body means the player hatched it themselves, on their own machine, with
+ * whatever model they like — the pit never sees the words, and a better model
+ * shows up as a better-composed creature rather than better numbers, because
+ * temperament is derived here from the body and mass is capped here too.
+ *
+ * Words are for everyone else: most people will never run a model, and a pit
+ * only they can summon into is not a pit. The server hatches it and throws the
+ * words away — they are never stored, never logged, never sent on.
+ */
+async function handleSummon(ws: WebSocket, m: any): Promise<void> {
+  const owner = ownerOf(m.key);
+  const since = sim.t - (lastSummon.get(owner) ?? -1e9);
+  if (since < SUMMON_COOLDOWN) {
+    ws.send(JSON.stringify({ t: 'nope', why: `wait ${Math.ceil(SUMMON_COOLDOWN - since)}s` }));
+    return;
+  }
+  if (livingOf(owner).length >= MAX_PER_OWNER) {
+    ws.send(JSON.stringify({ t: 'nope', why: 'you already have three in the pit' }));
+    return;
+  }
+
+  let raw: unknown = m.genome;
+  if (!raw && typeof m.desc === 'string' && m.desc.trim()) {
+    if (!SERVER_HATCH) {
+      ws.send(JSON.stringify({ t: 'nope', why: 'this pit cannot hatch for you — run a model locally' }));
+      return;
+    }
+    // claim the slot BEFORE the slow part, or one client can have twenty in
+    // flight at once while the cooldown has not started
+    lastSummon.set(owner, sim.t);
+    try {
+      raw = await hatchGenome(m.desc.slice(0, 200));
+    } catch (e) {
+      lastSummon.set(owner, -1e9);
+      ws.send(JSON.stringify({ t: 'nope', why: 'nothing answered' }));
+      return;
+    }
+  }
+
+  const g = sanitiseGenome(raw);
+  if (!g) {
+    ws.send(JSON.stringify({ t: 'nope', why: 'that is not a creature' }));
+    return;
+  }
+  g.name = titleFor(g.skeleton);
+  const ch = makeCharacter(g, 'beast');
+  castId(ch);
+  const a = spawnChar(sim, ch, owner);
+  lastSummon.set(owner, sim.t);
+  ws.send(JSON.stringify({ t: 'yours', id: a.id, name: g.name, owner }));
+  broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
+}
 
 // --- the loop ---------------------------------------------------------------
 
@@ -297,7 +338,7 @@ function log(e: VoidEvent): void {
   }
 }
 
-http.listen(PORT, () => {
+http.listen(PORT, '0.0.0.0', () => {
   console.log(`the pit is open on :${PORT} — ${roster.length} creatures in the catalogue`);
 });
 

@@ -868,3 +868,51 @@ Two capsules in the world, laid along the camera's right so they read as a bar
 from any angle instead of foreshortening to a dot. Being in the field means it
 blobs at its ends like everything else, and nothing breaks when the camera
 moves. Yours is always shown; everything else earns its bar by bleeding.
+
+## before deploying: what the wire was still trusting (2026-08-27)
+
+**Temperament came from the client.** `sanitiseGenome` clamped it to 0..1 and
+then believed it, so anyone could send `{aggression:1, bravery:1, speed:1}` with
+no body to justify any of it. It is derived on the server now, from the only
+thing the server can actually see. Verified: a hound claiming all three maxed
+gets 0.47 / 0.33 / 0.77 — exactly what its body earns.
+
+**Mass was unbounded.** A creature with everything tripled came in at 0.664
+against a default biped's 0.051. `src/budget.ts` scales a summon into a band.
+
+The band is `[0.03, 0.14]`, and the FLOOR matters as much as the cap, because
+the model has almost no grip on scale. Measured across real hatches:
+
+| prompt | mass |
+|---|---|
+| a wolf | 0.141 |
+| a giant cave troll | 0.280 |
+| **an enormous armoured war-elephant** | **0.015** |
+| **a colossal titan of stone, the biggest thing in the world** | **0.021** |
+| a tiny imp | 0.006 |
+
+The titan arrived smaller than a housecat. Volume goes with the cube of a linear
+scale, so the correction is a cube root: halving an overrun costs only ~20% of
+height, and an extravagant summon still arrives looking like what it was asked
+to be, just smaller.
+
+Being big is a CHOICE and not a win, because girth costs speed in `temper.ts`.
+That is what makes a size band safe to expose.
+
+## deployment shape
+
+- **One service.** The server serves the built client (`server/static.ts`), so
+  the socket is same-origin and `wss://` comes free. The client defaults to
+  `location.host` and only falls back to `:8787` on the dev ports.
+- **Vite builds `index.html` and nothing else** unless every page is listed in
+  `rollupOptions.input`. The first build produced a deploy with no `/void.html`
+  in it at all.
+- **Container filesystems are ephemeral.** `PIT_STATE` must point at a mounted
+  volume or the pit forgets everything on every deploy.
+- **Claim the summon slot BEFORE the slow part.** Server-side hatching takes
+  seconds; setting the cooldown after it returns lets one client have twenty in
+  flight at once.
+- The hatcher speaks Ollama *or* any OpenAI-compatible endpoint. The
+  load-bearing part in both is the JSON schema — Ollama enforces it during
+  decoding via `format`, the others via `response_format: json_schema`. Without
+  it a small model returns prose with JSON in it.

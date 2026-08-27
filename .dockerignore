@@ -1,0 +1,5 @@
+node_modules
+dist
+farm/out
+pit-state.json
+.git

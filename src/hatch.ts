@@ -12,10 +12,10 @@ import {
 } from './genome';
 import { titleFor } from './naming';
 import { weaponsFromWords } from './smith';
-import { HATCH_MODEL, OLLAMA_URL } from './ollama';
+import { HATCH_MODEL, OLLAMA_URL, HATCH_API_KEY, HATCH_API_URL } from './ollama';
 import { temperOf, temperFromWords } from './temper';
 
-export { HATCH_MODEL, OLLAMA_URL } from './ollama';
+export { HATCH_MODEL, OLLAMA_URL, HATCH_API_KEY, HATCH_API_URL } from './ollama';
 
 // --- the vocabulary --------------------------------------------------------
 
@@ -161,6 +161,44 @@ export function buildPrompt(desc: string): string {
   const ex = pickExemplars(desc);
   const shown = ex.map(g => `${g.name}:\n${JSON.stringify(g)}`).join('\n\n');
   return `${SCHEMA_NOTES}\n\nExamples:\n\n${shown}\n\nNow write the genome for: "${desc}"\nJSON:`;
+}
+
+/**
+ * The same request, spoken to an OpenAI-compatible endpoint (Groq, Together,
+ * OpenAI, anything that takes /v1/chat/completions). The load-bearing part is
+ * the SCHEMA: Ollama enforces it during decoding via `format`, and these do the
+ * same job through `response_format: json_schema`. Without it a small model
+ * returns prose with JSON in it and the validator spends its life repairing.
+ *
+ * Server-side only, because it needs a key. The browser path is always Ollama,
+ * which is exactly right: your model, your machine, your words.
+ */
+export async function askOpenAI(
+  desc: string,
+  model: string,
+  url: string,
+  apiKey: string,
+  temperature = 0.8,
+): Promise<string> {
+  const res = await fetch(`${url.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      temperature,
+      max_tokens: 2000,
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'genome', strict: false, schema: GENOME_SCHEMA },
+      },
+      messages: [{ role: 'user', content: buildPrompt(desc) }],
+    }),
+  });
+  if (!res.ok) throw new Error(`hatch api ${res.status}: ${(await res.text()).slice(0, 140)}`);
+  const j: any = await res.json();
+  const text = j?.choices?.[0]?.message?.content;
+  if (typeof text !== 'string' || !text.trim()) throw new Error('hatch api returned nothing');
+  return text;
 }
 
 export async function askOllama(
@@ -471,6 +509,10 @@ export async function hatchGenome(
   onProgress?: (chars: number) => void,
   temperature = 0.8,
 ): Promise<Genome> {
-  const text = await askOllama(desc, model, url, onProgress, temperature);
+  // A hosted endpoint if one is configured (that is how a deployed pit hatches
+  // for people with no model of their own), otherwise the local Ollama.
+  const text = HATCH_API_KEY
+    ? await askOpenAI(desc, model ?? HATCH_MODEL, HATCH_API_URL, HATCH_API_KEY, temperature)
+    : await askOllama(desc, model, url, onProgress, temperature);
   return validateGenome(JSON.parse(text), desc);
 }

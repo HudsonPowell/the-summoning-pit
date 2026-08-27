@@ -205,6 +205,27 @@ function yourAgent(sim: VoidSim): Agent | null {
 // The words are yours and stay yours — nothing keeps them, and the creature is
 // named by its body, not by what you typed (see src/naming.ts).
 
+/**
+ * Bring your own model. `?model=` and `?ollama=` are remembered, so a summoner
+ * with something better than llama3.2:3b on their own machine uses it — and
+ * gets a better creature for it, in the only way the pit allows: a better
+ * COMPOSED body. It cannot buy better numbers. Temperament is derived from the
+ * body on the server, and mass is capped there, so what a good model wins you
+ * is proportion, coherence, a weapon that suits and limbs that make sense —
+ * not stats. See server/sanitise.ts.
+ */
+function myModel(): { model?: string; url?: string } {
+  const q = new URLSearchParams(location.search);
+  for (const k of ['model', 'ollama'] as const) {
+    const v = q.get(k);
+    if (v) { try { localStorage.setItem('pit-' + k, v); } catch { /* private */ } }
+  }
+  const get = (k: string) => {
+    try { return localStorage.getItem('pit-' + k) ?? undefined; } catch { return undefined; }
+  };
+  return { model: get('model'), url: get('ollama') };
+}
+
 function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
   const box = document.getElementById('summonBox') as HTMLInputElement;
   const status = document.getElementById('summonStatus')!;
@@ -217,12 +238,25 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
     box.value = '';
     status.textContent = 'summoning…';
     try {
-      const g = await hatchGenome(desc, undefined, undefined, chars => {
-        status.textContent = `summoning… ${chars}`;
-      });
+      const mine = myModel();
+      let g;
+      try {
+        g = await hatchGenome(desc, mine.model, mine.url, chars => {
+          status.textContent = `summoning… ${chars}`;
+        });
+      } catch (e) {
+        // No model here. Most people will never run one, and a pit only they
+        // can summon into is not a pit — so the words go to the pit instead,
+        // and it hatches on their behalf.
+        if (!live) throw e;
+        status.textContent = 'summoning…';
+        live.send({ t: 'summon', key: myKey, desc });
+        busy = false;
+        return;
+      }
       if (live) {
-        // The words are hatched HERE and thrown away here. Only the body goes
-        // over the wire — the pit never learns what anyone typed.
+        // The words were hatched HERE and are thrown away here. Only the body
+        // goes over the wire — the pit never learns what anyone typed.
         live.send({ t: 'summon', key: myKey, genome: g });
         status.textContent = 'sending…';
       } else {
@@ -370,7 +404,8 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
 
   const caps = solvePose(
     a.genome, mood, a.phase, a.move, a.idleT, intent,
-    a.deadT >= 0 ? Math.min(1, a.deadT / 0.5) : 0,
+    // dead is a full collapse; resting is most of one
+    a.deadT >= 0 ? Math.min(1, a.deadT / 0.5) : a.rest * 0.72,
     {
       weapon: a.ch.weapon,
       offhand: a.ch.offhand,
@@ -513,8 +548,14 @@ function pushFeed(events: import('./sim').VoidEvent[]) {
 // --- boot -------------------------------------------------------------------
 
 const LIVE = new URLSearchParams(location.search).has('live');
-const PIT_URL = new URLSearchParams(location.search).get('pit')
-  ?? `ws://${location.hostname}:8787`;
+// Same origin by default, so a deployed pit needs no configuration at all and
+// gets wss:// wherever the page got https://. The dev server is on another
+// port, so there it falls back to the local pit.
+const PIT_URL = new URLSearchParams(location.search).get('pit') ?? (() => {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const devPort = location.port === '5180' || location.port === '5173';
+  return devPort ? `ws://${location.hostname}:8787` : `${proto}//${location.host}`;
+})();
 
 async function boot() {
   const live = LIVE ? new LiveVoid() : null;

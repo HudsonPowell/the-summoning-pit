@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { defineConfig, Plugin } from 'vite';
 import { writeFileSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
 
@@ -116,6 +117,19 @@ function genomeStore(): Plugin {
 
 export default defineConfig({
   plugins: [genomeStore(), jsonStore('/api/characters', 'characters')],
+  // Every page is an entry point. Vite builds index.html and nothing else by
+  // default, so a deploy shipped a pit with no /void.html in it.
+  build: {
+    rollupOptions: {
+      input: {
+        index: resolve(__dirname, 'index.html'),
+        void: resolve(__dirname, 'void.html'),
+        bestiary: resolve(__dirname, 'bestiary.html'),
+        clash: resolve(__dirname, 'clash.html'),
+        grid: resolve(__dirname, 'grid.html'),
+      },
+    },
+  },
   server: {
     watch: { ignored: ['**/genomes/**', '**/characters/**', '**/farm/out/**'] },
   },

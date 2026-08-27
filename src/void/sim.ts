@@ -11,7 +11,7 @@ import { Pacts, newPacts, stanceOf } from './pacts';
 import { Prop, scatterProps } from '../props';
 import { Record as Deeds, takeSpoil } from './spoils';
 
-export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down';
+export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down' | 'rest';
 
 export interface Agent {
   id: number;
@@ -40,6 +40,7 @@ export interface Agent {
   swing: StrikeSpec | null;  // THIS swing, varied — never the same twice
   deeds: Deeds;              // what it has done, and what it took for doing it
   calm: number;              // seconds since anything happened to it
+  rest: number;              // 0 up .. 1 lying down, for the long wait
   lookAt: number;            // world angle the head is resting on
   scanT: number;             // seconds until it looks somewhere else
   turnRate: number;          // radians/sec, for secondary motion
@@ -141,6 +142,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     swing: null,
     deeds: { kills: 0, spoils: [], born: 0 },
     calm: 0,
+    rest: 0,
     lookAt: rnd(-Math.PI, Math.PI),
     scanT: rnd(0, 0.8),
     turnRate: 0,
@@ -150,14 +152,14 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
   };
 }
 
-export function createVoid(roster: Character[], population = 4): VoidSim {
+export function createVoid(roster: Character[], population = 1): VoidSim {
   const sim: VoidSim = {
     seed: 1337,
     props: scatterProps(1337, 18),
     pacts: newPacts(),
     agents: [], shots: [], roster, events: [], t: 0, spawnT: 0, population, peace: 0.35,
   };
-  for (let i = 0; i < population; i++) spawnOne(sim, true);
+  for (let i = 0; i < Math.max(1, population); i++) spawnOne(sim, true);
   return sim;
 }
 
@@ -523,6 +525,22 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         if (a.stateT > rnd(2, 4) && Math.random() < dt * 0.8) setState(a, 'think');
         break;
       }
+      // Alone in the pit with nothing to do and no idea when anyone is
+      // coming. It settles, sleeps, wakes, looks around, and settles again.
+      case 'rest': {
+        a.move += (0 - a.move) * Math.min(1, 3 * dt);
+        a.rest = Math.min(1, a.rest + dt * 0.35);
+        a.scanT -= dt;
+        if (a.scanT <= 0) {
+          // a head lifted at nothing in particular, then put back down
+          a.lookAt = a.heading + rnd(-1.2, 1.2);
+          a.scanT = rnd(2.5, 7);
+        }
+        // it gets its wind back faster lying down
+        if (a.hp < a.maxHp && a.stateT > 6 && Math.random() < dt * 0.12) a.hp++;
+        if (a.stateT > rnd(14, 40)) setState(a, 'wander');
+        break;
+      }
       case 'think': {
         a.move += (0 - a.move) * Math.min(1, 5 * dt);
         // Look about. The head sweeps across whatever is out there and rests
@@ -600,8 +618,23 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         break;
     }
 
+    // Nothing has happened for a long time and there is nobody here. Lie down.
+    // This was a dice roll inside `think`, which lasts 1.4s on average against
+    // a 2s threshold — so in five minutes of an empty pit the keeper never once
+    // sat down. Boredom is not a coincidence; it is a length of time.
+    if ((a.state === 'wander' || a.state === 'think') && a.calm > 16
+        && sim.agents.every(o => o === a || o.deadT >= 0)) {
+      setState(a, 'rest');
+    }
+
+    // something arrived. Get up.
+    if (a.state === 'rest' && sim.agents.some(o => o !== a && o.deadT < 0)) {
+      setState(a, 'think');
+    }
+    a.rest = a.state === 'rest' ? a.rest : Math.max(0, a.rest - dt * 1.6);
+
     // noticing: only while going about your business
-    if ((a.state === 'wander' || a.state === 'think') && a.stateT > 0.5) {
+    if ((a.state === 'wander' || a.state === 'think' || a.state === 'rest') && a.stateT > 0.5) {
       const other = pickTarget(sim, a, NOTICE_R);
       if (other && Math.random() < dt * 0.9 * (1 - sim.peace) * (0.4 + a.nerve)) {
         a.target = other;
@@ -716,12 +749,17 @@ export function stepVoid(sim: VoidSim, dt: number): void {
   // the fallen fade, and the void refills
   const before = sim.agents.length;
   sim.agents = sim.agents.filter(a => a.deadT < 0 || a.deadT < 3.5);
-  if (sim.agents.length < before) sim.spawnT = 1.5;
-  if (sim.agents.length < sim.population) {
+  // THE KEEPER. The pit holds the last one standing and nothing else: whoever
+  // won stays, and stays whether anyone is watching or not. Nothing new is
+  // spawned while something is alive in there — a challenger has to be summoned
+  // by a person. Only an empty pit is refilled, so that a visitor always finds
+  // someone waiting.
+  const standing = sim.agents.filter(a => a.deadT < 0).length;
+  if (standing === 0) {
     sim.spawnT -= dt;
     if (sim.spawnT <= 0) {
       spawnOne(sim);
-      sim.spawnT = rnd(9, 18);
+      sim.spawnT = rnd(4, 8);
     }
   }
 }

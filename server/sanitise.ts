@@ -4,6 +4,8 @@
 // like sending. Clamp it into something the renderer and the sim can survive.
 
 import { Genome, migrateGenome } from '../src/genome';
+import { fitBudget } from '../src/budget';
+import { temperOf } from '../src/temper';
 
 const num = (v: unknown, lo: number, hi: number, fb: number): number =>
   typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fb;
@@ -68,12 +70,15 @@ export function sanitiseGenome(raw: unknown): Genome | null {
       if (typeof w.name === 'string') w.name = w.name.slice(0, 24);
     }
   }
-  if (g.temper) {
-    g.temper = {
-      aggression: num(g.temper.aggression, 0, 1, 0.4),
-      bravery: num(g.temper.bravery, 0, 1, 0.4),
-      speed: num(g.temper.speed, 0, 1, 0.5),
-    };
-  }
-  return g;
+  // Temperament is NOT taken from the wire. It was clamped to 0..1 and
+  // otherwise believed, which meant anyone could claim aggression 1, bravery 1
+  // and speed 1 with no body to justify any of it — a straight cheat, and the
+  // one that would have ruined a public pit fastest. It is derived here, from
+  // the body, which is the only thing the server can actually see.
+  delete g.temper;
+
+  // and everyone gets the same amount of creature to spend
+  const fitted = fitBudget(g);
+  fitted.temper = temperOf(fitted);
+  return fitted;
 }

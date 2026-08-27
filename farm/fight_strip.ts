@@ -32,7 +32,7 @@ function caps(ag: Agent): Capsule[] {
     intent = { slash: { t: u, weight: slashWeight(u), spec } };
   }
   const cs = solvePose(ag.genome, { tired: 0, angry: 0 }, ag.phase, ag.move, ag.idleT, intent,
-    ag.deadT >= 0 ? Math.min(1, ag.deadT / 0.5) : 0,
+    ag.deadT >= 0 ? Math.min(1, ag.deadT / 0.5) : ag.rest * 0.72,
     { weapon: ag.ch.weapon, offhand: ag.ch.offhand, turn: ag.turnRate,
       lookYaw: Math.max(-0.9, Math.min(0.9, ag.sec.head)),
       lean: ag.sec.lean, twist: ag.sec.twist, bob: ag.sec.bob, jiggle: ag.sec.jiggle });

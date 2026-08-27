@@ -16,7 +16,8 @@
     "stress": "tsx farm/stress.ts",
     "roster": "tsx farm/roster.ts",
     "fight": "tsx farm/fight_strip.ts",
-    "props": "tsx farm/prop_sheet.ts"
+    "props": "tsx farm/prop_sheet.ts",
+    "start": "tsx server/index.ts"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
