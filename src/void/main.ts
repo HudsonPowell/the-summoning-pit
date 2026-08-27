@@ -384,18 +384,20 @@ const director = new Director();
 
 function driveCamera(sim: VoidSim, dt: number) {
   const you = yourAgent(sim);
+  // While the title stands the camera frames the stage for EVERYONE — the
+  // follow rig was still dragging owners off to their hero mid-word.
+  const titleUp = !!(title && !title.done);
   if (camCold) {
     // damping in from a cold camera means a second of looking at nothing
     camCold = false;
-    const titleUp = title && !title.done;
     cam.cx = rig.ax = you && !titleUp ? you.x : 0;
     cam.cz = rig.az = you && !titleUp ? you.z : 0;
-    cam.cy = you ? you.bulk * 0.55 : 0.9;
-    cam.ppm = (view.size.H * (you ? 0.26 / Math.max(0.7, you.bulk) : 0.34 / 5)) * look.zoom;
-    cam.yaw = you ? 0.5 : watchYaw;
+    cam.cy = you && !titleUp ? you.bulk * 0.55 : 0.9;
+    cam.ppm = (view.size.H * (you && !titleUp ? 0.26 / Math.max(0.7, you.bulk) : 0.34 / 5)) * look.zoom;
+    cam.yaw = you && !titleUp ? 0.5 : watchYaw;
     return;
   }
-  if (you) {
+  if (you && !titleUp) {
     orbit.idle += dt;
     if (orbit.idle > 2) {
       // a hand on the camera holds it; take it off and it comes home slowly
@@ -446,7 +448,7 @@ function driveCamera(sim: VoidSim, dt: number) {
   // whatever creature was wandering the far side of the pit, and on a phone
   // the whole opening played off-screen. The camera holds the stage until the
   // word has died, then goes back to its cast.
-  if (title && !title.done) { cx = 0; cz = 0; reach = 4.4; }
+  if (titleUp) { cx = 0; cz = 0; reach = 4.4; }
 
   watchYaw = (watchYaw + dt * 0.045) % (Math.PI * 2);   // a turn every 2.3 min
 
@@ -1123,16 +1125,41 @@ function setPanel(open: boolean) {
     // place to start dragging the camera from.
     const t = e.target as HTMLElement | null;
     if (t instanceof HTMLInputElement || t?.id === 'muteIcon' || t?.closest?.('#summonBar')) return;
-    down = true; lastX = e.clientX; orbit.idle = 0;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) {
+      // second finger down: the drag becomes a pinch, and the yaw drag must
+      // let go or the camera lurches sideways while you zoom
+      const [a, b] = [...touches.values()];
+      pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+      down = false;
+    } else {
+      down = true; lastX = e.clientX;
+    }
+    orbit.idle = 0;
     stage.setPointerCapture(e.pointerId);
   });
   stage.addEventListener('pointermove', e => {
+    const held = touches.get(e.pointerId);
+    if (held) { held.x = e.clientX; held.y = e.clientY; }
+    if (touches.size === 2) {
+      const [a, b] = [...touches.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinchDist > 0) orbit.zoom = Math.max(-1.1, Math.min(1.1, orbit.zoom + (d - pinchDist) * 0.005));
+      pinchDist = d;
+      orbit.idle = 0;
+      return;
+    }
     if (!down) return;
     orbit.yaw = Math.max(-Math.PI, Math.min(Math.PI, orbit.yaw + (e.clientX - lastX) * 0.006));
     lastX = e.clientX;
     orbit.idle = 0;
   });
-  const up = () => { down = false; orbit.idle = 0; };
+  const up = (e: PointerEvent) => {
+    touches.delete(e.pointerId);
+    pinchDist = 0;
+    down = false;
+    orbit.idle = 0;
+  };
   stage.addEventListener('pointerup', up);
   stage.addEventListener('pointercancel', up);
   stage.addEventListener('wheel', e => {
