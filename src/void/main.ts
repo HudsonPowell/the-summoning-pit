@@ -223,8 +223,9 @@ let yours: Agent | null = null;
 
 // The title, set in the wire type: it coils under the floor, is pulled up
 // into the letterform, breathes a moment, and is cut loose to fall back into
-// the dark. The page opens with a summoning.
-let title: WireTitle | null = new WireTitle();
+// the dark. The page opens with a summoning. Built AFTER the canvas has been
+// fitted, because its size depends on how much world the frame can show.
+let title: WireTitle | null = null;
 
 const orbit = { yaw: 0, zoom: 0, idle: 99 };
 
@@ -858,6 +859,10 @@ async function boot() {
 
   buildPanel(sim, live);
   buildSummon(sim, live);
+
+  // how many metres of world the empty-pit observer will show across
+  const frameW = (view.size.W * 4.4) / (0.46 * view.size.H);
+  title = new WireTitle('the summoning pit', frameW);
 
   let last = performance.now();
   function tick(dt: number) {

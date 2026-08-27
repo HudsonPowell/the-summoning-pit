@@ -1338,3 +1338,21 @@ nearly edge-on, rendering as a diagonal brass smear. Billboards use the
 engine's own rotation or they will eventually be wrong.
 
 The placeholder bitmap title (src/void/title.ts) is deleted.
+
+## the title breathes, wears a palette, and dies one letter at a time (2026-08-27)
+
+- **Lines, not shrinking.** A phone shows ~4m of world where a desktop shows
+  ~16; scaling the word down filled its counters solid at this blend. The word
+  wraps like type instead — one line on a desktop, three on a phone — sized by
+  measuring each word with a throwaway WireText first.
+- **Inks are forged per load** the way a hero's palette is: a hue family, an
+  accent thrown across the wheel, five spread inks for the field to cross-fade
+  between. Every visit summons a different metal.
+- **The hold is physics, not display**: loose home (0.09), an unsteady breathe,
+  and a gust shoved through the word every couple of seconds. The same rod
+  physics that kills it is what animates it standing.
+- **Death is per letter**: a shuffled order spread over ~2.2s, each glyph cut
+  loose (home 0, its own gravity) and faded on its own clock. The word dies the
+  way the pit's creatures do — not switched off, given up.
+- Gauge x1.45 at small sizes turns counters to soup; x1.15 holds. Fatness and
+  blend both fill the same holes.

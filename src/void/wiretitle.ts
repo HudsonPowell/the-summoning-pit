@@ -1,67 +1,159 @@
-// The title, set in the wire type (src/type). The word coils in the dark
-// under the floor, gets pulled up into the letterform glyph by glyph, hangs
-// breathing for a moment, and is then cut loose — gravity takes it and it
-// crumples back into the dark the way a figure goes down.
+// The title, set in the wire type (src/type). Summoned out of the dark under
+// the floor, alive in the draught while it stands, then dying letter by
+// letter — each one giving up in its own time, like the figures do.
 //
-// The wrapper's only jobs are the lifecycle and the billboard: WireText works
-// in an x/y plane, so each frame the plane is turned to face the camera.
+// A phone shows four metres of world where a desktop shows sixteen, and
+// shrinking the word to fit filled the counters solid at this blend. So the
+// word does what type does: it BREAKS INTO LINES, and the caps stay a size
+// the field can hold.
 
 import { WireText } from '../type/typeset';
+import { GAUGE } from '../type/alphabet';
 import { Capsule } from '../pose';
 import { v3, rotY } from '../vec';
 
-const SUMMON = 4.4;   // stagger across the word + the last glyph's rise
-const HOLD = 3.6;
-const FALL = 1.9;
+const HOLD = 4.6;
+const FALL_EACH = 1.6;
+const FALL_SPREAD = 2.2;
+
+function rng(seed: number) {
+  let s = (seed | 0) || 1;
+  s = Math.imul(s ^ 0x9e3779b9, 0x85ebca6b) | 0;
+  s ^= s >>> 13;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    return ((s >>> 8) & 0xffffff) / 0xffffff;
+  };
+}
+
+/** Inks the way a hero gets them: a hue family, an accent across the wheel. */
+function forgeInks(r: () => number): [number, number, number][] {
+  const hue = r();
+  const accent = (hue + 0.38 + r() * 0.2) % 1;
+  const mk = (h: number, sat: number, lit: number): [number, number, number] => {
+    const c = (1 - Math.abs(2 * lit - 1)) * sat;
+    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+    const m = lit - c / 2;
+    const seg = Math.floor(h * 6) % 6;
+    const [rr, gg, bb] = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][seg];
+    return [Math.round((rr + m) * 255), Math.round((gg + m) * 255), Math.round((bb + m) * 255)];
+  };
+  const s = 0.42 + r() * 0.25;
+  return [
+    mk(hue, s, 0.62), mk(hue, s * 0.85, 0.5), mk(hue, s * 1.1, 0.72),
+    mk(hue, s * 0.7, 0.42), mk(accent, s * 1.15, 0.58),
+  ];
+}
+
+interface Line { wire: WireText; offset: number }
 
 export class WireTitle {
-  private wire: WireText;
+  private lines: Line[] = [];
   private t = 0;
   private out: Capsule[] = [];
+  private deathAt = new Map<string, number>();
+  private gustAt = 1.5;
+  private r = rng(Date.now() | 0);
+  private summonEnd = 0;
   done = false;
 
-  constructor(text = 'the summoning pit', size = 0.62, baseline = 0.85) {
-    this.wire = new WireText(text, { size, baseline, align: 'centre' });
-    // it starts as coils below the floor — the arrival IS the summoning
-    this.wire.coil(1.15, 0.4);
+  constructor(text = 'the summoning pit', maxWidth = 12, baseline = 1.15) {
+    const size = 0.62;
+    const inks = forgeInks(this.r);
+    const gauge = GAUGE * 1.15;
+
+    // break into lines: words that fit, largest caps we allow
+    const words = text.split(/\s+/);
+    const fits = (s: string) => new WireText(s, { size: 1 }).width * size <= maxWidth * 0.92;
+    const rows: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w;
+      if (cur && !fits(next)) { rows.push(cur); cur = w; }
+      else cur = next;
+    }
+    if (cur) rows.push(cur);
+
+    const lineH = size * 1.55;
+    rows.forEach((row, i) => {
+      const wire = new WireText(row, {
+        size, gauge, inks, align: 'centre',
+        baseline: baseline + (rows.length - 1 - i) * lineH,
+        seed: 1740 + i,
+      });
+      wire.coil(1.3 + i * 0.15, 0.45);
+      const offset = i * 0.55;             // lines arrive top to bottom
+      this.lines.push({ wire, offset });
+
+      const glyphs = new Set(wire.pieces.map(p => p.glyph));
+      const order = [...glyphs].sort(() => this.r() - 0.5);
+      order.forEach((g, gi) => {
+        this.deathAt.set(`${i}:${g}`,
+          (gi / Math.max(1, order.length - 1)) * FALL_SPREAD + this.r() * 0.3);
+      });
+      const summon = offset + row.length * 0.16 + 1.4;
+      if (summon > this.summonEnd) this.summonEnd = summon;
+    });
   }
 
   caps(dt: number, camYaw: number): Capsule[] {
     this.t += dt;
     const t = this.t;
-    if (t > SUMMON + HOLD + FALL) { this.done = true; this.out.length = 0; return this.out; }
-
-    if (t < SUMMON) {
-      this.wire.step(dt, t);
-    } else if (t < SUMMON + HOLD) {
-      this.wire.simulate(dt);
-      this.wire.breathe(t);
-    } else {
-      // cut loose: no memory of home, just weight. The word dies as wire.
-      this.wire.simulate(dt, { home: 0, bend: 0.12, gravity: -3.2, absorb: 0.7 });
+    const dieBase = this.summonEnd + HOLD;
+    if (t > dieBase + FALL_SPREAD + FALL_EACH + 0.4) {
+      this.done = true; this.out.length = 0; return this.out;
     }
 
-    const fall = Math.max(0, (t - SUMMON - HOLD) / FALL);
-    const fade = 1 - fall * fall;
+    const sub = Math.min(3, Math.max(1, Math.ceil(dt / 0.012)));
+    const h = dt / sub;
+    this.lines.forEach((ln, li) => {
+      const lt = t - ln.offset;
+      if (lt < this.summonEnd - ln.offset && t < this.summonEnd) {
+        if (lt > 0) ln.wire.step(dt, lt);
+        return;
+      }
+      // ALIVE, not displayed: loose joints, an unsteady draught, the odd shove
+      // — the same physics that kills each letter is what animates it standing.
+      for (const p of ln.wire.pieces) {
+        const dying = t >= dieBase + (this.deathAt.get(`${li}:${p.glyph}`) ?? 0);
+        const o = dying
+          ? { dt: h, gravity: -2.4 - this.r() * 1.2, damp: 0.955, home: 0, bend: 0.1, iters: 5, absorb: 0.7 }
+          : { dt: h, gravity: 0, damp: 0.93, home: 0.09, bend: 0.8, iters: 5, absorb: 0.86 };
+        for (let s = 0; s < sub; s++) p.rod.step(o);
+      }
+      ln.wire.breathe(t + li * 1.7, 0.0048);
+    });
 
-    const flat = this.wire.frame();
+    // a gust every couple of seconds, somewhere along one of the lines
+    this.gustAt -= dt;
+    if (this.gustAt <= 0 && t > this.summonEnd) {
+      this.gustAt = 1.1 + this.r() * 2.2;
+      const ln = this.lines[Math.floor(this.r() * this.lines.length)];
+      const x = ln.wire.left + this.r() * ln.wire.width;
+      ln.wire.push(x, (ln.wire.opts.baseline ?? 1) + this.r() * 0.5, 0.55, 0.05 + this.r() * 0.06);
+    }
+
     this.out.length = 0;
-    for (const cap of flat) {
-      // below the floor is the dark it came from; stop drawing there
-      if (cap.a.y < 0.015 && cap.b.y < 0.015) continue;
-      // undo the view's yaw so the plane faces the camera square-on — the view
-      // applies rotY(+yaw), so the billboard is rotY(-yaw), via the same helper
-      // rather than a hand-rolled rotation with a sign waiting to be wrong
-      const a = rotY(v3(cap.a.x, 0, cap.a.z), -camYaw);
-      const b = rotY(v3(cap.b.x, 0, cap.b.z), -camYaw);
-      this.out.push({
-        a: v3(a.x, Math.max(0.015, cap.a.y), a.z),
-        b: v3(b.x, Math.max(0.015, cap.b.y), b.z),
-        r: cap.r,
-        color: [cap.color[0] * fade, cap.color[1] * fade, cap.color[2] * fade],
-        part: cap.part,
-      });
-    }
+    const fwd = rotY(v3(0, 0, 2.2), -camYaw);    // forward of the scenery
+    this.lines.forEach((ln, li) => {
+      for (const cap of ln.wire.frame()) {
+        if (cap.a.y < 0.015 && cap.b.y < 0.015) continue;
+        const g = cap.part.startsWith('wire') ? Number(cap.part.slice(4)) : -1;
+        const dAt = dieBase + (g >= 0 ? (this.deathAt.get(`${li}:${g}`) ?? 0) : FALL_SPREAD * 0.5);
+        const fall = Math.max(0, Math.min(1, (t - dAt) / FALL_EACH));
+        const fade = 1 - fall * fall;
+        if (fade <= 0.02) continue;
+        const a = rotY(v3(cap.a.x, 0, cap.a.z), -camYaw);
+        const b = rotY(v3(cap.b.x, 0, cap.b.z), -camYaw);
+        this.out.push({
+          a: v3(a.x + fwd.x, Math.max(0.015, cap.a.y), a.z + fwd.z),
+          b: v3(b.x + fwd.x, Math.max(0.015, cap.b.y), b.z + fwd.z),
+          r: cap.r,
+          color: [cap.color[0] * fade, cap.color[1] * fade, cap.color[2] * fade],
+          part: cap.part,
+        });
+      }
+    });
     return this.out;
   }
 }
