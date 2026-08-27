@@ -1448,3 +1448,17 @@ The page has to give up its own gestures before the game can have them.
   single-quoted needle against served source.
 - The title stands 4.6m off the fight plane (orthographic = free): at 2.2m the
   lord stood inside the word and blended to soup.
+
+## The living floor (2026-08-28)
+- Relics and flora are stepped by the AUTHORITATIVE sim and ride the same
+  snapshots as agents (lerped by id) — never client-side guesses.
+- The pit swallows, it never pops: over the relic cap the oldest sink faster.
+- Python heredocs eat `\b` in regex literals (it is BACKSPACE in a plain
+  string) — always write regexes into files via raw strings, and grep the
+  result for actual 0x08 bytes when a regex mysteriously stops matching.
+- The turning foot-skate fix is stateless: reconstruct the plant-time ankle
+  rotated by turn-rate x time-in-stance, minus the travel as a CHORD behind
+  the current heading. Hard-turn drift 6.6 -> 4.5mm/frame; the residual is
+  hip sway leaking into feet and needs stateful plant capture.
+- The sanitiser's anchor whitelist must grow with gear.ts — 'waist' was
+  silently re-anchored to 'torso' until it was added.

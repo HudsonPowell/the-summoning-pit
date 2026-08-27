@@ -7,6 +7,7 @@ import { hatchGenome } from '../hatch';
 import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
+import { makeProp, PropKind } from '../props';
 import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
@@ -874,6 +875,60 @@ function speak(sim: VoidSim, e: import('./sim').VoidEvent): void {
   pit.say(bank, voiceFor(who), pan, dist, force);
 }
 
+// --- the floor's memory: bones, dropped arms, living greenery ---------------
+
+const BONE_INK: [number, number, number] = [206, 198, 178];
+
+function relicCapsules(r: import('./relics').Relic): Capsule[] {
+  const caps: Capsule[] = [];
+  const fade = Math.max(0.25, 1 - r.sink * 0.8);
+  const y = Math.max(0.012, 0.05 - r.sink * 0.05);
+  const ink: [number, number, number] = [BONE_INK[0] * fade, BONE_INK[1] * fade, BONE_INK[2] * fade];
+  const c = Math.cos(r.yaw), sn = Math.sin(r.yaw);
+  const at = (lx: number, ly: number, lz: number) =>
+    v3(r.x + lx * c - lz * sn, Math.max(0.012, ly + y - 0.05), r.z + lx * sn + lz * c);
+
+  if (r.kind === 'skull') {
+    caps.push({ a: at(-0.02, 0.09, 0), b: at(0.04, 0.1, 0), r: 0.085, color: ink, part: 'relic' });
+    caps.push({ a: at(0.1, 0.045, 0), b: at(0.16, 0.04, 0), r: 0.045, color: ink, part: 'relic' });   // snout
+    caps.push({ a: at(0.02, 0.02, 0), b: at(0.12, 0.02, 0), r: 0.028,
+      color: [ink[0] * 0.85, ink[1] * 0.85, ink[2] * 0.85], part: 'relic' });                          // jaw
+  } else if (r.kind === 'bone') {
+    caps.push({ a: at(-0.14, 0.03, 0), b: at(0.14, 0.03, 0), r: 0.024, color: ink, part: 'relic' });
+    caps.push({ a: at(-0.15, 0.035, 0.02), b: at(-0.15, 0.035, -0.02), r: 0.034, color: ink, part: 'relic' });
+    caps.push({ a: at(0.15, 0.035, 0.02), b: at(0.15, 0.035, -0.02), r: 0.034, color: ink, part: 'relic' });
+  } else if (r.item) {
+    // the weapon exactly as it was carried, laid flat where it fell
+    for (const part of r.item.parts) {
+      caps.push({
+        a: at(part.a[0] - 0.3, 0.03 + part.a[1] * 0.25, part.a[2]),
+        b: at(part.b[0] - 0.3, 0.03 + part.b[1] * 0.25, part.b[2]),
+        r: part.r,
+        color: (() => { const q = hexRgb3(part.color); return [q[0] * fade, q[1] * fade, q[2] * fade] as [number, number, number]; })(),
+        part: 'relic',
+      });
+    }
+  }
+  return caps;
+}
+
+function floraCapsules(f: import('./relics').Flora): Capsule[] {
+  const grown = 0.3 + 0.7 * f.growth;
+  const bend = f.hurt;                     // trampled plants lean and flatten
+  const c = Math.cos(f.yaw), sn = Math.sin(f.yaw);
+  return makeProp(f.kind as PropKind, f.seed).map(cp => {
+    const bendAt = (p: { x: number; y: number; z: number }) => {
+      // height shrinks with damage and the top shears sideways — a plant
+      // pressed down, not a plant scaled down
+      const y = p.y * grown * (1 - bend * 0.55);
+      const shear = p.y * bend * 0.6;
+      const lx = p.x * grown + shear, lz = p.z * grown;
+      return v3(f.x + lx * c - lz * sn, Math.max(0.01, y), f.z + lx * sn + lz * c);
+    };
+    return { ...cp, a: bendAt(cp.a), b: bendAt(cp.b), r: cp.r * grown * (1 - bend * 0.3) };
+  });
+}
+
 // --- the feed: the same event stream, read aloud ----------------------------
 
 const feedLines: string[] = [];
@@ -1030,6 +1085,8 @@ async function boot() {
     else title = null;
     // scenery first: it never moves, so it is the same list every frame
     for (const pr of sim.props) caps.push(...pr.caps);
+    for (const r of sim.relics) caps.push(...relicCapsules(r));
+    for (const f of sim.flora) caps.push(...floraCapsules(f));
     for (const a of sim.agents) {
       caps.push(...agentCapsules(a, sim.t));
       caps.push(...sigilCapsules(a, sim.t));

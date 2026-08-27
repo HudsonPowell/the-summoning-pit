@@ -227,6 +227,17 @@ const A3: Record<string, WeaponSpec> = {
     { a: [0, 0, 0], b: [0.2, 0, 0], r: 0.022, color: '#4a3a2c' },
     { a: [0.2, 0.07, 0], b: [0.52, 0.09, 0], r: 0.055, color: '#adb3bd' },
   ]},
+  whip: { name: 'whip', parts: [
+    { a: [0, 0, 0], b: [0.14, 0, 0], r: 0.024, color: '#4a3826' },
+    { a: [0.14, 0, 0], b: [0.5, -0.08, 0.06], r: 0.016, color: '#5a4732' },
+    { a: [0.5, -0.08, 0.06], b: [0.82, -0.2, 0.14], r: 0.011, color: '#6a5137' },
+  ]},
+  flail: { name: 'flail', parts: [
+    { a: [0, 0, 0], b: [0.32, 0, 0], r: 0.024, color: '#4a3a2c' },
+    { a: [0.32, 0, 0], b: [0.5, -0.06, 0], r: 0.012, color: '#5a5f66' },      // the chain
+    { a: [0.56, -0.09, 0], b: [0.56, -0.09, 0], r: 0.065, color: '#7a7f8a' }, // the ball
+    { a: [0.61, -0.05, 0], b: [0.61, -0.13, 0], r: 0.018, color: '#9aa1ab' }, // a spike
+  ]},
 };
 
 /** Held in the off hand. A shield is most of a knight. */
@@ -271,7 +282,9 @@ export function weaponsFromWords(desc: string): { main?: WeaponSpec; off?: Weapo
     [/scythe|sickle/, A2.scythe],
     [/trident|glaive|halberd|polearm/, A2.trident],
     [/warhammer|war hammer|maul|sledge/, A2.maul],
-    [/\bmace\b|morningstar|flail/, A2.mace],
+    [/\bflail\b|ball and chain/, A3.flail],
+    [/\bwhip\b|lash\b|scourge/, A3.whip],
+    [/\bmace\b|morningstar/, A2.mace],
     [/\bwand\b|rod\b|sceptre|scepter/, A2.wand],
     [/staff|stave|quarterstaff/, ARMOURY.staff],
     [/\bcane\b|walking stick|\bcrook\b/, A2.cane],

@@ -201,7 +201,8 @@ export function styleFor(
   if (/bow|crossbow|sling/.test(w)) return { light: STRIKE_SHOOT, heavy: STRIKE_SHOOT };
   if (/staff|stave|wand|rod|orb|tome/.test(w)) return { light: STRIKE_CAST, heavy: STRIKE_CAST };
   if (/spear|pike|lance|trident|rapier|halberd/.test(w)) return { light: STRIKE_THRUST, heavy: STRIKE_SLAM };
-  if (/hammer|maul|mace|axe|club|cudgel/.test(w)) return { light: STRIKE_SWIPE, heavy: STRIKE_SLAM };
+  if (/whip|scourge/.test(w)) return { light: STRIKE_SWIPE, heavy: STRIKE_LASH };
+  if (/hammer|maul|mace|flail|axe|club|cudgel/.test(w)) return { light: STRIKE_SWIPE, heavy: STRIKE_SLAM };
   return { light: STRIKE_SWIPE, heavy: STRIKE_SLAM };
 }
 

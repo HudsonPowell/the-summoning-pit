@@ -74,7 +74,7 @@ export function sanitiseGenome(raw: unknown): Genome | null {
   if (Array.isArray((g as any).gear)) {
     (g as any).gear = (g as any).gear.slice(0, 4).map((piece: any) => ({
       name: typeof piece?.name === 'string' ? piece.name.slice(0, 24) : 'gear',
-      at: ['head', 'shoulder', 'torso', 'back'].includes(piece?.at) ? piece.at : 'torso',
+      at: ['head', 'shoulder', 'torso', 'back', 'waist'].includes(piece?.at) ? piece.at : 'torso',
       mirror: !!piece?.mirror,
       parts: (Array.isArray(piece?.parts) ? piece.parts : []).slice(0, 6).map((q: any) => ({
         a: [num(q?.a?.[0], -2, 2, 0), num(q?.a?.[1], -2, 2, 0), num(q?.a?.[2], -2, 2, 0)],

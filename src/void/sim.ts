@@ -9,6 +9,7 @@ import { Temper, temperOf } from '../temper';
 import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
 import { Pacts, newPacts, stanceOf } from './pacts';
 import { Prop, scatterProps } from '../props';
+import { Relic, Flora, leaveRemains, seedFlora, stepRelics, stepFlora } from './relics';
 import { Record as Deeds, takeSpoil } from './spoils';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down' | 'rest';
@@ -82,7 +83,9 @@ export interface Shot {
 
 export interface VoidSim {
   challengeT: number;        // seconds a lone creature has held the pit
-  props: Prop[];             // the scenery, grown from sim.seed
+  props: Prop[];             // the fixed scenery, grown from sim.seed
+  relics: Relic[];           // bones and dropped arms — the floor's memory
+  flora: Flora[];            // the living greenery; grows, gets trampled
   seed: number;              // the whole pit's layout is this number
   pacts: Pacts;              // who spares whom, and who is owed a killing
   agents: Agent[];
@@ -161,7 +164,9 @@ export function createVoid(roster: Character[], population = 1): VoidSim {
   const sim: VoidSim = {
     challengeT: 0,
     seed: 1337,
-    props: scatterProps(1337, 18),
+    props: scatterProps(1337, 12),
+    relics: [],
+    flora: seedFlora(1337, 8),
     pacts: newPacts(),
     agents: [], shots: [], roster, events: [], t: 0, spawnT: 0, population, peace: 0.35,
   };
@@ -470,6 +475,8 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
     a.strikeT = -1;
     a.target = null;
     sim.events.push({ kind: 'kill', ...common });
+    // the floor takes the rest: bones, and the weapon if nobody claims it
+    leaveRemains(sim.relics, a.x, a.z, a.ch.weapon);
     if (by && by.deadT < 0) {
       by.deeds.kills++;
       // it takes something off the body. The graft is on the agent's own copy
@@ -818,6 +825,10 @@ export function stepVoid(sim: VoidSim, dt: number): void {
   // until someone types. (The keeper design lasted a day: it made the pit
   // feel inhabited, and made every identity bug look like something else.)
   sim.agents = sim.agents.filter(a => a.deadT < 0 || a.deadT < 3.5);
+
+  // the floor lives too: bones get kicked and sink, plants grow and suffer
+  stepRelics(sim.relics, sim.agents, dt);
+  stepFlora(sim.flora, sim.events, sim.agents, dt, sim.t);
 }
 
 /** Where the interesting thing is happening, for the camera to look at. */

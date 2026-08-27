@@ -26,6 +26,8 @@ export interface SavedPit {
   wall: number;         // wall clock at save, so "days survived" can be real
   agents: SavedAgent[];
   pacts: { from: string; to: string; stance: Stance }[];
+  relics?: unknown[];   // the floor's memory; older saves simply have none
+  flora?: unknown[];
 }
 
 export function load(path: string): SavedPit | null {

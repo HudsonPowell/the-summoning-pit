@@ -285,7 +285,32 @@ export function solvePose(
       // It survives only as a settle, easing the legs to neutral when a
       // creature genuinely stops rather than leaving one in mid-air.
       const settle = clamp(mv / 0.3, 0, 1);
-      const ankle = v3(hip.x + t.x * settle, t.y * settle + ANKLE_H, hip.z * 0.94);
+      let ankle = v3(hip.x + t.x * settle, t.y * settle + ANKLE_H, hip.z * 0.94);
+      // A PLANTED FOOT DOES NOT TURN EITHER. The stance rule above holds the
+      // foot still while the body advances in a straight line, but when the
+      // body YAWS the local frame rotates and dragged every planted foot
+      // round in an arc — the turning skate. Reconstruct where the world-
+      // fixed plant point sits in TODAY'S frame: the plant-time ankle rotated
+      // by the yaw accumulated since, minus the travel — which on a turning
+      // path is a chord behind the current heading, not a straight retreat.
+      // Stateless (turn rate × time in stance), so every caller gets it free.
+      const spin = extras?.turn ?? 0;
+      if (spin && p < g.stance && settle > 0) {
+        const dh = clamp(spin * (p / Math.max(0.2, g.cadence)), -0.7, 0.7) * settle;
+        const t0 = footTrack(0.0001, g);
+        const trav = (t0.x - t.x) * settle;               // metres since plant
+        const px = hip.x + t0.x * settle, pz = hip.z * 0.94;  // plant-time local
+        const ca = Math.cos(dh), sa = Math.sin(dh);
+        const rx = px * ca + pz * sa, rz = -px * sa + pz * ca;
+        const half = dh / 2;
+        const sinc = Math.abs(dh) < 1e-4 ? 1 : Math.sin(dh / 2) / (dh / 2);
+        const chord = trav * sinc;
+        ankle = v3(
+          rx - chord * Math.cos(half),
+          ankle.y,
+          rz - chord * -Math.sin(half),
+        );
+      }
       const knee = twoBoneIK(hip, ankle, chain.seg[0], chain.seg[1] ?? chain.seg[0], v3(1, 0, 0));
       const swingU = p < g.stance ? 0 : (p - g.stance) / (1 - g.stance);
       const toePitch = (p < g.stance ? 0 : 0.5 * Math.sin(Math.PI * swingU)) * mv;
@@ -507,6 +532,8 @@ export function solvePose(
         : piece.at === 'shoulder' ? shoulders
         : piece.at === 'back'
           ? [{ at: add(chestAt, scale(facing, -chestSize * 0.3)), size: chestSize, dir: facing, side: 1 }]
+        : piece.at === 'waist'
+          ? [{ at: curveAt(sk.upright ? 0.5 : 0.42), size: chestSize * 0.9, dir: facing, side: 1 }]
           : [{ at: chestAt, size: chestSize, dir: facing, side: 1 }];
       for (const spot of spots) {
         for (const part of piece.parts) {

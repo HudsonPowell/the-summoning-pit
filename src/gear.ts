@@ -10,7 +10,7 @@
 // by the size of the thing it is attached to. That way a helmet fits a hound
 // and an ogre without either being told about the other.
 
-export type Anchor = 'head' | 'shoulder' | 'torso' | 'back';
+export type Anchor = 'head' | 'shoulder' | 'torso' | 'back' | 'waist';
 
 export interface GearPart {
   a: [number, number, number];
@@ -118,6 +118,45 @@ export const CLOAK: GearPiece = {
   ],
 };
 
+export const BELT: GearPiece = {
+  name: 'belt', at: 'waist',
+  parts: [
+    // the band, crossed so it rings the body from any angle
+    { a: [0.5, 0, 0], b: [-0.5, 0, 0], r: 0.5, color: '#4a3826' },
+    { a: [0, 0, 0.5], b: [0, 0, -0.5], r: 0.5, color: '#42311f' },
+    { a: [0.58, 0.02, 0], b: [0.58, 0.02, 0], r: 0.16, color: BRASS },        // buckle
+    { a: [0.2, -0.15, 0.5], b: [0.15, -0.45, 0.55], r: 0.2, color: '#5a4732' }, // pouch on the hip
+  ],
+};
+
+export const PACK: GearPiece = {
+  name: 'pack', at: 'back',
+  parts: [
+    { a: [-0.15, 0.45, 0], b: [-0.35, -0.4, 0], r: 0.62, color: '#6a5137' },   // the pack itself
+    { a: [-0.2, 0.62, 0.3], b: [-0.2, 0.62, -0.3], r: 0.26, color: '#57422c' }, // bedroll on top
+    { a: [0.15, 0.35, 0.42], b: [-0.1, -0.3, 0.5], r: 0.09, color: '#3d2f1e' }, // straps
+    { a: [0.15, 0.35, -0.42], b: [-0.1, -0.3, -0.5], r: 0.09, color: '#3d2f1e' },
+  ],
+};
+
+export const SATCHEL: GearPiece = {
+  name: 'satchel', at: 'waist',
+  parts: [
+    { a: [0, 0.5, -0.35], b: [0.1, -0.1, 0.5], r: 0.09, color: '#4a3826' },    // the strap across
+    { a: [0.12, -0.2, 0.55], b: [0.05, -0.5, 0.6], r: 0.3, color: '#6a5137' }, // the bag on the hip
+  ],
+};
+
+export const BANNER: GearPiece = {
+  name: 'banner', at: 'back',
+  parts: [
+    // a pole rising well over the shoulder — read at a distance, like the crown
+    { a: [-0.2, -0.4, 0.15], b: [-0.35, 1.9, 0.2], r: 0.06, color: '#4e3b2c' },
+    { a: [-0.34, 1.85, 0.2], b: [-0.05, 1.6, 0.2], r: 0.16, color: '#7a2f2f' },  // the cloth
+    { a: [-0.1, 1.62, 0.2], b: [-0.15, 1.35, 0.2], r: 0.12, color: '#6a2828' }, // its tail
+  ],
+};
+
 export const SHELL: GearPiece = {
   name: 'shell', at: 'back',
   parts: [{ a: [0.25, 0.35, 0], b: [-0.35, 0.2, 0], r: 1.15, color: '#6b5a3f' }],
@@ -143,6 +182,10 @@ export function gearFromWords(desc: string): GearPiece[] {
 
   if (has(/cloak|cape|mantle|shroud|caped/)) out.push(CLOAK);
   if (has(/shell|carapace|tortoise|turtle|beetle|crab|armoured back/)) out.push(SHELL);
+  if (has(/banner|standard|war ?flag|herald|crusad/)) out.push(BANNER);
+  if (has(/\bpack\b|backpack|rucksack|knapsack|travell?er|wanderer|nomad|pilgrim|merchant|peddler/)) out.push(PACK);
+  if (has(/satchel|\bbag\b|courier|scavenger|looter/)) out.push(SATCHEL);
+  if (has(/\bbelt\b|girdle|bandolier|pouch|utility/)) out.push(BELT);
 
   // one of each anchor, so nothing wears two helmets
   const seen = new Set<Anchor>();

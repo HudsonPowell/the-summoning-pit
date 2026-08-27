@@ -20,6 +20,8 @@ interface Snap {
   time: number;
   agents: any[];
   shots: any[];
+  relics?: any[];
+  flora?: any[];
 }
 
 export class LiveVoid {
@@ -50,7 +52,7 @@ export class LiveVoid {
     seed: 1337,
     props: scatterProps(1337, 18),
     pacts: newPacts(),
-    agents: [], shots: [], roster: [], events: [],
+    agents: [], shots: [], roster: [], events: [], relics: [], flora: [],
       t: 0, spawnT: 0, population: 0, peace: 0.35,
     };
   }
@@ -116,7 +118,7 @@ export class LiveVoid {
 
   private take(m: any): void {
     this.prev = this.next;
-    this.next = { at: performance.now() / 1000, time: m.time, agents: m.agents, shots: m.shots };
+    this.next = { at: performance.now() / 1000, time: m.time, agents: m.agents, shots: m.shots, relics: m.relics, flora: m.flora };
     if (!this.prev) this.prev = this.next;
     this.clock = this.next.at - DELAY;
   }
@@ -224,5 +226,29 @@ export class LiveVoid {
       from: this.sim.agents[0],
       trail: s.tr.map((t: number[]) => ({ x: t[0], y: t[1], z: t[2] })),
     }));
+
+    // the floor's memory rides the same snapshots. Positions lerp so a kicked
+    // bone skitters instead of teleporting between packets.
+    if (this.next.relics) {
+      const prevRelic = new Map<number, any>(((this.prev?.relics ?? []) as any[]).map(r => [r.i, r]));
+      this.sim.relics = (this.next.relics as any[]).map(r => {
+        const p = prevRelic.get(r.i) ?? r;
+        let dy = r.yw - p.yw;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        return {
+          id: r.i, kind: r.k,
+          x: p.x + (r.x - p.x) * u, z: p.z + (r.z - p.z) * u,
+          vx: 0, vz: 0, yaw: p.yw + dy * u, vyaw: 0,
+          sink: r.s, item: r.it,
+        };
+      });
+    }
+    if (this.next.flora) {
+      this.sim.flora = (this.next.flora as any[]).map(f => ({
+        id: f.i, kind: f.k, x: f.x, z: f.z, yaw: f.yw,
+        growth: f.g, hurt: f.h, seed: f.sd,
+      }));
+    }
   }
 }

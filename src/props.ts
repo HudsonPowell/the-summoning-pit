@@ -9,7 +9,8 @@
 import { Capsule } from './pose';
 import { V3, v3 } from './vec';
 
-export type PropKind = 'rock' | 'boulder' | 'fern' | 'fungus' | 'shard' | 'bones' | 'stump';
+export type PropKind = 'rock' | 'boulder' | 'fern' | 'fungus' | 'shard' | 'bones' | 'stump'
+  | 'roots' | 'eggs' | 'sprout' | 'tuft' | 'bloom';
 
 /** Small deterministic generator — same seed, same rock, forever. */
 function rng(seed: number) {
@@ -143,6 +144,72 @@ export function makeProp(kind: PropKind, seed: number): Capsule[] {
         v3(Math.cos(a) * 0.2, 0.03, Math.sin(a) * 0.2 + 0.22), 0.032, bone);
       break;
     }
+    case 'roots': {
+      // an old root breaking the floor and diving back in, like a sea serpent
+      const wood = hex('#4e3b2c');
+      const n = 2 + Math.floor(r() * 2);
+      for (let i = 0; i < n; i++) {
+        const a = r() * Math.PI * 2, off = r() * 0.3;
+        const x0 = Math.cos(a) * off, z0 = Math.sin(a) * off;
+        const dx = Math.cos(a + 1.2), dz = Math.sin(a + 1.2);
+        const h = 0.1 + r() * 0.14, len = 0.25 + r() * 0.25;
+        put(v3(x0, 0.0, z0), v3(x0 + dx * len * 0.5, h, z0 + dz * len * 0.5),
+          0.04 + r() * 0.02, shade(wood, 0.85 + r() * 0.3));
+        put(v3(x0 + dx * len * 0.5, h, z0 + dz * len * 0.5), v3(x0 + dx * len, 0.0, z0 + dz * len),
+          0.035, shade(wood, 0.8));
+      }
+      break;
+    }
+    case 'eggs': {
+      // a clutch of leathery eggs — whose? the pit does not say
+      const shell = hex(r() < 0.5 ? '#c9bfa5' : '#a8b39a');
+      const n = 3 + Math.floor(r() * 3);
+      for (let i = 0; i < n; i++) {
+        const a = r() * Math.PI * 2, off = r() * 0.16;
+        const x = Math.cos(a) * off, z = Math.sin(a) * off;
+        const rad = 0.07 + r() * 0.05;
+        put(v3(x, rad * 0.75, z), v3(x, rad * 1.15, z), rad, shade(shell, 0.85 + r() * 0.3));
+      }
+      break;
+    }
+    case 'sprout': {
+      // a single hopeful shoot with two small leaves
+      const leaf = hex(pick(r, LEAF));
+      const lean = (r() - 0.5) * 0.1;
+      put(v3(0, 0.01, 0), v3(lean, 0.28 + r() * 0.12, 0), 0.02, shade(leaf, 0.8));
+      put(v3(lean, 0.2, 0), v3(lean + 0.12, 0.3, 0.06), 0.028, leaf);
+      put(v3(lean, 0.26, 0), v3(lean - 0.1, 0.34, -0.06), 0.026, shade(leaf, 1.12));
+      break;
+    }
+    case 'tuft': {
+      // coarse pit-grass in a clump
+      const grass = hex(r() < 0.5 ? '#5d6b48' : '#6a7550');
+      const n = 5 + Math.floor(r() * 4);
+      for (let i = 0; i < n; i++) {
+        const a = r() * Math.PI * 2, off = r() * 0.12;
+        const lean = 0.06 + r() * 0.12, h = 0.18 + r() * 0.2;
+        put(v3(Math.cos(a) * off, 0.01, Math.sin(a) * off),
+          v3(Math.cos(a) * (off + lean), h, Math.sin(a) * (off + lean)),
+          0.014 + r() * 0.008, shade(grass, 0.75 + r() * 0.5));
+      }
+      break;
+    }
+    case 'bloom': {
+      // one pale flower on a crooked stem — the only bright thing down here
+      const stem = hex('#55604a');
+      const petal = hex(pick(r, ['#d8c8e8', '#e8d0c0', '#c8d8e0', '#e0c8d0']));
+      const lean = (r() - 0.5) * 0.16, h = 0.3 + r() * 0.2;
+      put(v3(0, 0.01, 0), v3(lean * 0.6, h * 0.6, 0), 0.018, stem);
+      put(v3(lean * 0.6, h * 0.6, 0), v3(lean, h, 0), 0.016, shade(stem, 0.85));
+      const n = 4 + Math.floor(r() * 2);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        put(v3(lean, h, 0), v3(lean + Math.cos(a) * 0.08, h + 0.04, Math.sin(a) * 0.08),
+          0.035, shade(petal, 0.85 + r() * 0.3));
+      }
+      put(v3(lean, h + 0.03, 0), v3(lean, h + 0.04, 0), 0.03, hex('#e8d888'));
+      break;
+    }
   }
   return caps;
 }
@@ -156,7 +223,7 @@ export interface Prop {
   caps: Capsule[];     // already in world space: scenery never moves
 }
 
-const KINDS: PropKind[] = ['rock', 'rock', 'fern', 'fungus', 'shard', 'bones', 'stump', 'boulder'];
+const KINDS: PropKind[] = ['rock', 'rock', 'shard', 'bones', 'stump', 'boulder', 'roots', 'eggs'];
 
 /** Lay out the pit's scenery. Same seed, same pit, every time it reopens. */
 export function scatterProps(seed: number, count: number, inner = 1.8, outer = 7.5): Prop[] {

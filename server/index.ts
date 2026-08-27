@@ -109,6 +109,8 @@ function restore(): void {
     sim.agents.push(a);
   }
   for (const p of saved.pacts) declare(sim.pacts, p.from, p.to, p.stance);
+  if (Array.isArray(saved.relics)) sim.relics = saved.relics as typeof sim.relics;
+  if (Array.isArray(saved.flora)) sim.flora = saved.flora as typeof sim.flora;
   console.log(`[pit] reopened with ${sim.agents.length} standing, clock at ${(sim.t / 60).toFixed(0)}m`);
 }
 
@@ -127,6 +129,8 @@ function snapshotState(): SavedPit {
       kills: a.deeds.kills, spoils: a.deeds.spoils, born: a.deeds.born,
     })),
     pacts,
+    relics: sim.relics,
+    flora: sim.flora,
   };
 }
 
@@ -171,6 +175,14 @@ function snapshot() {
       x: r2(s.x), z: r2(s.z), y: r2(s.y),
       c: s.spec.color, r: s.spec.size,
       tr: s.trail.map(p => [r2(p.x), r2(p.y), r2(p.z)]),
+    })),
+    relics: sim.relics.map(r => ({
+      i: r.id, k: r.kind, x: r2(r.x), z: r2(r.z), yw: r2(r.yaw), s: r2(r.sink),
+      ...(r.item ? { it: r.item } : {}),
+    })),
+    flora: sim.flora.map(f => ({
+      i: f.id, k: f.kind, x: r2(f.x), z: r2(f.z), yw: r2(f.yaw),
+      g: r2(f.growth), h: r2(f.hurt), sd: f.seed,
     })),
   };
 }
