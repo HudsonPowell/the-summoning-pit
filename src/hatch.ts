@@ -183,22 +183,36 @@ export async function askOpenAI(
   apiKey: string,
   temperature = 0.8,
 ): Promise<string> {
-  const res = await fetch(`${url.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      temperature,
-      max_tokens: 2000,
-      response_format: {
-        type: 'json_schema',
-        json_schema: { name: 'genome', strict: false, schema: GENOME_SCHEMA },
-      },
-      messages: [{ role: 'user', content: buildPrompt(desc) }],
-    }),
+  const endpoint = `${url.replace(/\/$/, '')}/chat/completions`;
+  const ask = async (format: unknown) => {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        temperature,
+        max_tokens: 2000,
+        response_format: format,
+        messages: [{ role: 'user', content: buildPrompt(desc) }],
+      }),
+    });
+    return { ok: res.ok, status: res.status, body: await res.text() };
+  };
+
+  // Providers disagree about how much of a schema they will enforce, and which
+  // models support it at all. Ask for the strong guarantee, and if the provider
+  // refuses it, fall back to plain JSON mode — the validator was always going
+  // to have to repair whatever came back anyway.
+  let r = await ask({
+    type: 'json_schema',
+    json_schema: { name: 'genome', strict: false, schema: GENOME_SCHEMA },
   });
-  if (!res.ok) throw new Error(`hatch api ${res.status}: ${(await res.text()).slice(0, 140)}`);
-  const j: any = await res.json();
+  if (!r.ok && /json_schema|response_format|schema/i.test(r.body)) {
+    r = await ask({ type: 'json_object' });
+  }
+  if (!r.ok) throw new Error(`hatch api ${r.status}: ${r.body.slice(0, 140)}`);
+
+  const j: any = JSON.parse(r.body);
   const text = j?.choices?.[0]?.message?.content;
   if (typeof text !== 'string' || !text.trim()) throw new Error('hatch api returned nothing');
   return text;
