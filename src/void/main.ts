@@ -460,7 +460,7 @@ function driveCamera(sim: VoidSim, dt: number) {
   // framing is sized off HEIGHT alone — the hero kept walking out of the
   // sides. Frame off whichever dimension is actually the tight one. The title
   // keeps the height basis it was tuned against.
-  const frameH = Math.min(view.size.H, view.size.W * 1.35);
+  const frameH = Math.min(view.size.H, view.size.W * 1.2);
   if (camCold) {
     // damping in from a cold camera means a second of looking at nothing
     camCold = false;
@@ -479,11 +479,16 @@ function driveCamera(sim: VoidSim, dt: number) {
       orbit.zoom = smoothDamp(orbit.zoom, 0, { v: 0 }, 2.4, dt);
     }
 
-    // the anchor only gives when the creature has actually gone somewhere
+    // the anchor only gives when the creature has actually gone somewhere.
+    // The deadzone is WORLD metres, but 'has gone somewhere' is a question
+    // about the SCREEN: 0.9m was 50px of slack on a desktop and most of the
+    // width on a zoomed-in phone, which is exactly a creature parked on the
+    // bezel with the camera calling it centred.
+    const dead = Math.min(DEADZONE, (view.size.W * 0.18) / cam.ppm);
     const dx = you.x - rig.ax, dz = you.z - rig.az;
     const d = Math.hypot(dx, dz);
-    if (d > DEADZONE) {
-      const pull = (d - DEADZONE) / d;
+    if (d > dead) {
+      const pull = (d - dead) / d;
       rig.ax += dx * pull;
       rig.az += dz * pull;
     }
@@ -504,6 +509,20 @@ function driveCamera(sim: VoidSim, dt: number) {
     // 0.5 spins the camera two and a half times, which is exactly the thing
     // that makes people feel ill. Always take the short way round.
     cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), 0.5 + orbit.yaw, rig.vyaw, 1.1, dt);
+    // A guarantee, not a tendency: however far the damps lag, your creature
+    // does not leave the middle of the frame. This runs LAST, against the
+    // frame's final yaw and zoom — clamping before the yaw damp let the
+    // rotated axes leak depth-slack back into the horizontal.
+    const off = rotY(v3(you.x - cam.cx, 0, you.z - cam.cz), cam.yaw);
+    const mx = (view.size.W * 0.3) / cam.ppm;
+    const mz = (view.size.H * 0.26) / cam.ppm;
+    const ex = off.x - Math.max(-mx, Math.min(mx, off.x));
+    const ez = off.z - Math.max(-mz, Math.min(mz, off.z));
+    if (ex || ez) {
+      const back = rotY(v3(ex, 0, ez), -cam.yaw);
+      cam.cx += back.x;
+      cam.cz += back.z;
+    }
     return;
   }
   // NOTHING OF YOURS IS IN THERE. You are not in the fight, so the camera

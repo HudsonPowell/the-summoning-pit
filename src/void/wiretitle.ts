@@ -55,11 +55,25 @@ function forgeInks(r: () => number): [number, number, number][] {
 
 interface Line { wire: WireText; beads: number }
 
+/**
+ * A glyph whose base ink sits on the floor of the palette disappears into the
+ * pit floor — the lowercase p did it on every load, because the chunk hash was
+ * built from constants and always drew the same dark slots. Accent chunks may
+ * still go near-black; the BASE of every glyph is lifted to readable.
+ */
+function lift(c: [number, number, number]): [number, number, number] {
+  const m = Math.max(c[0], c[1], c[2]);
+  if (m >= 68) return c;
+  const k = 68 / Math.max(1, m);
+  return [c[0] * k, c[1] * k, c[2] * k];
+}
+
 export class WireTitle {
   private lines: Line[] = [];
   private t = 0;
   private out: Capsule[] = [];
   private deathAt = new Map<string, number>();     // per line:glyph, 0..FALL_SPREAD
+  private salt = 0;                                // re-rolls the chunk hash each load
   private frames: Float32Array[] = [];             // the recorded fall
   private gustAt = 1.5;
   private inks: [number, number, number][];
@@ -73,6 +87,7 @@ export class WireTitle {
     const widestEm = Math.max(...words.map(w => new WireText(w, { size: 1 }).width));
     const size = Math.min(0.62, (maxWidth * 0.84) / widestEm);
     const inks = forgeInks(this.r);
+    this.salt = Math.floor(this.r() * 4096);
     this.inks = inks;
     const gauge = GAUGE * 1.15 * Math.max(0.82, size / 0.62);
 
@@ -217,8 +232,8 @@ export class WireTitle {
           const t0 = ci / chunks, t1 = (ci + 1) / chunks;
           const ax = cap.a.x + (cap.b.x - cap.a.x) * t0, ay = cap.a.y + (cap.b.y - cap.a.y) * t0, az = cap.a.z + (cap.b.z - cap.a.z) * t0;
           const bx = cap.a.x + (cap.b.x - cap.a.x) * t1, by = cap.a.y + (cap.b.y - cap.a.y) * t1, bz = cap.a.z + (cap.b.z - cap.a.z) * t1;
-          const pick = hash01(gi * 131 + ci * 17 + li * 7);
-          const ink = pick < 0.4 ? cap.color : this.inks[Math.floor(pick * this.inks.length) % this.inks.length];
+          const pick = hash01(gi * 131 + ci * 17 + li * 7 + this.salt);
+          const ink = pick < 0.4 ? lift(cap.color as [number, number, number]) : this.inks[Math.floor(pick * this.inks.length) % this.inks.length];
           const a = rotY(v3(ax, 0, az), -camYaw);
           const b = rotY(v3(bx, 0, bz), -camYaw);
           this.out.push({
