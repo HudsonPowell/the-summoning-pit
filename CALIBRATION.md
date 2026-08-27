@@ -1356,3 +1356,17 @@ The placeholder bitmap title (src/void/title.ts) is deleted.
   way the pit's creatures do — not switched off, given up.
 - Gauge x1.45 at small sizes turns counters to soup; x1.15 holds. Fatness and
   blend both fill the same holes.
+
+## the p, and making the blend visible (2026-08-27)
+
+The lowercase p's bowl (the ten's cut, as b uses) read as a second stem at the
+void's blend — a mu, not a p. The fix was not bending it harder but cutting an
+honest ')': a slice of the o's RING, arc 0.84..1.28 (the c documents the ring's
+right side living around 0.95..1.17, and `to` wraps). b, d and q are untouched.
+
+Per-letter variance in the title: each glyph gets its own wire weight
+(x0.82..1.32, hashed), and long runs are SPLIT into chunks alternating between
+the glyph's ink and a second ink from the forged palette — the field
+cross-fades where chunks meet, so the blending is visible along the wire
+instead of hiding inside the joins. Rivets have no glyph index; a negative
+index walked off the ink array and crashed the first version.

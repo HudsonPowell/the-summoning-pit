@@ -158,7 +158,11 @@ export const GLYPHS: Record<string, Glyph> = {
   ]),
   p: G([
     { p: 'four.stem', s: 0.96 / 0.68, a: 'bl', at: [0, DESC] },
-    { p: 'ten', i: 1, s: BOWL, a: 'cl', at: [0.02, 0.30], z: 0.006 },
+    // The bowl is a slice of the o's ring — the ten's cut read as a second
+    // stem at the void's blend (a mu, not a p). The ring's right side sits
+    // around 0.95..1.17 of its arc (see the c), so this is a true ')', ends
+    // tucked back toward the stem.
+    { p: 'ring', from: 0.84, to: 1.28, s: RING, a: 'cl', at: [0.02, 0.30], z: 0.006 },
   ]),
   q: G([
     { p: 'four.stem', s: 0.96 / 0.68, a: 'br', at: [0.35, DESC] },

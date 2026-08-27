@@ -47,12 +47,19 @@ function forgeInks(r: () => number): [number, number, number][] {
 
 interface Line { wire: WireText; offset: number }
 
+const hash01 = (n: number) => {
+  let h = (n * 2654435761) | 0;
+  h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13;
+  return ((h >>> 8) & 0xffff) / 0xffff;
+};
+
 export class WireTitle {
   private lines: Line[] = [];
   private t = 0;
   private out: Capsule[] = [];
   private deathAt = new Map<string, number>();
   private gustAt = 1.5;
+  private inks: [number, number, number][];
   private r = rng(Date.now() | 0);
   private summonEnd = 0;
   done = false;
@@ -60,6 +67,7 @@ export class WireTitle {
   constructor(text = 'the summoning pit', maxWidth = 12, baseline = 1.15) {
     const size = 0.62;
     const inks = forgeInks(this.r);
+    this.inks = inks;
     const gauge = GAUGE * 1.15;
 
     // break into lines: words that fit, largest caps we allow
@@ -143,15 +151,32 @@ export class WireTitle {
         const fall = Math.max(0, Math.min(1, (t - dAt) / FALL_EACH));
         const fade = 1 - fall * fall;
         if (fade <= 0.02) continue;
-        const a = rotY(v3(cap.a.x, 0, cap.a.z), -camYaw);
-        const b = rotY(v3(cap.b.x, 0, cap.b.z), -camYaw);
-        this.out.push({
-          a: v3(a.x + fwd.x, Math.max(0.015, cap.a.y), a.z + fwd.z),
-          b: v3(b.x + fwd.x, Math.max(0.015, cap.b.y), b.z + fwd.z),
-          r: cap.r,
-          color: [cap.color[0] * fade, cap.color[1] * fade, cap.color[2] * fade],
-          part: cap.part,
-        });
+        // PER-LETTER VARIANCE. Each glyph has its own wire weight, and long
+        // runs are split into chunks that alternate between the glyph's ink
+        // and a second one — the field cross-fades where they meet, so the
+        // blending is VISIBLE along the wire instead of hiding inside joins.
+        const gv = hash01(li * 31 + g * 7 + 3);
+        const rad = cap.r * (0.82 + gv * 0.5);
+        // rivets have no glyph; a negative index walked off the ink array
+        const gi = Math.max(0, g);
+        const alt = this.inks[(gi * 3 + li + 1) % this.inks.length];
+        const len = Math.hypot(cap.b.x - cap.a.x, cap.b.y - cap.a.y, cap.b.z - cap.a.z);
+        const chunks = Math.max(1, Math.min(4, Math.round(len / 0.16)));
+        for (let ci = 0; ci < chunks; ci++) {
+          const t0 = ci / chunks, t1 = (ci + 1) / chunks;
+          const ax = cap.a.x + (cap.b.x - cap.a.x) * t0, ay = cap.a.y + (cap.b.y - cap.a.y) * t0, az = cap.a.z + (cap.b.z - cap.a.z) * t0;
+          const bx = cap.a.x + (cap.b.x - cap.a.x) * t1, by = cap.a.y + (cap.b.y - cap.a.y) * t1, bz = cap.a.z + (cap.b.z - cap.a.z) * t1;
+          const ink = (ci + gi) % 2 === 0 ? cap.color : alt;
+          const a = rotY(v3(ax, 0, az), -camYaw);
+          const b = rotY(v3(bx, 0, bz), -camYaw);
+          this.out.push({
+            a: v3(a.x + fwd.x, Math.max(0.015, ay), a.z + fwd.z),
+            b: v3(b.x + fwd.x, Math.max(0.015, by), b.z + fwd.z),
+            r: rad,
+            color: [ink[0] * fade, ink[1] * fade, ink[2] * fade],
+            part: cap.part,
+          });
+        }
       }
     });
     return this.out;
