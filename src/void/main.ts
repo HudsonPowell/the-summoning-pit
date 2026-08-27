@@ -663,6 +663,7 @@ let muted = (() => { try { return localStorage.getItem(MUTE_KEY) === '1'; } catc
 const muteCanvas = document.getElementById('muteIcon') as HTMLCanvasElement | null;
 const muteIcon = muteCanvas ? new MuteIcon(muteCanvas, hexRgb(look.voidCol)) : null;
 let muteFrame = 0;
+const flicker = { next: 3, until: 0, len: 0, depth: 0, now: 1 };
 function paintMute(): void { muteIcon?.draw(muted); }
 paintMute();
 muteCanvas?.addEventListener('pointerdown', e => {
@@ -781,6 +782,7 @@ function narrate(e: import('./sim').VoidEvent): string | null {
     case 'kill': return `${who} felled ${whom} — ${e.how ?? 'a blow'}${at}`;
     case 'spawn': return `${who} enters the pit`;
     case 'flee': return `${who} breaks and runs`;
+    case 'hit': return e.how === 'blocked' ? `${whom} takes it on the shield` : null;
     // a creature vanishing with nothing said about it reads as a bug
     case 'despawn': return `${who} is recalled`;
     case 'notice': return `${who} sets upon ${whom}`;
@@ -889,6 +891,27 @@ async function boot() {
     // softness is a property of the world again. 42 px/m is where 1.8 was
     // tuned.
     cam.blend = Math.min(6, Math.max(0.35, look.blend * (cam.ppm / 42)));
+
+    // THE LIGHT IS A FLAME, not a fixture. Mostly it holds steady; every so
+    // often it catches a draught and gutters for half a second — layered
+    // sines, no noise, so the wavering is smooth. The audio's wind and the
+    // pit's drips already say "underground"; the light now agrees.
+    flicker.next -= dt;
+    if (flicker.until > 0) {
+      flicker.until -= dt;
+      const w = Math.sin(sim.t * 31) * 0.5 + Math.sin(sim.t * 47 + 1.7) * 0.35 + Math.sin(sim.t * 13) * 0.15;
+      const depth = flicker.depth * Math.sin(Math.PI * Math.min(1, 1 - flicker.until / flicker.len));
+      flicker.now += ((1 - depth * (0.5 + 0.5 * w)) - flicker.now) * Math.min(1, 22 * dt);
+    } else {
+      flicker.now += (1 - flicker.now) * Math.min(1, 8 * dt);
+      if (flicker.next <= 0) {
+        flicker.len = 0.35 + Math.random() * 0.9;
+        flicker.until = flicker.len;
+        flicker.depth = 0.18 + Math.random() * 0.22;
+        flicker.next = 4 + Math.random() * 12;
+      }
+    }
+    cam.floorLift = look.floorLift * flicker.now;
 
     // the icon idles along with everything else, at half rate — it is 46px
     muteFrame = (muteFrame + 1) & 1;

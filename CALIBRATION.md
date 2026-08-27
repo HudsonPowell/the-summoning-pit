@@ -1386,3 +1386,32 @@ the handoff to live sim is seamless.
 
 Inks are browns, greys and near-black now — old iron and dry earth, sat
 0.04-0.34, lightness 0.13-0.43, hues pinned warm.
+
+## the kiter's three bodyguards (2026-08-27)
+
+Ranged dominance was never one thing. Three stacked faults, found by
+instrumenting a duel the moment "shields should help" failed to help:
+
+1. **The pit's wall hijacked the chase.** walk()'s homeward drift at r>6.5
+   overwrites `aim` on the same frame the pursuit sets it; the heading settles
+   halfway between the two writers and the chaser ORBITS its target at ninety
+   degrees forever (measured: aim-heading gap pinned at 1.6 rad). Busy
+   creatures now get a hard boundary at 7.6m and keep their aim.
+2. **Arrows shoved like mauls.** Every hit knocked the victim 0.35m backwards,
+   so each arrow pushed the chaser back onto the treadmill. Projectiles now
+   shove 0.06m; a blow with a body behind it keeps 0.35.
+3. **Nobody swings while approaching.** A backpedalling target ping-pongs its
+   chaser between approach and fight so fast that fight's 0.35s settling time
+   never elapses — a tank chased an archer for 17s, touched 1.0m, and threw
+   NOTHING. Creatures now strike on the way in when the target is in reach.
+
+Measured after: melee vs kiting archer went from 0/6 to 4-5/6. A shield turns
+man-vs-wolf from 2/8 into 8/8 — 55% frontal block (30% buckler), wide arc, and
+a blocked blow steps the bearer 0.24m INTO the threat instead of being shoved.
+
+Also: STRIKE_BREATH (head-ranged flame, fire/frost/venom tints) assigned from
+words — a fire dragon breathes whether or not the model remembered anything
+else; casters with no named implement get a wand so they cast; seven new
+weapons (greataxe, katana, warpick, javelin, tome, orb, cleaver) with
+longest-match-first synonyms so "greataxe" never falls through to "axe". And
+the floor light gutters like a flame every 4-16s — layered sines, no noise.

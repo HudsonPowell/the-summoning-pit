@@ -195,6 +195,40 @@ const A2: Record<string, WeaponSpec> = {
   ]},
 };
 
+const A3: Record<string, WeaponSpec> = {
+  katana: { name: 'katana', parts: [
+    { a: [0.05, 0, 0], b: [0.5, 0.04, 0], r: 0.02, color: '#dfe6ef' },
+    { a: [0.5, 0.04, 0], b: [0.86, 0.12, 0], r: 0.016, color: '#eef2f8' },
+    { a: [0.04, 0.04, 0.04], b: [0.04, -0.04, -0.04], r: 0.02, color: '#3a3a40' },
+  ]},
+  greataxe: { name: 'greataxe', parts: [
+    { a: [-0.12, 0, 0], b: [0.72, 0, 0], r: 0.026, color: '#5a4433' },
+    { a: [0.62, 0.13, 0], b: [0.68, -0.11, 0], r: 0.06, color: '#8a8f99' },
+    { a: [0.62, 0.13, 0.001], b: [0.68, -0.11, -0.001], r: 0.055, color: '#a7adb8' },
+  ]},
+  warpick: { name: 'warpick', parts: [
+    { a: [0, 0, 0], b: [0.46, 0, 0], r: 0.024, color: '#4a3a2c' },
+    { a: [0.46, 0.02, 0], b: [0.6, 0.14, 0], r: 0.028, color: '#9aa1ab' },
+    { a: [0.46, 0.02, 0], b: [0.38, 0.12, 0], r: 0.02, color: '#7a7f8a' },
+  ]},
+  javelin: { name: 'javelin', parts: [
+    { a: [-0.3, 0, 0], b: [0.7, 0, 0], r: 0.014, color: '#a08a63' },
+    { a: [0.7, 0, 0], b: [0.85, 0, 0], r: 0.024, color: '#cfd6e4' },
+  ]},
+  tome: { name: 'tome', parts: [
+    { a: [0.08, 0.05, 0], b: [0.08, -0.05, 0], r: 0.075, color: '#6b3a2f' },
+    { a: [0.12, 0.05, 0], b: [0.12, -0.05, 0], r: 0.065, color: '#e6dcc4' },
+  ]},
+  orb: { name: 'orb', parts: [
+    { a: [0.02, 0, 0], b: [0.14, 0, 0], r: 0.02, color: '#4a4550' },
+    { a: [0.2, 0, 0], b: [0.2, 0, 0], r: 0.07, color: '#8fd6ff' },
+  ]},
+  cleaver: { name: 'cleaver', parts: [
+    { a: [0, 0, 0], b: [0.2, 0, 0], r: 0.022, color: '#4a3a2c' },
+    { a: [0.2, 0.07, 0], b: [0.52, 0.09, 0], r: 0.055, color: '#adb3bd' },
+  ]},
+};
+
 /** Held in the off hand. A shield is most of a knight. */
 const OFFHAND: Record<string, WeaponSpec> = {
   shield: { name: 'shield', parts: [
@@ -219,7 +253,16 @@ const OFFHAND: Record<string, WeaponSpec> = {
 export function weaponsFromWords(desc: string): { main?: WeaponSpec; off?: WeaponSpec } {
   const d = desc.toLowerCase();
   const SYNONYM: [RegExp, WeaponSpec][] = [
+    // longest, most specific match first — "greataxe" must never fall
+    // through to "axe", or the stated weapon and the drawn one disagree
+    [/greataxe|great axe|battleaxe|battle axe|double[- ]headed axe/, A3.greataxe],
     [/greatsword|claymore|zweihander|great sword/, A2.greatsword],
+    [/katana|nodachi|tachi|samurai sword/, A3.katana],
+    [/warpick|war pick|pick(axe)? of war|military pick/, A3.warpick],
+    [/javelin|throwing spear/, A3.javelin],
+    [/\btome\b|grimoire|spellbook|book of/, A3.tome],
+    [/\borb\b|crystal ball|sphere of/, A3.orb],
+    [/cleaver|butcher/, A3.cleaver],
     [/crossbow|arbalest/, A2.crossbow],
     [/longbow|shortbow|\bbow\b|archer/, A2.bow],
     [/scimitar|cutlass|sabre|saber|falchion/, A2.scimitar],
@@ -233,10 +276,9 @@ export function weaponsFromWords(desc: string): { main?: WeaponSpec; off?: Weapo
     [/staff|stave|quarterstaff/, ARMOURY.staff],
     [/\bcane\b|walking stick|\bcrook\b/, A2.cane],
     [/\bhammer\b/, ARMOURY.hammer],
-    [/\bsword\b|blade|longsword|shortsword/, ARMOURY.sword],
-    [/\baxe\b|hatchet|axeman|axemaster|cleaver/, ARMOURY.axe],
-    [/spear|pike|lance|javelin/, ARMOURY.spear],
-    [/tome|orb\b/, ARMOURY.staff],
+    [/\bsword|blade|longsword|shortsword/, ARMOURY.sword],
+    [/\baxe|hatchet/, ARMOURY.axe],
+    [/spear|pike|lance/, ARMOURY.spear],
     [/\bclub\b|cudgel|bludgeon/, ARMOURY.club],
   ];
   let main: WeaponSpec | undefined;

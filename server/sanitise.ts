@@ -87,6 +87,10 @@ export function sanitiseGenome(raw: unknown): Genome | null {
     delete (g as any).gear;
   }
 
+  // breath is an enum, not a string off the wire
+  const breath = (g as any).breath;
+  if (breath !== 'fire' && breath !== 'frost' && breath !== 'venom') delete (g as any).breath;
+
   // Temperament is NOT taken from the wire. It was clamped to 0..1 and
   // otherwise believed, which meant anyone could claim aggression 1, bravery 1
   // and speed 1 with no body to justify any of it — a straight cheat, and the

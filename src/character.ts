@@ -160,9 +160,19 @@ export const STRIKE_SHOOT: StrikeSpec = {
   ranged: { speed: 15, range: 12, size: 0.055, color: '#e8d9a8', arcing: false, trail: 6 },
 };
 
+/** Rear the head back and pour fire out of it. The projectile is the flame. */
+export const STRIKE_BREATH: StrikeSpec = {
+  duration: 1.05,
+  posts: [[-0.5, 0.55, 0], [0.9, 0.15, 0], [0.85, -0.1, 0]],
+  windup: 0.4, strike: 0.3, reachMin: 0.5, reachMax: 1.0, twist: 0.15,
+  limb: 'head', lunge: 0.1,
+  ranged: { speed: 6.5, range: 5, size: 0.17, color: '#ff9a3d', arcing: false, trail: 9 },
+};
+
 export const STRIKE_STYLES: Record<string, StrikeSpec> = {
   swipe: STRIKE_SWIPE, slam: STRIKE_SLAM, thrust: STRIKE_THRUST,
   bite: STRIKE_BITE, lash: STRIKE_LASH, cast: STRIKE_CAST, shoot: STRIKE_SHOOT,
+  breath: STRIKE_BREATH,
 };
 
 // kept for older callers
@@ -170,10 +180,21 @@ export const DEFAULT_STRIKE_LIGHT = STRIKE_SWIPE;
 export const DEFAULT_STRIKE_HEAVY = STRIKE_SLAM;
 
 /** What a creature should naturally do, given what it has and what it holds. */
-export function styleFor(weaponName: string | undefined, hasArms: boolean, hasTail: boolean): {
+export function styleFor(
+  weaponName: string | undefined, hasArms: boolean, hasTail: boolean, breath?: string,
+): {
   light: StrikeSpec; heavy: StrikeSpec;
 } {
   const w = (weaponName ?? '').toLowerCase();
+  // a breather leads with the bite and finishes with the flame
+  if (breath) {
+    const tint = breath === 'frost' ? '#9fd8ff' : breath === 'venom' ? '#9fe07a' : '#ff9a3d';
+    const heavy: StrikeSpec = {
+      ...STRIKE_BREATH,
+      ranged: { ...STRIKE_BREATH.ranged!, color: tint },
+    };
+    return { light: hasArms ? STRIKE_SWIPE : STRIKE_BITE, heavy };
+  }
   if (!hasArms) {
     return { light: STRIKE_BITE, heavy: hasTail ? STRIKE_LASH : STRIKE_BITE };
   }
@@ -232,7 +253,7 @@ export function makeCharacter(genome: Genome, kind: 'hero' | 'beast' = 'beast'):
     name: genome.name,
     kind,
     genome,
-    behaviors: defaultBehaviors(genome.gait, styleFor(weapon?.name ?? genome.name, hasArms, hasTail)),
+    behaviors: defaultBehaviors(genome.gait, styleFor(weapon?.name ?? genome.name, hasArms, hasTail, genome.breath)),
     weapon: migrateWeapon(genome.weapon),
     offhand: migrateWeapon(genome.offhand),
     gear: genome.gear,

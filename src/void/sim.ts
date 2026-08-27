@@ -219,6 +219,16 @@ function walk(a: Agent, dt: number, scale = 1): void {
   const step = a.speed * scale * dt;
   a.x += Math.cos(a.heading) * step;
   a.z += Math.sin(a.heading) * step;
+  // The homeward drift at the pit's edge must NEVER fire during a pursuit:
+  // it overwrites `aim` on the same frame the chase sets it, the heading
+  // settles halfway between the two, and the chaser orbits its target at
+  // ninety degrees forever. The pit's own wall was the kiter's bodyguard.
+  // Busy creatures get a hard boundary instead, and keep their aim.
+  if (a.state === 'approach' || a.state === 'fight' || a.state === 'flee') {
+    const r2 = Math.hypot(a.x, a.z);
+    if (r2 > 7.6) { a.x *= 7.6 / r2; a.z *= 7.6 / r2; }
+    return;
+  }
   // the void is a pool of light, not an infinite plane — drift back if they
   // wander out of frame, by aiming home rather than by a hard wall
   const r = Math.hypot(a.x, a.z);
@@ -368,6 +378,33 @@ export function beginStrike(a: Agent, heavy: boolean): void {
 function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, how?: string): void {
   if (a.hurtT > 0 || a.deadT >= 0) return;
 
+  // THE SHIELD DOES ITS JOB. A blow from the front, against a creature
+  // carrying one, has a real chance of being taken on the shield — arrows
+  // included, which is the honest counter to kiting: summon a shield-bearer
+  // and walk through the arrows. From behind it helps nobody.
+  const held = a.ch.offhand?.name ?? '';
+  const shieldy = held === 'shield' ? 0.55 : held === 'buckler' ? 0.3 : 0;
+  if (shieldy > 0) {
+    const toThreat = Math.atan2(fromZ - a.z, fromX - a.x);
+    // generous arc: a shield is carried, not bolted to the sternum
+    const frontal = Math.cos(toThreat - a.heading) > -0.2;
+    if (frontal && Math.random() < shieldy) {
+      a.hurtT = 0.35;
+      jolt(a.sec, 0.2, toThreat - a.heading, a.bulk);
+      // A block is not just a no: the bearer sets the shield and STEPS IN.
+      // Every ordinary hit knocks its victim backwards, which is why kiting
+      // was self-reinforcing — each arrow pushed the chaser away. Behind a
+      // shield the arrows become the rhythm you advance to.
+      a.x += Math.cos(toThreat) * 0.24;
+      a.z += Math.sin(toThreat) * 0.24;
+      sim.events.push({
+        kind: 'hit', t: sim.t, x: a.x, z: a.z,
+        actor: by ? whoOf(by) : undefined, target: whoOf(a), how: 'blocked',
+      });
+      return;
+    }
+  }
+
   // Not every blow is a wound. A quick thing rolls with it — it still gets
   // knocked about, it just does not bleed for it. Without this every exchange
   // was a countdown and nothing in the pit ever lived long enough to have a
@@ -412,8 +449,13 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
   }
   // knocked back along the blow
   const d = Math.hypot(a.x - fromX, a.z - fromZ) || 1;
-  a.x += ((a.x - fromX) / d) * 0.35;
-  a.z += ((a.z - fromZ) / d) * 0.35;
+  // A maul shoves you; an arrow does not. Ranged hits used to knock their
+  // victim half a metre backwards, which made kiting self-reinforcing — every
+  // arrow pushed the chaser back onto the treadmill. Projectiles sting now;
+  // only a blow with a body behind it moves one.
+  const shove = (how === 'bolt' || how === 'spell') ? 0.06 : 0.35;
+  a.x += ((a.x - fromX) / d) * shove;
+  a.z += ((a.z - fromZ) / d) * shove;
   const common = {
     t: sim.t, x: a.x, z: a.z,
     actor: by ? whoOf(by) : undefined,
@@ -576,14 +618,31 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         a.aim = Math.atan2(t.z - a.z, t.x - a.x);
         if (d > preferredRange(a)) {
           a.move += (1 - a.move) * Math.min(1, 5 * dt);
-          walk(a, dt, 1.25); // a purposeful stride
+          walk(a, dt, 1.32); // a purposeful stride
+          // Swing ON THE WAY IN. A backpedalling target ping-pongs its chaser
+          // between approach and fight so fast that fight's settling time
+          // never elapses — a tank chased an archer for seventeen seconds,
+          // touched one metre, and threw nothing at all. If it is in reach,
+          // it is in reach.
+          if (d < reachOf(a) + 0.5 && a.strikeT < 0
+            && Math.random() < dt / (STRIKE_PERIOD * (1.1 - a.temper.aggression * 0.5))) {
+            beginStrike(a, Math.random() < 0.3);
+            sim.events.push({
+              kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
+              target: whoOf(t), how: styleName(a), range: d,
+            });
+          }
         } else {
           setState(a, 'fight');
         }
         // give up on something that will not stand and fight — a chase that
         // never ends is a death sentence for whichever tires first
         if (a.stateT > 5 && t.state === 'flee') { a.target = null; setState(a, 'wander'); }
-        if (a.stateT > 12) { a.target = null; setState(a, 'wander'); }
+        // ...but NEVER give up on something that is standing there shooting
+        // you. The approach timeout made every archer unreachable: twelve
+        // seconds of backpedalling, the chaser shrugs and wanders off, and
+        // the arrows carry on. If it is fighting you, you keep coming.
+        if (a.stateT > 12 && t.state !== 'fight') { a.target = null; setState(a, 'wander'); }
         break;
       }
       case 'fight': {
