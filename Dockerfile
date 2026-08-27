@@ -2,6 +2,10 @@
 # there is one service, one domain, and the websocket is same-origin.
 FROM node:22-slim AS build
 WORKDIR /app
+# Railway exposes the commit sha as a build arg — without this the corner
+# build tag reads "dev" in production, which defeats its entire purpose
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
 COPY package*.json ./
 RUN npm ci
 COPY . .
