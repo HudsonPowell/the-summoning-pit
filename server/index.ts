@@ -31,6 +31,9 @@ const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
 const SAVE_EVERY = 5;                 // seconds
 const MAX_PER_OWNER = 3;              // living creatures one key may hold
 const SUMMON_COOLDOWN = 20;           // seconds between summons from one key
+const STIR_CAP = 7;                   // house creatures a stirred pit may hold
+const STIR_GAP = 1500;                // ms between stirs, from anyone
+let lastStir = 0;
 
 // --- the cast ---------------------------------------------------------------
 
