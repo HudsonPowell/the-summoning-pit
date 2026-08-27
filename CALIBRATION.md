@@ -1205,3 +1205,19 @@ plainly did not exist, from a build that reported no errors at all. If tsc is
 silent about an obvious error, ask what it is looking at.
 
 `include` now covers `server`. Adding it surfaced nothing else, which is luck.
+
+## a refusal that says nothing is worse than a refusal (2026-08-27)
+
+Two paths in the server refused a summon by `return`ing with no reply:
+a key that failed `looksLikeKey`, and a request inside the double-press gap.
+The client sat on "summoning…" forever. Anyone whose key never arrived — a
+blocked localStorage, a socket that reconnected before the key landed — simply
+could not play, could not be told why, and looked to everyone else like the pit
+was broken for them personally.
+
+Every path answers now, and a missing key is repaired rather than rejected: the
+server mints one, sends it, and says try again. The client also gives up on its
+own after 45s rather than hanging on a lost packet.
+
+**A silent `return` in a request handler is a bug.** Every branch either does
+the thing or says why not.

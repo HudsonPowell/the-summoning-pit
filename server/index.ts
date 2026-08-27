@@ -234,7 +234,17 @@ wss.on('connection', ws => {
     }
 
     if (m.t === 'summon') {
-      if (!looksLikeKey(m.key)) return;
+      // A summon with no usable key returned SILENTLY, so the client sat on
+      // "summoning…" forever with nothing to show for it. Anyone whose key
+      // never arrived — a blocked localStorage, a socket that reconnected —
+      // simply could not play, and could not be told why either.
+      if (!looksLikeKey(m.key)) {
+        const key = mintKey();
+        ws.send(JSON.stringify({ t: 'key', key, owner: ownerOf(key) }));
+        ws.send(JSON.stringify({ t: 'nope', why: 'no key — try that again' }));
+        console.log('[pit] summon with no key; minted one');
+        return;
+      }
       void handleSummon(ws, m);
       return;
     }
@@ -283,7 +293,8 @@ function refuse(ws: WebSocket, owner: string, why: string): void {
 async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   const owner = ownerOf(m.key);
   const since = sim.t - (lastSummon.get(owner) ?? -1e9);
-  if (since < SUMMON_GAP) return;   // a double-press, not a request
+  // also used to return silently, which is indistinguishable from a dead pit
+  if (since < SUMMON_GAP) { refuse(ws, owner, 'just a moment'); return; }
   const held = penaltyUntil.get(owner) ?? 0;
   if (sim.t < held) {
     refuse(ws, owner, `that one did not last — ${Math.ceil(held - sim.t)}s`);

@@ -1,504 +1,370 @@
-// PIT WIRE — an alphabet held as bending instructions, not as outlines.
+// PIT WIRE — an alphabet cut out of the 1740 plate.
 //
-// The source is a plate of brass wire inlaid into wood, 1740. It shows figures
-// only, so everything here is extrapolated — but the plate is unusually strict
-// about how it is made, and the whole face is those rules and nothing else:
+// Earlier versions of this file drew letters in the plate's manner. They were
+// wrong in a way that was hard to argue with: a rule set is a description of a
+// hand, and a description is not the hand. So nothing here is drawn. The plate
+// is traced into lengths of centreline (see farm/type/extract.py -> plate.ts),
+// and every glyph is those lengths, cut at a stated point and put somewhere —
+// the same pieces of brass, moved about.
 //
-//   R1  CIRCLE OR LINE, NOTHING BETWEEN. Wire is bent round a mandrel or left
-//       alone. Every curve on the plate is a true circle — the 6's bulb, the
-//       5's bowl, the 0 — and every straight is dead straight. There are no
-//       transitional curves anywhere, and the join between the two is abrupt.
+// What that buys is not authenticity for its own sake. It is that the parts
+// carry things no rule captures: the way the 1's arch is a hair lopsided, the
+// slight bow in a run the smith called straight, the exact tightness of the 7's
+// mitre, the flick where a leg was cut. Those survive being cut and reused.
 //
-//   R2  TWO BENDS ONLY: the fullest arc the wire will take, or a hammered
-//       mitre (the 7's apex, the 4's vertex). Nothing in between.
+// The parts bin, and what each is good for:
 //
-//   R3  ONE PIECE, AND THE STEM ROLLS INTO THE BOWL. This is the rule the
-//       plate is most emphatic about and the easiest to miss. Look at the 10:
-//       it is an n and a b, and the b's stem does not stop and hand over to a
-//       separate ring — it runs down and rolls straight into a circle tangent
-//       to itself. The 6 does it, the 9 does it, the 2 does it. A glyph is cut
-//       into separate pieces only where one wire genuinely could not reach:
-//       the 4's stem crossing its own bar, the 5's crook above its bowl.
+//   one.arch     the 1 — a full n. Arches for n m h r, flipped for u.
+//   one.arch.b   the second 1, narrower. The other arch.
+//   ten          an n whose right leg runs on down, plus the b's bowl.
+//   six          a long shallow sweep, and a small tight bulb.
+//   nine         a bulb with a long straight tail: g, a, q, 9.
+//   ring         the 0. A true circle with a seam: o, c, e.
+//   five.bowl    a bowl open at one side, with two cut ends.
+//   five.crook   a shallow arc that hooks over: f t j r.
+//   seven        bar, mitre, long diagonal — two thirds of a z, and every k v w x y.
+//   four.bent    a dead straight diagonal and a dead straight bar.
+//   four.stem    a stem. bar.tall / bar.short, shorter ones.
+//   two three eight   bowls and shoulders, for s and the figures.
 //
-//   R4  SMALL ROUND PARTS ON LONG LIMBS. The 6's bulb is a third of its
-//       height; the 9's tail is longer than its bowl is wide; the 10's b hangs
-//       a small loop off a tall stem. Round parts are never generous.
-//
-//   R5  IT WRAPS PAST WHERE IT SHOULD AND STOPS SHORT OF CLOSING. Loops go
-//       round some 340 degrees and leave a seam. The 9's bowl never closes,
-//       the 0 has a visible gap. Nothing is sealed.
-//
-//   R6  THE SMITH OVERSHOOTS. The 4's stem runs well past its own crossbar,
-//       top and bottom. Free ends stop where the wire ran out, bluntly.
-//
-//   R7  NOTHING IS THE SAME HEIGHT. The 4 is a head shorter than the 6, the 7
-//       overtops both. Applied per glyph at layout time, not written in here.
-//
-// The one thing the plate does NOT have is a shaky line. The strokes are
-// smooth and confident; all the irregularity is in the forms, the sizes and
-// the seating.
-//
-// Two cases, because the plate's figures are lowercase in spirit — the 1 IS an
-// n, the 10 IS an n beside a b, the 0 IS an o. So the lowercase is the direct
-// extrapolation and the caps are the ones that had to be argued for.
-//
-// Em space: baseline y=0, cap height y=1, x-height 0.60, ink from x=0.
+// Ranges are arc length along the piece, 0..1. Run `python3 farm/type/_atlas.py`
+// to print the plate with those numbers on it.
 
-import { Node, Strand, arc, deg } from './rod';
+import { Strand } from './rod';
+import { Cut, resolve, strandOf } from './cuts';
+import { PLATE_GAUGE } from './plate';
 
 export interface Glyph {
   adv: number;
   strands: Strand[];
-  /** Nails through the inlay. Radius is a multiple of the wire gauge. */
   rivets?: { x: number; y: number; r?: number }[];
 }
 
-const MITRE = 0.07;   // hammered hard against the pliers
-const EASY = 0.55;
-const OV = 0.07;      // R6: how far a free end runs past where it had to stop
-const SEAM = 344;     // R5: degrees a loop turns before it gives up
-
 export const CAP = 1.0;
-export const XH = 0.60;
-export const ASC = 1.02;
+export const XH = 0.70;      // large, because everything on the plate is
+export const ASC = 1.0;
 export const DESC = -0.26;
-/** Wire gauge as a fraction of cap height, measured off the plate. */
-export const GAUGE = 0.078;
+export const GAUGE = PLATE_GAUGE;
 
-/** side bearing, both sides */
-const SB = 0.085;
-const gl = (w: number, strands: Strand[], rivets?: Glyph['rivets']): Glyph =>
-  ({ adv: w + SB * 2, strands, rivets });
+const SB = 0.085;            // side bearing, both sides
 
-const s = (nodes: Node[], z = 0): Strand => ({ nodes, z });
-
-/** R1: a true circle, or a piece of one. Every curve in this face is made here. */
-const ring = (cx: number, cy: number, r: number, a0: number, a1: number, n?: number) =>
-  arc(cx, cy, r, r, deg(a0), deg(a1), n ?? Math.max(10, Math.round(Math.abs(a1 - a0) / 9)));
+// --- scales, all derived from what the pieces actually measure -------------
+const ARCH = 0.70 / 0.85;    // one.arch / one.arch.b -> x-height
+const ARCH_C = 1.00 / 0.85;  // ...and to cap height
+const TEN = 0.70 / 0.88;
+const RING = 0.70 / 0.29;    // the 0 -> an o
+const RING_C = 1.00 / 0.29;
+const BOWL = 0.60 / 0.38;    // ten#1 -> a lowercase bowl
+const BOWL_C = 0.56 / 0.38;
+const SIXB = 0.56 / 0.37;    // six#1 -> a lowercase bowl
+const STEM_A = 1.00 / 0.68;  // four.stem -> an ascender
+const STEM_X = 0.70 / 0.48;  // bar.short -> an x-height stem
+const DIAG = 0.70 / 0.44;    // four.bent#0 -> an x-height diagonal
+const DIAG_C = 1.00 / 0.44;
+const BAR = 0.44 / 0.35;     // four.bent#1 -> a crossbar
+const SEV = 0.70 / 0.95;     // seven, dip trimmed -> x-height
+const SEV_C = 1.00 / 0.95;
+const CROOK = 0.62 / 0.36;
 
 /**
- * R3, as a function. A vertical stem at x0 arrives at height cy and rolls into
- * a circle of radius r tangent to it, on the given side, continuing in the
- * direction it was already travelling — so the tangent carries through and the
- * wire never has to be cut. It comes back round to within a seam of where it
- * started.
+ * Resolve a glyph's cuts, then shift the lot so the ink starts at x = 0.
  *
- * Append it straight after the stem's last node and the two are one piece.
+ * The shift is applied to the whole group at once, which is the only way a
+ * figure kept whole — the 4's three butted pieces, the 5's crook above its
+ * bowl — keeps the spacing the smith left between them.
  */
-const roll = (
-  x0: number, cy: number, r: number,
-  side: 'R' | 'L', going: 'up' | 'down', sweep = SEAM,
-): Node[] => {
-  // the tangent point sits at 180° on a circle to the right, 0° on one to the left
-  const start = side === 'R' ? 180 : 0;
-  // at either tangent point one sense of travel is up and the other is down
-  const forward = (side === 'R') === (going === 'up') ? -1 : 1;
-  const cx = side === 'R' ? x0 + r : x0 - r;
-  return ring(cx, cy, r, start, start + forward * sweep);
-};
+function G(cuts: Cut[], rivets?: { x: number; y: number; r?: number }[]): Glyph {
+  const pts = cuts.map(resolve);
+  let x0 = Infinity, x1 = -Infinity;
+  for (const s of pts) for (const p of s) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; }
+  if (!isFinite(x0)) { x0 = 0; x1 = 0; }
+  const dx = SB - x0;
+  return {
+    adv: (x1 - x0) + SB * 2,
+    strands: pts.map((s, i) => ({
+      nodes: s.map(p => ({ x: p.x + dx, y: p.y })), raw: true, z: cuts[i].z ?? 0,
+    })),
+    rivets: rivets?.map(r => ({ ...r, x: r.x + dx })),
+  };
+}
+
+/** A figure kept exactly as the plate has it, only slid left to x = 0. */
+const whole = (p: string, n: number, rivets?: { x: number; y: number; r?: number }[]) =>
+  G(Array.from({ length: n }, (_, i) => ({ p, i, a: 'none' as const, z: i * 0.004 })), rivets);
 
 export const GLYPHS: Record<string, Glyph> = {
-  ' ': { adv: 0.32, strands: [] },
+  ' ': { adv: 0.34, strands: [] },
 
-  // ======================================================================
-  // CAPS — the same rules, argued onto a skeleton the plate never shows
-  // ======================================================================
+  // ====================================================================
+  // FIGURES — the plate itself, untouched. The 7 still dips below the
+  // line and the 4 is still shorter than the 6, because they are the
+  // same wire.
+  // ====================================================================
 
-  A: gl(0.68, [
-    s([{ x: 0.02, y: -OV }, { x: 0.35, y: 1.01, round: MITRE }, { x: 0.68, y: -OV }]),
-    s([{ x: 0.04, y: 0.27 }, { x: 0.66, y: 0.27 }], 0.006),   // R6: past both legs
+  '1': whole('one.arch', 1),
+  '2': whole('two', 1),
+  '3': whole('three', 4),
+  '4': G([{ p: 'four.bent', i: 0, a: 'none' }, { p: 'four.bent', i: 1, a: 'none' },
+          { p: 'four.stem', i: 0, a: 'none', z: 0.009 }],
+         [{ x: 3.742, y: 0.885, r: 0.55 }]),
+  '5': G([{ p: 'five.crook', i: 0, a: 'none' }, { p: 'five.bowl', i: 0, a: 'none' }],
+         [{ x: 4.347, y: 0.702, r: 0.55 }]),
+  '6': whole('six', 3),
+  '7': whole('seven', 1),
+  '8': G([
+    { p: 'eight', i: 0, s: 1.18, a: 'cb', at: [0.24, 0.46] },
+    { p: 'eight', i: 0, fy: true, fx: true, s: 1.30, a: 'ct', at: [0.24, 0.48], z: 0.006 },
+  ]),
+  '9': whole('nine', 1),
+  '0': G([{ p: 'ring', s: 0.86 / 0.29, a: 'bl', at: [0, 0.02] }]),
+
+  // ====================================================================
+  // LOWERCASE — the plate's own vocabulary, so almost every letter is a
+  // whole piece with at most one companion.
+  // ====================================================================
+
+  // the 1, entire
+  n: G([{ p: 'one.arch', s: ARCH, a: 'bl', at: [0, 0] }]),
+
+  // the 1 twice, sharing a leg, exactly as wire laid in a groove would
+  m: G([
+    { p: 'one.arch', s: ARCH, a: 'bl', at: [0, 0] },
+    { p: 'one.arch.b', from: 0.14, s: ARCH, a: 'bl', at: [0.64, 0], z: 0.006 },
   ]),
 
-  // one wire: up the stem, roll into the lower bowl, keep going up, roll into
-  // the upper one. Not a post with two rings butted against it.
-  B: gl(0.60, [
-    s([
-      { x: 0, y: -OV }, { x: 0, y: 0.25 },
-      ...roll(0, 0.25, 0.28, 'R', 'up'),
-      { x: 0, y: 0.76 },
-      ...roll(0, 0.76, 0.235, 'R', 'up'),
-    ]),
+  // an ascender with the 1's shoulder hung on it
+  h: G([
+    { p: 'four.stem', s: STEM_A, a: 'bl', at: [0, 0] },
+    { p: 'one.arch', from: 0.24, s: ARCH, a: 'bl', at: [0.01, 0], z: 0.006 },
   ]),
 
-  C: gl(0.82, [
-    { nodes: ring(0.43, 0.455, 0.43, 54, 302),
-      curlA: { turn: deg(30), r: 0.26, decay: 1 },
-      curlB: { turn: deg(-52), r: 0.22, decay: 0.85 } },
+  // the 1 upside down
+  u: G([{ p: 'one.arch', fy: true, s: ARCH, a: 'bl', at: [0, 0] }]),
+
+  // the 1's shoulder, snipped where it starts to come back down
+  r: G([
+    { p: 'bar.short', s: STEM_X, a: 'bl', at: [0, 0] },
+    { p: 'one.arch', from: 0.24, to: 0.60, s: ARCH, a: 'bl', at: [0.01, 0.26], z: 0.006 },
   ]),
 
-  D: gl(0.62, [
-    s([
-      { x: 0, y: -OV }, { x: 0, y: 1.0 },
-      ...ring(0.02, 0.49, 0.51, 90, -90),
-      { x: -0.02, y: -0.01 },
-    ]),
+  // the 10's b, put back together on a proper ascender
+  b: G([
+    { p: 'four.stem', s: STEM_A, a: 'bl', at: [0, 0] },
+    { p: 'ten', i: 1, s: BOWL, a: 'cl', at: [0.02, 0.30], z: 0.006 },
+  ]),
+  d: G([
+    { p: 'four.stem', s: STEM_A, a: 'br', at: [0.35, 0] },
+    { p: 'ten', i: 1, fx: true, s: BOWL, a: 'cr', at: [0.33, 0.30], z: 0.006 },
+  ]),
+  p: G([
+    { p: 'four.stem', s: 0.96 / 0.68, a: 'bl', at: [0, DESC] },
+    { p: 'ten', i: 1, s: BOWL, a: 'cl', at: [0.02, 0.30], z: 0.006 },
+  ]),
+  q: G([
+    { p: 'four.stem', s: 0.96 / 0.68, a: 'br', at: [0.35, DESC] },
+    { p: 'ten', i: 1, fx: true, s: BOWL, a: 'cr', at: [0.33, 0.30], z: 0.006 },
   ]),
 
-  E: gl(0.54, [
-    s([{ x: 0.55, y: 1 }, { x: 0, y: 1, round: MITRE }, { x: 0, y: 0, round: MITRE }, { x: 0.58, y: 0 }]),
-    s([{ x: -0.05, y: 0.53 }, { x: 0.44, y: 0.53 }], 0.006),
+  // the 9, entire: a bulb with a long tail already attached
+  g: G([{ p: 'nine', s: 0.96 / 1.06, a: 'bl', at: [0, DESC] }]),
+
+  // the 6's bulb, turned to close against a stem
+  a: G([
+    { p: 'six', i: 1, fx: true, s: SIXB, a: 'bl', at: [0, 0] },
+    { p: 'bar.short', s: STEM_X, a: 'br', at: [0.40, 0], z: 0.006 },
   ]),
 
-  F: gl(0.54, [
-    s([{ x: 0.56, y: 1 }, { x: 0, y: 1, round: MITRE }, { x: 0, y: -OV }]),
-    s([{ x: -0.05, y: 0.56 }, { x: 0.42, y: 0.56 }], 0.006),
+  // the 0
+  o: G([{ p: 'ring', s: RING, a: 'bl', at: [0, 0] }]),
+
+  // the 0 with the right-hand quarter cut out
+  c: G([{ p: 'ring', from: 0.17, to: 0.95, s: RING, a: 'bl', at: [0, 0] }]),
+
+  // ...and the same, with the 4's crossbar laid across it
+  e: G([
+    { p: 'ring', from: 0.19, to: 1, s: RING, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.62 / 0.35, a: 'cl', at: [0.01, 0.36], z: 0.006 },
   ]),
 
-  G: gl(0.86, [
-    s([
-      ...ring(0.43, 0.455, 0.43, 56, 350),
-      { x: 0.88, y: 0.52, round: EASY },
-      { x: 0.44, y: 0.52 },
-    ]),
+  // the 5's crook, which is what the wire does when it runs out of letter
+  f: G([
+    { p: 'four.stem', s: 0.86 / 0.68, a: 'bl', at: [0.12, 0] },
+    { p: 'five.crook', s: 0.52, a: 'e', at: [0.13, 0.84], z: 0.006 },
+    { p: 'four.bent', i: 1, s: BAR, a: 'cl', at: [-0.03, 0.66], z: 0.009 },
+  ]),
+  t: G([
+    { p: 'four.stem', s: 0.92 / 0.68, a: 'bl', at: [0.14, -0.02] },
+    { p: 'four.bent', i: 1, s: BAR, a: 'cl', at: [-0.02, 0.68], z: 0.006 },
+  ]),
+  j: G([
+    { p: 'bar.short', s: 0.62 / 0.48, a: 'bl', at: [0.20, 0.02] },
+    { p: 'five.crook', s: 0.48, a: 's', at: [0.21, 0.05], z: 0.006 },
+  ], [{ x: 0.20, y: 0.86, r: 0.55 }]),
+
+  i: G([{ p: 'bar.short', s: STEM_X, a: 'bl', at: [0, 0] }], [{ x: 0.01, y: 0.86, r: 0.55 }]),
+  l: G([{ p: 'four.stem', s: STEM_A, a: 'bl', at: [0, 0] }]),
+
+  k: G([
+    { p: 'four.stem', s: STEM_A, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 0, fx: true, s: 0.40 / 0.44, a: 'tr', at: [0.44, 0.70], z: 0.006 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.34 / 0.44, a: 'tl', at: [0.09, 0.34], z: 0.009 },
   ]),
 
-  H: gl(0.62, [
-    s([{ x: 0, y: -OV }, { x: 0, y: 1 + OV }]),
-    s([{ x: 0.62, y: -OV }, { x: 0.62, y: 1 + OV }]),
-    s([{ x: -0.05, y: 0.53 }, { x: 0.67, y: 0.53 }], 0.006),
+  // the 3's two bowls, the top one turned over
+  s: G([
+    { p: 'three', i: 0, fx: true, s: 1.24, a: 'tl', at: [0, 0.70] },
+    { p: 'three', i: 1, s: 1.24, a: 'bl', at: [0, 0], z: 0.006 },
   ]),
 
-  I: gl(0.03, [s([{ x: 0.015, y: -OV }, { x: 0.015, y: 1 + OV }])]),
-
-  J: gl(0.54, [
-    { nodes: [{ x: 0.54, y: 1 + OV }, { x: 0.54, y: 0.30 }],
-      curlB: { turn: deg(-186), r: 0.23, decay: 1 } },
+  // the 7's long diagonal, twice
+  v: G([
+    { p: 'seven', from: 0.06, to: 0.62, fx: true, s: 0.60, a: 'br', at: [0.30, 0] },
+    { p: 'seven', from: 0.06, to: 0.62, s: 0.60, a: 'bl', at: [0.30, 0], z: 0.006 },
+  ]),
+  w: G([
+    { p: 'seven', from: 0.06, to: 0.62, fx: true, s: 0.58, a: 'br', at: [0.28, 0] },
+    { p: 'seven', from: 0.06, to: 0.62, s: 0.58, a: 'bl', at: [0.28, 0], z: 0.006 },
+    { p: 'seven', from: 0.06, to: 0.62, fx: true, s: 0.58, a: 'br', at: [0.84, 0], z: 0.009 },
+    { p: 'seven', from: 0.06, to: 0.62, s: 0.58, a: 'bl', at: [0.84, 0], z: 0.012 },
+  ]),
+  x: G([
+    { p: 'four.bent', i: 0, s: DIAG, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 0, fx: true, s: DIAG, a: 'br', at: [0.60, 0], z: 0.009 },
+  ]),
+  y: G([
+    { p: 'seven', from: 0.06, to: 0.62, s: 0.96 / 1.05, a: 'bl', at: [0.14, DESC] },
+    { p: 'four.bent', i: 0, fx: true, s: 0.46 / 0.44, a: 'tl', at: [0, 0.70], z: 0.009 },
   ]),
 
-  K: gl(0.60, [
-    s([{ x: 0, y: -OV }, { x: 0, y: 1 + OV }]),
-    s([{ x: 0.61, y: 1.02 }, { x: 0.02, y: 0.42, round: MITRE }, { x: 0.63, y: -OV }], 0.006),
+  // the 7 IS the top two thirds of a z
+  z: G([
+    { p: 'seven', from: 0.08, s: SEV, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.50 / 0.35, a: 'bl', at: [-0.02, 0], z: 0.006 },
   ]),
 
-  L: gl(0.50, [
-    s([{ x: 0, y: 1 + OV }, { x: 0, y: 0, round: MITRE }, { x: 0.53, y: 0 }]),
+  // ====================================================================
+  // CAPS — the same bin, opened wider
+  // ====================================================================
+
+  A: G([
+    { p: 'seven', from: 0.06, to: 0.66, fx: true, s: 0.88, a: 'br', at: [0.36, 0] },
+    { p: 'seven', from: 0.06, to: 0.66, s: 0.88, a: 'bl', at: [0.36, 0], z: 0.006 },
+    { p: 'four.bent', i: 1, s: 0.56 / 0.35, a: 'cl', at: [0.06, 0.27], z: 0.009 },
   ]),
-
-  M: gl(0.80, [
-    s([{ x: 0, y: -OV }, { x: 0, y: 1.01, round: MITRE }, { x: 0.40, y: 0.24, round: 0.09 },
-       { x: 0.80, y: 1.01, round: MITRE }, { x: 0.80, y: -OV }]),
+  B: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'ten', i: 1, s: 0.50 / 0.38, a: 'cl', at: [0.02, 0.745] },
+    { p: 'six', i: 1, fy: true, s: 0.54 / 0.37, a: 'cl', at: [0.02, 0.26], z: 0.006 },
   ]),
-
-  N: gl(0.62, [
-    s([{ x: 0, y: -OV }, { x: 0, y: 1.01, round: MITRE }, { x: 0.62, y: -0.01, round: MITRE },
-       { x: 0.62, y: 1 + OV }]),
+  C: G([{ p: 'ring', from: 0.17, to: 0.95, s: RING_C, a: 'bl', at: [0, 0] }]),
+  D: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'ring', from: 0.62, to: 1.12, fx: true, s: RING_C, sy: RING_C, a: 'cl', at: [0.01, 0.50], z: 0.006 },
   ]),
-
-  O: gl(0.86, [s(ring(0.43, 0.455, 0.43, 100, 100 - SEAM - 8))]),
-
-  // R3: the stem runs up and rolls into the bowl, and stops there — the bowl
-  // is what makes the top, exactly as the plate's b works.
-  P: gl(0.60, [
-    s([
-      { x: 0, y: -OV }, { x: 0, y: 0.735 },
-      ...roll(0, 0.735, 0.265, 'R', 'up'),
-    ]),
+  E: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.56 / 0.35, a: 'cl', at: [-0.02, 1.0], z: 0.006 },
+    { p: 'three', i: 2, s: 0.48 / 0.51, a: 'cl', at: [-0.02, 0.52], z: 0.009 },
+    { p: 'four.bent', i: 1, s: 0.58 / 0.35, a: 'cl', at: [-0.02, 0.0], z: 0.012 },
   ]),
-
-  Q: gl(0.86, [
-    s(ring(0.43, 0.455, 0.43, 100, 100 - SEAM - 8)),
-    s([{ x: 0.48, y: 0.20 }, { x: 0.94, y: -0.18 }], 0.009),
+  F: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.56 / 0.35, a: 'cl', at: [-0.02, 1.0], z: 0.006 },
+    { p: 'three', i: 2, s: 0.46 / 0.51, a: 'cl', at: [-0.02, 0.55], z: 0.009 },
   ]),
-
-  R: gl(0.64, [
-    s([
-      { x: 0, y: -OV }, { x: 0, y: 0.75 },
-      ...roll(0, 0.75, 0.25, 'R', 'up'),
-    ]),
-    s([{ x: 0.08, y: 0.53 }, { x: 0.66, y: -OV }], 0.006),
+  G: G([
+    { p: 'ring', from: 0.17, to: 0.99, s: RING_C, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.42 / 0.35, a: 'cr', at: [1.02, 0.50], z: 0.006 },
   ]),
-
-  S: gl(0.62, [
-    s([
-      ...ring(0.31, 0.725, 0.28, -38, 202),
-      ...ring(0.31, 0.265, 0.29, 22, -202),
-    ]),
+  H: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'four.stem.b', s: 1.47, a: 'bl', at: [0.62, 0] },
+    { p: 'three', i: 2, s: 0.68 / 0.51, a: 'cl', at: [-0.03, 0.53], z: 0.009 },
   ]),
-
-  T: gl(0.58, [
-    s([{ x: 0, y: 1 }, { x: 0.58, y: 1 }]),
-    s([{ x: 0.29, y: 1 + OV }, { x: 0.29, y: -OV }], 0.006),
+  I: G([{ p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] }]),
+  J: G([
+    { p: 'four.stem', s: 1.28 / 0.68, a: 'bl', at: [0.34, 0.02] },
+    { p: 'five.crook', s: 0.72, a: 's', at: [0.35, 0.06], z: 0.006 },
   ]),
-
-  U: gl(0.62, [
-    s([
-      { x: 0, y: 1 + OV }, { x: 0, y: 0.31 },
-      ...ring(0.31, 0.31, 0.31, 180, 360),
-      { x: 0.62, y: 1 + OV },
-    ]),
+  K: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 0, fx: true, s: 0.56 / 0.44, a: 'tr', at: [0.60, 1.0], z: 0.006 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.48 / 0.44, a: 'tl', at: [0.07, 0.48], z: 0.009 },
   ]),
-
-  V: gl(0.64, [
-    s([{ x: 0, y: 1 + OV }, { x: 0.32, y: -0.01, round: 0.08 }, { x: 0.64, y: 1 + OV }]),
+  L: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.54 / 0.35, a: 'cl', at: [-0.02, 0.0], z: 0.006 },
   ]),
-
-  W: gl(0.90, [
-    s([{ x: 0, y: 1 + OV }, { x: 0.22, y: -0.01, round: 0.08 }, { x: 0.45, y: 0.64, round: 0.10 },
-       { x: 0.68, y: -0.01, round: 0.08 }, { x: 0.90, y: 1 + OV }]),
+  M: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'seven', from: 0.06, to: 0.62, fx: true, s: 0.62, a: 'tl', at: [0.01, 1.0], z: 0.006 },
+    { p: 'seven', from: 0.06, to: 0.62, s: 0.62, a: 'tr', at: [0.72, 1.0], z: 0.009 },
+    { p: 'four.stem.b', s: 1.47, a: 'bl', at: [0.72, 0], z: 0.012 },
   ]),
-
-  X: gl(0.62, [
-    s([{ x: -0.03, y: 1.03 }, { x: 0.65, y: -0.03 }]),
-    s([{ x: -0.03, y: -0.03 }, { x: 0.65, y: 1.03 }], 0.009),
+  N: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'seven', from: 0.06, to: 0.70, fx: true, s: 0.82, a: 'tl', at: [0, 1.0], z: 0.006 },
+    { p: 'four.stem.b', s: 1.47, a: 'bl', at: [0.60, 0], z: 0.009 },
   ]),
-
-  Y: gl(0.62, [
-    s([{ x: 0, y: 1 + OV }, { x: 0.31, y: 0.45, round: 0.10 }, { x: 0.62, y: 1 + OV }]),
-    s([{ x: 0.31, y: 0.50 }, { x: 0.31, y: -OV }], 0.006),
+  O: G([{ p: 'ring', s: RING_C, a: 'bl', at: [0, 0] }]),
+  P: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'ten', i: 1, s: 0.54 / 0.38, a: 'cl', at: [0.02, 0.72], z: 0.006 },
   ]),
-
-  Z: gl(0.58, [
-    s([{ x: 0, y: 1 }, { x: 0.60, y: 1, round: MITRE }, { x: 0, y: 0, round: MITRE }, { x: 0.60, y: 0 }]),
+  Q: G([
+    { p: 'ring', s: RING_C, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 0, s: 0.44 / 0.44, a: 'tl', at: [0.62, 0.34], z: 0.009 },
   ]),
-
-  // ======================================================================
-  // LOWERCASE — the plate's own vocabulary. Its 1 is this n, its 10 is this
-  // n beside this b, its 0 is this o.
-  // ======================================================================
-
-  a: gl(0.58, [
-    s([
-      { x: 0.56, y: 0.62 }, { x: 0.56, y: 0.30 },
-      ...roll(0.56, 0.30, 0.28, 'L', 'down'),
-      { x: 0.56, y: -OV },
-    ]),
+  R: G([
+    { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
+    { p: 'ten', i: 1, s: 0.52 / 0.38, a: 'cl', at: [0.02, 0.73], z: 0.006 },
+    { p: 'four.bent', i: 0, s: 0.50 / 0.44, a: 'tl', at: [0.08, 0.50], z: 0.009 },
   ]),
-
-  // straight off the plate's 10
-  b: gl(0.60, [
-    s([
-      { x: 0, y: ASC }, { x: 0, y: 0.29 },
-      ...roll(0, 0.29, 0.29, 'R', 'down'),
-    ]),
+  S: G([
+    { p: 'three', i: 0, fx: true, s: 1.78, a: 'tl', at: [0, 1.0] },
+    { p: 'three', i: 1, s: 1.78, a: 'bl', at: [0, 0], z: 0.006 },
   ]),
-
-  c: gl(0.56, [
-    { nodes: ring(0.29, 0.30, 0.29, 54, 300),
-      curlA: { turn: deg(28), r: 0.18, decay: 1 },
-      curlB: { turn: deg(-50), r: 0.16, decay: 0.85 } },
+  T: G([
+    { p: 'four.bent', i: 1, s: 0.62 / 0.35, a: 'cb', at: [0.31, 1.0] },
+    { p: 'four.stem', s: 1.47, a: 'cb', at: [0.31, 0], z: 0.006 },
   ]),
-
-  d: gl(0.60, [
-    s([
-      { x: 0.58, y: ASC }, { x: 0.58, y: 0.29 },
-      ...roll(0.58, 0.29, 0.29, 'L', 'down'),
-    ]),
+  U: G([{ p: 'one.arch', fy: true, s: ARCH_C, a: 'bl', at: [0, 0] }]),
+  V: G([
+    { p: 'seven', from: 0.06, to: 0.66, fx: true, s: 0.86, a: 'br', at: [0.34, 0] },
+    { p: 'seven', from: 0.06, to: 0.66, s: 0.86, a: 'bl', at: [0.34, 0], z: 0.006 },
   ]),
-
-  // bar and circle are one wire: the bar runs left to right and springs off its
-  // own far end, up over the top and round to a terminal at the lower right
-  e: gl(0.58, [
-    s([{ x: 0, y: 0.34 }, ...ring(0.29, 0.34, 0.29, 0, 320)]),
+  W: G([
+    { p: 'seven', from: 0.06, to: 0.66, fx: true, s: 0.82, a: 'br', at: [0.32, 0] },
+    { p: 'seven', from: 0.06, to: 0.66, s: 0.82, a: 'bl', at: [0.32, 0], z: 0.006 },
+    { p: 'seven', from: 0.06, to: 0.66, fx: true, s: 0.82, a: 'br', at: [0.94, 0], z: 0.009 },
+    { p: 'seven', from: 0.06, to: 0.66, s: 0.82, a: 'bl', at: [0.94, 0], z: 0.012 },
   ]),
-
-  f: gl(0.42, [
-    s([{ x: 0.20, y: -OV }, { x: 0.20, y: 0.80 }, ...roll(0.20, 0.80, 0.19, 'R', 'up', 96)]),
-    s([{ x: -0.05, y: 0.58 }, { x: 0.44, y: 0.58 }], 0.006),
+  X: G([
+    { p: 'four.bent', i: 0, s: DIAG_C, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 0, fx: true, s: DIAG_C, a: 'br', at: [0.86, 0], z: 0.009 },
   ]),
-
-  g: gl(0.58, [
-    { nodes: [
-        { x: 0.56, y: 0.62 }, { x: 0.56, y: 0.30 },
-        ...roll(0.56, 0.30, 0.28, 'L', 'down'),
-        { x: 0.56, y: -0.12 },
-      ],
-      curlB: { turn: deg(-150), r: 0.16, decay: 0.8 } },
+  Y: G([
+    { p: 'four.bent', i: 0, s: 0.50 / 0.44, a: 'bl', at: [0.02, 0.50] },
+    { p: 'four.bent', i: 0, fx: true, s: 0.50 / 0.44, a: 'br', at: [0.88, 0.50], z: 0.006 },
+    { p: 'bar.short', s: 0.54 / 0.48, a: 'cb', at: [0.45, -0.02], z: 0.009 },
   ]),
-
-  // the plate's 1, hung off an ascender
-  h: gl(0.58, [
-    s([{ x: 0, y: ASC }, { x: 0, y: -OV }]),
-    s([{ x: 0.01, y: 0.30 }, ...ring(0.29, 0.33, 0.28, 180, 0), { x: 0.57, y: 0.31 },
-       { x: 0.58, y: -OV }], 0.006),
-  ]),
-
-  i: gl(0.04, [s([{ x: 0.02, y: 0.60 }, { x: 0.02, y: -OV }])], [{ x: 0.02, y: 0.83 }]),
-
-  j: gl(0.22, [
-    { nodes: [{ x: 0.20, y: 0.60 }, { x: 0.20, y: 0.02 }],
-      curlB: { turn: deg(-176), r: 0.18, decay: 1 } },
-  ], [{ x: 0.20, y: 0.83 }]),
-
-  k: gl(0.54, [
-    s([{ x: 0, y: ASC }, { x: 0, y: -OV }]),
-    s([{ x: 0.55, y: 0.62 }, { x: 0.02, y: 0.26, round: MITRE }, { x: 0.57, y: -OV }], 0.006),
-  ]),
-
-  l: gl(0.04, [s([{ x: 0.02, y: ASC }, { x: 0.02, y: -OV }])]),
-
-  m: gl(0.92, [
-    s([{ x: 0, y: 0.62 }, { x: 0, y: -OV }]),
-    s([{ x: 0.01, y: 0.30 }, ...ring(0.27, 0.33, 0.26, 180, 0), { x: 0.53, y: 0.31 },
-       { x: 0.53, y: -OV }], 0.006),
-    s([{ x: 0.54, y: 0.30 }, ...ring(0.72, 0.33, 0.26, 180, 0), { x: 0.98, y: 0.31 },
-       { x: 0.94, y: -OV }], 0.009),
-  ]),
-
-  // THE glyph: the plate's 1, unchanged
-  n: gl(0.56, [
-    s([
-      { x: 0, y: -OV }, { x: 0.005, y: 0.31 },
-      ...ring(0.28, 0.31, 0.28, 180, 0),
-      { x: 0.555, y: 0.30 }, { x: 0.56, y: -OV },
-    ]),
-  ]),
-
-  o: gl(0.58, [s(ring(0.29, 0.30, 0.29, 98, 98 - SEAM - 8))]),
-
-  p: gl(0.60, [
-    s([
-      { x: 0, y: 0.62 }, { x: 0, y: 0.29 },
-      ...roll(0, 0.29, 0.29, 'R', 'down'),
-      { x: -0.01, y: DESC },
-    ]),
-  ]),
-
-  q: gl(0.60, [
-    s([
-      { x: 0.58, y: 0.62 }, { x: 0.58, y: 0.29 },
-      ...roll(0.58, 0.29, 0.29, 'L', 'down'),
-      { x: 0.59, y: DESC },
-    ]),
-  ]),
-
-  r: gl(0.42, [
-    s([{ x: 0, y: 0.62 }, { x: 0, y: -OV }]),
-    s([{ x: 0.01, y: 0.30 }, ...ring(0.24, 0.36, 0.23, 180, 26)], 0.006),
-  ]),
-
-  s: gl(0.50, [
-    s([
-      ...ring(0.25, 0.435, 0.17, -38, 202),
-      ...ring(0.25, 0.165, 0.18, 22, -202),
-    ]),
-  ]),
-
-  t: gl(0.40, [
-    { nodes: [{ x: 0.20, y: 0.88 }, { x: 0.20, y: 0.08 }],
-      curlB: { turn: deg(-84), r: 0.14, decay: 0.85 } },
-    s([{ x: -0.05, y: 0.60 }, { x: 0.42, y: 0.60 }], 0.006),
-  ]),
-
-  u: gl(0.58, [
-    s([
-      { x: 0, y: 0.62 }, { x: 0, y: 0.29 },
-      ...ring(0.29, 0.29, 0.29, 180, 360),
-      { x: 0.58, y: 0.62 }, { x: 0.585, y: -OV },
-    ]),
-  ]),
-
-  v: gl(0.56, [
-    s([{ x: 0, y: 0.62 }, { x: 0.28, y: -0.01, round: 0.08 }, { x: 0.56, y: 0.62 }]),
-  ]),
-
-  w: gl(0.82, [
-    s([{ x: 0, y: 0.62 }, { x: 0.20, y: -0.01, round: 0.08 }, { x: 0.41, y: 0.40, round: 0.10 },
-       { x: 0.62, y: -0.01, round: 0.08 }, { x: 0.82, y: 0.62 }]),
-  ]),
-
-  x: gl(0.54, [
-    s([{ x: -0.03, y: 0.64 }, { x: 0.57, y: -0.03 }]),
-    s([{ x: -0.03, y: -0.03 }, { x: 0.57, y: 0.64 }], 0.009),
-  ]),
-
-  y: gl(0.56, [
-    s([{ x: 0, y: 0.62 }, { x: 0.30, y: 0.02 }]),
-    s([{ x: 0.58, y: 0.62 }, { x: 0.14, y: DESC }], 0.009),
-  ]),
-
-  z: gl(0.52, [
-    s([{ x: 0, y: 0.60 }, { x: 0.54, y: 0.60, round: MITRE }, { x: 0, y: 0, round: MITRE },
-       { x: 0.54, y: 0 }]),
-  ]),
-
-  // ======================================================================
-  // FIGURES — straight off the plate
-  // ======================================================================
-
-  '0': gl(0.80, [s(ring(0.40, 0.44, 0.40, 96, 96 - SEAM - 10))]),
-
-  // an arch, not a stroke. This is the n.
-  '1': gl(0.54, [
-    s([
-      { x: 0, y: 0.01 }, { x: 0.02, y: 0.55 },
-      ...ring(0.27, 0.55, 0.25, 180, 0),
-      { x: 0.52, y: 0.54 }, { x: 0.56, y: 0.05 },
-    ]),
-  ]),
-
-  // shoulder circle, straight diagonal, straight base bar, curled ear
-  '2': gl(0.62, [
-    { nodes: [
-        ...ring(0.31, 0.675, 0.30, 168, -38),
-        { x: 0.02, y: 0.03, round: 0.26 }, { x: 0.62, y: 0.03 },
-      ],
-      curlA: { turn: deg(-96), r: 0.11, decay: 0.7 } },
-  ]),
-
-  '3': gl(0.58, [
-    { nodes: [
-        ...ring(0.27, 0.755, 0.24, 156, -58),
-        ...ring(0.29, 0.275, 0.28, 56, -178),
-      ],
-      curlA: { turn: deg(-44), r: 0.12, decay: 0.8 },
-      curlB: { turn: deg(-64), r: 0.15, decay: 0.8 } },
-  ]),
-
-  // three straight pieces butted, the stem overshooting hard both ways
-  '4': gl(0.64, [
-    s([{ x: 0.46, y: 0.98 }, { x: 0.02, y: 0.24, round: 0.09 }, { x: 0.64, y: 0.24 }]),
-    s([{ x: 0.46, y: 1.06 }, { x: 0.46, y: -0.06 }], 0.009),
-  ]),
-
-  // two pieces and a nail, like the plate
-  '5': gl(0.58, [
-    { nodes: ring(0.30, 1.26, 0.43, 234, 306),
-      curlB: { turn: deg(-152), r: 0.10, decay: 0.7 } },
-    s(ring(0.30, 0.285, 0.285, 104, -196)),
-  ], [{ x: 0.05, y: 0.60, r: 0.60 }]),
-
-  // one long shallow sweep that becomes a full circular bulb
-  '6': gl(0.58, [
-    s([
-      { x: 0.54, y: 1.02 }, { x: 0.22, y: 0.62, round: 1 },
-      ...ring(0.29, 0.27, 0.27, 150, -186),
-    ]),
-  ]),
-
-  '7': gl(0.64, [
-    s([{ x: 0, y: 0.99 }, { x: 0.64, y: 0.99, round: 0.08 }, { x: 0.15, y: -0.04 }]),
-  ]),
-
-  '8': gl(0.58, [
-    s([
-      ...ring(0.29, 0.75, 0.26, -78, 258),
-      ...ring(0.29, 0.245, 0.245, 102, 438),
-    ]),
-  ]),
-
-  // full circular bulb, long dead-straight tail
-  '9': gl(0.58, [
-    s([
-      ...ring(0.30, 0.735, 0.26, 8, 336),
-      { x: 0.02, y: -0.02 },
-    ]),
+  Z: G([
+    { p: 'seven', from: 0.08, s: SEV_C, a: 'bl', at: [0, 0] },
+    { p: 'four.bent', i: 1, s: 0.62 / 0.35, a: 'bl', at: [-0.02, 0], z: 0.006 },
   ]),
 
   // ---- marks --------------------------------------------------------------
 
-  '.': gl(0.05, [], [{ x: 0.025, y: 0.05 }]),
-  ',': gl(0.10, [s([{ x: 0.09, y: 0.11 }, { x: 0, y: -0.15 }])]),
-  ':': gl(0.05, [], [{ x: 0.025, y: 0.05 }, { x: 0.025, y: 0.54 }]),
-  '-': gl(0.36, [s([{ x: 0, y: 0.47 }, { x: 0.36, y: 0.47 }])]),
-  "'": gl(0.05, [s([{ x: 0.06, y: 1.02 }, { x: 0, y: 0.72 }])]),
-  '!': gl(0.05, [s([{ x: 0.025, y: 1.02 }, { x: 0.025, y: 0.24 }])], [{ x: 0.025, y: 0.05 }]),
-  '?': gl(0.52, [
-    { nodes: [
-        ...ring(0.26, 0.745, 0.25, 182, -34),
-        { x: 0.26, y: 0.30 },
-      ],
-      curlA: { turn: deg(-54), r: 0.10, decay: 0.8 } },
-  ], [{ x: 0.26, y: 0.05 }]),
+  '.': G([], [{ x: 0, y: 0.05, r: 0.55 }]),
+  ':': G([], [{ x: 0, y: 0.05, r: 0.55 }, { x: 0, y: 0.50, r: 0.55 }]),
+  ',': G([{ p: 'five.crook', from: 0.0, to: 0.35, s: 0.34, a: 'tr', at: [0.10, 0.10] }]),
+  '-': G([{ p: 'four.bent', i: 1, s: 1.1, a: 'cl', at: [0, 0.42] }]),
+  "'": G([{ p: 'bar.short', from: 0, to: 0.35, s: 0.9, a: 'ct', at: [0, 1.0] }]),
+  '!': G([{ p: 'bar.short', from: 0.1, s: 1.62, a: 'bl', at: [0, 0.22] }], [{ x: 0.01, y: 0.05, r: 0.55 }]),
+  '?': G([
+    { p: 'two', from: 0.0, to: 0.42, s: 0.72, a: 'ct', at: [0.22, 1.0] },
+    { p: 'bar.short', from: 0, to: 0.3, s: 0.9, a: 'ct', at: [0.22, 0.42], z: 0.006 },
+  ], [{ x: 0.22, y: 0.05, r: 0.55 }]),
 };
 
 /**
@@ -510,3 +376,4 @@ export function glyphFor(ch: string): Glyph | undefined {
 }
 
 export const COVERAGE = Object.keys(GLYPHS).join('');
+export { strandOf };

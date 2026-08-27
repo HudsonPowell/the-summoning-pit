@@ -24,7 +24,9 @@ export type Anchor =
   | 'bl' | 'br' | 'tl' | 'tr'
   | 'c' | 'cb' | 'ct' | 'cl' | 'cr'
   | 's' | 'e'
-  | 'xl' | 'xc' | 'xr';
+  | 'xl' | 'xc' | 'xr'
+  /** leave it exactly where the plate had it — for figures kept whole */
+  | 'none';
 
 export interface Cut {
   /** key into PLATE */
@@ -114,7 +116,9 @@ export function resolve(c: Cut): Pt[] {
     cl: { x: x0, y: (y0 + y1) / 2 }, cr: { x: x1, y: (y0 + y1) / 2 },
     s: first, e: last,
     xl: { x: x0, y: 0 }, xc: { x: (x0 + x1) / 2, y: 0 }, xr: { x: x1, y: 0 },
+    none: { x: 0, y: 0 },
   };
+  if (c.a === 'none') return pts;
   const anchor = A[c.a ?? 'bl'];
   const [tx, ty] = c.at ?? [0, 0];
   const dx = tx - anchor.x;

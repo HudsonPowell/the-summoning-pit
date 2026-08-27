@@ -252,6 +252,22 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
   const status = document.getElementById('summonStatus')!;
 
   let busy = false;
+  let waiting = 0;
+  /**
+   * The pit answers every summon now, but a lost socket or a dropped packet
+   * still leaves someone staring at "summoning…" with no idea whether to wait
+   * or try again. Say so rather than hang.
+   */
+  function armTimeout(): void {
+    clearTimeout(waiting);
+    waiting = window.setTimeout(() => {
+      if (status.textContent === 'sending…' || status.textContent === 'summoning…') {
+        status.textContent = 'no answer — try again';
+        busy = false;
+      }
+    }, 45000);
+  }
+
   async function summon() {
     const desc = box.value.trim();
     if (!desc || busy) return;
@@ -275,6 +291,7 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
         // server and nowhere else, and a hosted pit has to hatch for everyone.
         status.textContent = 'summoning…';
         live.send({ t: 'summon', key: myKey, desc });
+        armTimeout();
         busy = false;
         return;
       }
@@ -283,6 +300,7 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
         // goes over the wire — the pit never learns what anyone typed.
         live.send({ t: 'summon', key: myKey, genome: g });
         status.textContent = 'sending…';
+        armTimeout();
       } else {
         const a = spawnChar(sim, makeCharacter(g, 'beast'), ME);
         yours = a;
