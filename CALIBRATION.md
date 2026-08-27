@@ -1370,3 +1370,19 @@ the glyph's ink and a second ink from the forged palette — the field
 cross-fades where chunks meet, so the blending is visible along the wire
 instead of hiding inside the joins. Rivets have no glyph index; a negative
 index walked off the ink array and crashed the first version.
+
+## the arrival is the death, run backwards (2026-08-27)
+
+Springing the letters in on live physics read as bouncing however it was
+tuned — the home-constraint ramp IS a spring, and a spring overshoots. The fix
+was not more tuning: the fall is now simulated once at load (per-glyph
+staggered, same params as the live death), every frame recorded (~140 frames,
+40Hz, one Float32Array per frame), and the arrival PLAYS THE RECORDING IN
+REVERSE. The wires pour up out of the dark along exactly the paths they will
+later take back down — the way on and the way off are the same motion by
+construction, not two effects tuned to resemble each other. Hold and the real
+death remain live physics; frame 0 of the recording is the settled word, so
+the handoff to live sim is seamless.
+
+Inks are browns, greys and near-black now — old iron and dry earth, sat
+0.04-0.34, lightness 0.13-0.43, hues pinned warm.
