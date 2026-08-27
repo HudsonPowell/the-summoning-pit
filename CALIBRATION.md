@@ -1233,3 +1233,17 @@ A recall is not a death. It carries `recalled` over the wire now: no collapse,
 a 0.9s fade instead of a corpse, and a feed line. The rule generalises — any
 state the sim can enter that a watcher cannot account for reads as a bug, even
 when the code is doing exactly what it was told.
+
+## controls inside the stage get eaten by the camera (2026-08-27)
+
+The mute icon did nothing. Not the audio graph — the click never arrived. The
+orbit drag lives on `#stage`, the icon is a child of `#stage`, and the drag
+handler calls `setPointerCapture`, which redirects every subsequent pointer
+event to the stage. The icon was pressed and never heard about it.
+
+Anything that is a control is not a place to start dragging the camera from:
+the drag handler now ignores `#muteIcon` and `#summonBar`, and the icon listens
+on `pointerdown` with `stopPropagation` rather than waiting for a `click` that
+capture may never deliver.
+
+Verified by the thing that matters rather than the flag: master gain 1 → 0 → 1.

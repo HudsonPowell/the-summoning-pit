@@ -615,7 +615,9 @@ const muteCanvas = document.getElementById('muteIcon') as HTMLCanvasElement | nu
 const muteIcon = muteCanvas ? new MuteIcon(muteCanvas, hexRgb(look.voidCol)) : null;
 function paintMute(): void { muteIcon?.draw(muted); }
 paintMute();
-muteCanvas?.addEventListener('click', () => {
+muteCanvas?.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  e.preventDefault();
   muted = !muted;
   try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch { /* private */ }
   pit.mute(muted);
@@ -1008,7 +1010,12 @@ function setPanel(open: boolean) {
   const stage = document.getElementById('stage')!;
   let down = false, lastX = 0;
   stage.addEventListener('pointerdown', e => {
-    if (e.target instanceof HTMLInputElement) return;
+    // The controls live INSIDE the stage, and this handler captures the
+    // pointer — so a click on the mute icon was swallowed by the orbit drag
+    // and never reached the icon at all. Anything that is a control is not a
+    // place to start dragging the camera from.
+    const t = e.target as HTMLElement | null;
+    if (t instanceof HTMLInputElement || t?.id === 'muteIcon' || t?.closest?.('#summonBar')) return;
     down = true; lastX = e.clientX; orbit.idle = 0;
     stage.setPointerCapture(e.pointerId);
   });
