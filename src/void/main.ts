@@ -456,13 +456,18 @@ function driveCamera(sim: VoidSim, dt: number) {
   // While the title stands the camera frames the stage for EVERYONE — the
   // follow rig was still dragging owners off to their hero mid-word.
   const titleUp = !!(title && !title.done);
+  // A portrait phone shows barely half the metres a desktop does when the
+  // framing is sized off HEIGHT alone — the hero kept walking out of the
+  // sides. Frame off whichever dimension is actually the tight one. The title
+  // keeps the height basis it was tuned against.
+  const frameH = Math.min(view.size.H, view.size.W * 1.35);
   if (camCold) {
     // damping in from a cold camera means a second of looking at nothing
     camCold = false;
     cam.cx = rig.ax = you && !titleUp ? you.x : 0;
     cam.cz = rig.az = you && !titleUp ? you.z : 0;
     cam.cy = you && !titleUp ? you.bulk * 0.55 : 0.9;
-    cam.ppm = (view.size.H * (you && !titleUp ? 0.26 / Math.max(0.7, you.bulk) : 0.34 / 5)) * look.zoom;
+    cam.ppm = ((titleUp ? view.size.H : frameH) * (you && !titleUp ? 0.26 / Math.max(0.7, you.bulk) : 0.34 / 5)) * look.zoom;
     cam.yaw = you && !titleUp ? 0.5 : watchYaw;
     return;
   }
@@ -483,12 +488,16 @@ function driveCamera(sim: VoidSim, dt: number) {
       rig.az += dz * pull;
     }
 
-    cam.cx = smoothDamp(cam.cx ?? rig.ax, rig.ax, rig.vx, 0.75, dt);
-    cam.cz = smoothDamp(cam.cz ?? rig.az, rig.az, rig.vz, 0.75, dt);
+    // the chase quickens with the distance fallen behind: calm jockeying is
+    // still ignored, but a hero sprinting off no longer outruns the frame
+    const lag = Math.hypot(rig.ax - (cam.cx ?? rig.ax), rig.az - (cam.cz ?? rig.az));
+    const chase = Math.max(0.32, 0.75 - lag * 0.16);
+    cam.cx = smoothDamp(cam.cx ?? rig.ax, rig.ax, rig.vx, chase, dt);
+    cam.cz = smoothDamp(cam.cz ?? rig.az, rig.az, rig.vz, chase, dt);
     // height comes off its SIZE, never off its bob — following the bounce is
     // following a spring with a camera bolted to it
     cam.cy = smoothDamp(cam.cy, you.bulk * 0.55, rig.vy, 1.1, dt);
-    const want = (view.size.H * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom);
+    const want = (frameH * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom);
     cam.ppm = smoothDamp(cam.ppm, want, rig.vppm, 1.3, dt);
     // The director leaves cam.yaw unwrapped — it had wound to 17 radians by
     // the time a creature died and came back. Interpolating that linearly to
@@ -524,7 +533,7 @@ function driveCamera(sim: VoidSim, dt: number) {
   cam.cx = smoothDamp(cam.cx ?? cx, cx, rig.vx, 2.2, dt);
   cam.cz = smoothDamp(cam.cz ?? cz, cz, rig.vz, 2.2, dt);
   cam.cy = smoothDamp(cam.cy, 0.9, rig.vy, 1.6, dt);
-  const wide = (view.size.H * 0.46 / reach) * look.zoom * Math.exp(orbit.zoom);
+  const wide = ((titleUp ? view.size.H : frameH) * 0.46 / reach) * look.zoom * Math.exp(orbit.zoom);
   cam.ppm = smoothDamp(cam.ppm, wide, rig.vppm, 1.8, dt);
   cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), wrapAngle(watchYaw + orbit.yaw), rig.vyaw, 1.2, dt);
   rig.ax = cam.cx;
