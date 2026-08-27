@@ -728,12 +728,16 @@ async function boot() {
   function tick(dt: number) {
     if (live) live.update(dt); else stepVoid(sim, dt);
     pushFeed(sim.events);
-    if (live) sim.events.length = 0;
     for (const e of sim.events) {
       if (e.kind === 'kill') director.punch(1);
       else if (e.kind === 'hit') director.punch(0.45);
       speak(sim, e);
     }
+    // DRAIN LAST. Clearing before this loop meant every event was thrown away
+    // unread in live mode: no voices, and no camera shake on a kill either.
+    // The ambience kept working and hid it, because footfalls come from the
+    // gait rather than from events. Second time this exact ordering has bitten.
+    if (live) sim.events.length = 0;
     footfalls(sim);
     driveCamera(sim, dt);
 

@@ -1126,3 +1126,17 @@ Worn by whoever holds the pit — most kills, oldest wins a tie — and drawn at
 render time rather than baked into a genome, so it passes to whoever takes the
 title. It sits ABOVE the skull rather than around it, which is what lets one
 spec fit a biped and a quadruped without either knowing about the other.
+
+## drain the event queue LAST (2026-08-27, again)
+
+    pushFeed(sim.events);
+    if (live) sim.events.length = 0;   // <- before the readers
+    for (const e of sim.events) { ...camera shake, voices... }
+
+Every event thrown away unread in live mode: no creature made a sound and no
+kill shook the camera. It hid for a day because the ambience kept working —
+wind, drips and footfalls all come from the gait and the clock, not from
+events, so the pit sounded alive while being completely deaf.
+
+This is the second time this ordering has bitten. Whoever clears the queue
+clears it AFTER everyone who reads it.
