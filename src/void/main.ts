@@ -39,13 +39,16 @@ interface Look {
   peace: number;
 }
 
+// The look Jody settled on, baked in: chunkier pixels, a much softer blend so
+// bodies read as one mass, and flat ink so the figures sit as silhouettes
+// rather than shaded forms.
 const DEFAULT_LOOK: Look = {
-  res: 480, zoom: 1, blend: 0.9, blendShape: 0.5, blendMix: 1,
+  res: 360, zoom: 1, blend: 1.8, blendShape: 0.6, blendMix: 1,
   floorRadius: 12, floorPower: 2.4, floorLift: 1, tile: 1,
   round: 1,
   closeness: 0.72, response: 0.5, lead: 0.5,
   voidCol: '#000000', floorColA: '#2a2f3a', floorColB: '#22262f',
-  flat: false, pitch: 0.34, orbit: 0.16, population: 4, peace: 0.35,
+  flat: true, pitch: 0.34, orbit: 0.16, population: 1, peace: 0.35,
   panel: false,
 };
 
