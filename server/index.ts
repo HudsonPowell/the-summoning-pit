@@ -217,8 +217,25 @@ function broadcast(msg: unknown): void {
   for (const c of wssRef.clients) if (c.readyState === WebSocket.OPEN) c.send(text);
 }
 
+/**
+ * One key, one live session. A key used to travel in the URL, so anyone who
+ * shared their own link handed over their identity — and every friend who
+ * opened it became the same person, sharing one hero between them. The key is
+ * out of the URL now, but the copies are already in people's browsers, and
+ * nobody should have to clear storage to play.
+ *
+ * So: if a key is already held by another open connection, the newcomer is a
+ * different person using a copy. Mint them their own and tell them.
+ */
+const liveKeys = new Map<string, WebSocket>();
+
 wss.on('connection', ws => {
   ws.send(JSON.stringify(hello()));
+
+  ws.on('close', () => {
+    const k = (ws as any).__key as string | undefined;
+    if (k && liveKeys.get(k) === ws) liveKeys.delete(k);
+  });
 
   ws.on('message', raw => {
     let m: any;
@@ -229,7 +246,14 @@ wss.on('connection', ws => {
     // of ownership that will ever exist, and the client's job is to keep it
     // in a URL. We store the hash, never the key.
     if (m.t === 'key') {
-      const key = looksLikeKey(m.key) ? m.key : mintKey();
+      let key = looksLikeKey(m.key) ? m.key : mintKey();
+      const holder = liveKeys.get(key);
+      if (holder && holder !== ws && holder.readyState === WebSocket.OPEN) {
+        console.log(`[pit] ${ownerOf(key)} is open twice — minting a fresh identity`);
+        key = mintKey();
+      }
+      liveKeys.set(key, ws);
+      (ws as any).__key = key;
       ws.send(JSON.stringify({ t: 'key', key, owner: ownerOf(key) }));
       return;
     }

@@ -1267,3 +1267,29 @@ fell at 85s, owner free again.
 This is also what stops a champion becoming immortal, which was a separate
 complaint about the same root cause — nothing in the pit could threaten a
 creature that had already won.
+
+## the URL was the account, and the URL is how the game spreads (2026-08-27)
+
+`keepKey` wrote the secret key into the address bar — "bookmark it and you are
+you". But sharing a link is the entire distribution model of this game, so
+anyone who copied their own address bar to send to a friend **sent their
+identity with it**. Everyone who opened that link became the same owner, with
+one hero allowed between them, and the first to summon silently blocked the
+rest.
+
+From outside that looked like "only one summon at a time", "my friend's summons
+do nothing", and a single owner id refused over and over in the logs. Three
+separate reports, one cause, and none of them looked like an identity bug.
+
+Two fixes, because one was not enough:
+
+- **The key never enters the URL.** A key arriving in one is honoured once, for
+  old bookmarks, then stripped so the visible link is always safe to pass on.
+- **One key, one live session.** The copies are already in people's browsers
+  and nobody should have to clear storage to play, so a key already held by
+  another open connection means the newcomer is a different person using a
+  copy: they are minted their own.
+
+A secret that travels in a shareable link is not a secret. If the thing people
+are meant to send each other is the same string that proves who they are, the
+design is wrong however carefully it is implemented.

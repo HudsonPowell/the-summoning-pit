@@ -178,14 +178,26 @@ let myKey = new URLSearchParams(location.search).get('k')
   ?? '';
 let ME = 'local';
 
+/**
+ * The key NEVER goes in the address bar.
+ *
+ * It used to: "the URL is the account, bookmark it and you are you". But
+ * sharing a link is how this game spreads, and anyone who copied their own
+ * address bar to send to a friend sent their identity with it. Everyone who
+ * opened that link became the same person — one owner, one hero between them,
+ * so the first to summon silently blocked the rest. That is exactly what "only
+ * one summon at a time" and "my friend gets nothing" looked like from outside.
+ *
+ * A key that arrives in a URL is still honoured once, for old bookmarks, and
+ * then stripped immediately so the visible link is always safe to pass on.
+ */
 function keepKey(key: string, owner: string): void {
   myKey = key;
   ME = owner;
   try { localStorage.setItem(KEY_STORE, key); } catch { /* private window */ }
-  // put it in the address bar without a reload, so the URL IS the account and
-  // bookmarking is the whole of signing up
   const u = new URL(location.href);
-  u.searchParams.set('k', key);
+  if (!u.searchParams.has('k') && !u.searchParams.has('pact') && !u.searchParams.has('feud')) return;
+  u.searchParams.delete('k');
   u.searchParams.delete('pact');
   u.searchParams.delete('feud');
   history.replaceState(null, '', u.toString());
