@@ -33,6 +33,7 @@ export interface Agent {
   struck: boolean;
   heavy: boolean;            // this swing is the heavy one
   deadT: number;             // -1 alive
+  recalled: boolean;         // left because its summoner replaced it, not killed
   target: Agent | null;
   nerve: number;             // aggression, kept under its old name for the AI
   temper: Temper;            // what it is like, read off what it is made of
@@ -135,6 +136,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     struck: false,
     heavy: false,
     deadT: -1,
+    recalled: false,
     target: null,
     nerve: temper.aggression,
     temper,

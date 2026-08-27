@@ -69,13 +69,14 @@
   <div class="frame"><canvas id="chart3" width="760" height="190"></canvas></div>
 
   <p class="note">
-    Every glyph obeys the plate: circle or dead-straight line and nothing between; one continuous
-    wire, with the stem rolling into its bowl rather than butting against a separate ring; small
-    round parts on long limbs; loops that stop a seam short of closing; free ends that overshoot.
-    The lowercase is the direct extrapolation — the plate's <b>1</b> is this <b>n</b>, its
-    <b>10</b> is this <b>nb</b>, its <b>0</b> is this <b>o</b>. <b>Hover the word</b> to shove it;
-    <b>cut loose</b> drops the bend memory. Nothing is drawn as an outline: every link is a capsule
-    going through the same field renderer as the creatures, so the blur is the engine's own
+    Nothing here is drawn. The plate is binarised, thinned to a one-pixel spine and walked into
+    <b>lengths of centreline</b>, cut at every crossing; the figures are those lengths untouched, and
+    every letter is the same lengths snipped at a stated point along their arc and put somewhere
+    else. The <b>1</b> is an <b>n</b>. The <b>10</b>'s bowl is a <b>b</b>. The <b>0</b> is an
+    <b>o</b>, and its right-hand half is a <b>D</b>. The <b>7</b> is two thirds of a <b>z</b>.
+    Every piece is then a Verlet rod with length, bend and home constraints — <b>hover the word</b>
+    to shove it, <b>cut loose</b> to drop the bend memory. No outlines anywhere: each link is a
+    capsule going through the same field renderer as the creatures, so the blur is the engine's own
     smooth-min, not a filter.
   </p>
 

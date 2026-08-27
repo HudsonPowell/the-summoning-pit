@@ -1221,3 +1221,15 @@ own after 45s rather than hanging on a lost packet.
 
 **A silent `return` in a request handler is a bug.** Every branch either does
 the thing or says why not.
+
+## things dying for no reason (2026-08-27)
+
+Recalling a player's previous hero killed it on the spot — `deadT = 0`, collapse
+pose, corpse fade — and said nothing in the feed, because `despawn` had no
+narration. So every time anyone summoned, a creature dropped dead mid-fight in
+front of eight watchers with no explanation. "Things keep randomly dying."
+
+A recall is not a death. It carries `recalled` over the wire now: no collapse,
+a 0.9s fade instead of a corpse, and a feed line. The rule generalises — any
+state the sim can enter that a watcher cannot account for reads as a bug, even
+when the code is doing exactly what it was told.

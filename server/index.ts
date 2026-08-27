@@ -160,6 +160,7 @@ function snapshot() {
       x: r2(a.x), z: r2(a.z), h: r2(a.heading),
       mv: r2(a.move), hp: a.hp, mx: a.maxHp, st: a.state,
       d: a.deadT >= 0 ? r2(a.deadT) : -1,
+      rc: a.recalled ? 1 : 0,
       tr: r2(a.turnRate),
       tg: a.target?.id ?? 0,
       by: a.by,
@@ -306,6 +307,7 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   // walks in. You are never blocked from playing by your own success.
   for (const old of livingOf(owner)) {
     old.deadT = 0;
+    old.recalled = true;      // it leaves; it is not killed
     old.state = 'down';
     old.target = null;
     sim.events.push({

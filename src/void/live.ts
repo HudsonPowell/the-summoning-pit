@@ -182,6 +182,7 @@ export class LiveVoid {
       if (typeof row.k === 'number') a.deeds.kills = row.k;
       a.state = row.st;
       a.deadT = row.d;
+      a.recalled = row.rc === 1;
       a.by = row.by;
       a.target = row.tg ? this.byId.get(row.tg) ?? null : null;
 

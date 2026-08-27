@@ -462,8 +462,10 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
 
   const caps = solvePose(
     a.genome, mood, a.phase, a.move, a.idleT, intent,
-    // dead is a full collapse; resting is most of one
-    a.deadT >= 0 ? Math.min(1, a.deadT / 0.5) : a.rest * 0.72,
+    // Dead is a full collapse; resting is most of one. A RECALL is neither —
+    // the creature is not beaten, its summoner replaced it, so it stays on its
+    // feet and simply goes.
+    a.deadT >= 0 ? (a.recalled ? 0 : Math.min(1, a.deadT / 0.5)) : a.rest * 0.72,
     {
       weapon: a.ch.weapon,
       offhand: a.ch.offhand,
@@ -480,7 +482,9 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     },
   );
   const flash = a.hurtT > 0 && Math.sin(t * 40) > 0;
-  const fade = a.deadT >= 0 ? Math.max(0, 1 - Math.max(0, a.deadT - 2) / 1.5) : 1;
+  const fade = a.deadT >= 0
+    ? (a.recalled ? Math.max(0, 1 - a.deadT / 0.9) : Math.max(0, 1 - Math.max(0, a.deadT - 2) / 1.5))
+    : 1;
   const yaw = -(a.heading + a.sec.spin);
   return caps.map(c => {
     const p = rotY(c.a, yaw);
@@ -706,6 +710,8 @@ function narrate(e: import('./sim').VoidEvent): string | null {
     case 'kill': return `${who} felled ${whom} — ${e.how ?? 'a blow'}${at}`;
     case 'spawn': return `${who} enters the pit`;
     case 'flee': return `${who} breaks and runs`;
+    // a creature vanishing with nothing said about it reads as a bug
+    case 'despawn': return `${who} is recalled`;
     case 'notice': return `${who} sets upon ${whom}`;
     default: return null;
   }

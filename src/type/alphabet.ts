@@ -206,8 +206,8 @@ export const GLYPHS: Record<string, Glyph> = {
 
   k: G([
     { p: 'four.stem', s: STEM_A, a: 'bl', at: [0, 0] },
-    { p: 'four.bent', i: 0, fx: true, s: 0.38 / 0.44, a: 'tr', at: [0.38, 0.71], z: 0.006 },
-    { p: 'four.bent', i: 0, fx: true, s: 0.34 / 0.44, a: 'tl', at: [0.02, 0.34], z: 0.009 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.38 / 0.44, a: 'tr', at: [0.35, 0.71], z: 0.006 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.34 / 0.44, a: 'tl', at: [0.00, 0.35], z: 0.009 },
   ]),
 
   // the 3's two bowls, the top one turned over
@@ -288,8 +288,8 @@ export const GLYPHS: Record<string, Glyph> = {
   ]),
   K: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
-    { p: 'four.bent', i: 0, fx: true, s: 0.54 / 0.44, a: 'tr', at: [0.54, 1.01], z: 0.006 },
-    { p: 'four.bent', i: 0, fx: true, s: 0.48 / 0.44, a: 'tl', at: [0.03, 0.48], z: 0.009 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.54 / 0.44, a: 'tr', at: [0.47, 1.01], z: 0.006 },
+    { p: 'four.bent', i: 0, fx: true, s: 0.48 / 0.44, a: 'tl', at: [0.01, 0.48], z: 0.009 },
   ]),
   L: G([
     { p: 'four.stem', s: 1.47, a: 'bl', at: [0, 0] },
