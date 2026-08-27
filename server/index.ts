@@ -400,10 +400,18 @@ setInterval(() => {
 /** The same stream, read aloud. This is the kill feed, on the server side. */
 function log(e: VoidEvent): void {
   if (e.kind === 'kill') {
-    console.log(`  ${e.actor?.name ?? 'something'} felled ${e.target?.name}` +
-      (e.how ? ` — ${e.how}${e.range ? ` at ${e.range.toFixed(1)}m` : ''}` : ''));
+    // Enough to answer "why did that die?" from the logs alone. A death with
+    // no actor is the one worth noticing — it means something killed a
+    // creature that nobody in the pit was responsible for.
+    const standing = sim.agents.filter(a => a.deadT < 0).length;
+    console.log(`  ${e.actor?.name ?? 'NOBODY'} felled ${e.target?.name}` +
+      (e.how ? ` — ${e.how}` : '') +
+      (e.range ? ` at ${e.range.toFixed(1)}m` : '') +
+      ` | ${standing} standing, ${sim.shots.length} in flight`);
   } else if (e.kind === 'spawn') {
     console.log(`  ${e.actor?.name} enters the pit`);
+  } else if (e.kind === 'despawn') {
+    console.log(`  ${e.actor?.name} recalled`);
   }
 }
 
