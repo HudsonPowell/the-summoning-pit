@@ -19,10 +19,19 @@ const CONE: [number, number, number] = [176, 184, 196];
 const ARC: [number, number, number] = [110, 232, 214];
 const OFF: [number, number, number] = [196, 96, 84];
 
-function speaker(muted: boolean): Capsule[] {
+function speaker(muted: boolean, t: number): Capsule[] {
   const c: Capsule[] = [];
-  const put = (ax: number, ay: number, bx: number, by: number, r: number, col: [number, number, number]) =>
-    c.push({ a: v3(ax, ay, 0), b: v3(bx, by, 0), r, color: col, part: 'icon' });
+  // The wobble: nothing in the pit sits perfectly still, so neither does its
+  // furniture. Each part drifts on its own slow phase — smooth sines, no
+  // noise, far too small to move the icon and just enough to make it breathe.
+  let ph = 0;
+  const put = (ax: number, ay: number, bx: number, by: number, r: number, col: [number, number, number]) => {
+    ph += 1.7;
+    const wx = Math.sin(t * 1.1 + ph) * 0.016;
+    const wy = Math.cos(t * 1.4 + ph * 1.3) * 0.014;
+    const wr = 1 + Math.sin(t * 1.9 + ph * 0.7) * 0.05;
+    c.push({ a: v3(ax + wx, ay + wy, 0), b: v3(bx + wx * 0.6, by + wy * 0.6, 0), r: r * wr, color: col, part: 'icon' });
+  };
 
   // the box, then the cone opening out from it — the blend fuses them but the
   // two inks keep the join visible, which is what makes it feel built
@@ -59,7 +68,7 @@ export class MuteIcon {
     this.ctx = canvas.getContext('2d');
   }
 
-  draw(muted: boolean): void {
+  draw(muted: boolean, t = 0): void {
     if (!this.ctx) return;
     const cam: Camera = {
       yaw: 0, pitch: 0, ppm: S * 0.62, cy: 0,
@@ -69,7 +78,7 @@ export class MuteIcon {
       flat: true,
       voidColor: this.bg,
     };
-    this.r.render(this.buf, speaker(muted), cam, 0);
+    this.r.render(this.buf, speaker(muted, t), cam, 0);
     const img = this.ctx.createImageData(S, S);
     img.data.set(this.buf);
     this.ctx.putImageData(img, 0, 0);

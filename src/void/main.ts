@@ -662,6 +662,7 @@ const MUTE_KEY = 'pit-muted';
 let muted = (() => { try { return localStorage.getItem(MUTE_KEY) === '1'; } catch { return false; } })();
 const muteCanvas = document.getElementById('muteIcon') as HTMLCanvasElement | null;
 const muteIcon = muteCanvas ? new MuteIcon(muteCanvas, hexRgb(look.voidCol)) : null;
+let muteFrame = 0;
 function paintMute(): void { muteIcon?.draw(muted); }
 paintMute();
 muteCanvas?.addEventListener('pointerdown', e => {
@@ -888,6 +889,10 @@ async function boot() {
     // softness is a property of the world again. 42 px/m is where 1.8 was
     // tuned.
     cam.blend = Math.min(6, Math.max(0.35, look.blend * (cam.ppm / 42)));
+
+    // the icon idles along with everything else, at half rate — it is 46px
+    muteFrame = (muteFrame + 1) & 1;
+    if (muteFrame === 0) muteIcon?.draw(muted, sim.t);
 
     findLord(sim);
     summonUI(sim);
