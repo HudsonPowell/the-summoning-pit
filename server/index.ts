@@ -301,19 +301,15 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
     refuse(ws, owner, `that one did not last — ${Math.ceil(held - sim.t)}s`);
     return;
   }
-  // One hero each — but REFUSING when yours is alive locks you out of playing
-  // for as long as it survives, and a champion can hold the pit for hours. So
-  // summoning again retires the one you have: it walks out, and the new one
-  // walks in. You are never blocked from playing by your own success.
-  for (const old of livingOf(owner)) {
-    old.deadT = 0;
-    old.recalled = true;      // it leaves; it is not killed
-    old.state = 'down';
-    old.target = null;
-    sim.events.push({
-      kind: 'despawn', t: sim.t, x: old.x, z: old.z, actor: whoOf(old),
-    });
-    console.log(`[pit] ${owner} recalled ${old.ch.name}`);
+  // One hero each, and you live with it. Replacing yours on demand meant
+  // killing a creature that was still fighting — which is both a strange thing
+  // to watch and a strange thing to be able to do to your own champion. If
+  // yours is standing, you are not summoning; you are watching.
+  const yours = livingOf(owner)[0];
+  if (yours) {
+    const age = Math.round(sim.t - yours.deeds.born);
+    refuse(ws, owner, `${yours.ch.name.split(' ')[0]} still stands — ${age}s, ${yours.hp}/${yours.maxHp}`);
+    return;
   }
 
   let raw: unknown = m.genome;

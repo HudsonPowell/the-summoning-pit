@@ -49,19 +49,19 @@
   <div id="meta">—</div>
 
   <div class="bar">
-    <input type="text" id="text" value="the summoning pit" spellcheck="false" />
+    <input type="text" id="text" autocomplete="off" value="the summoning pit" spellcheck="false" />
     <button id="replay">summon</button>
     <button id="drop">cut loose</button>
     <button id="reseed">re-hammer</button>
-    <label><input type="checkbox" id="shade" checked /> <b>shade</b></label>
+    <label><input type="checkbox" id="shade" autocomplete="off" checked /> <b>shade</b></label>
     <span>renderer <b id="mode">…</b></span>
   </div>
 
   <div class="bar">
-    <label><b>gauge</b><input type="range" id="gauge" min="0.03" max="0.16" step="0.002" value="0.078" /><span class="val" id="gaugev"></span></label>
-    <label><b>hand</b><input type="range" id="hand" min="0" max="3" step="0.05" value="1" /><span class="val" id="handv"></span></label>
-    <label><b>tracking</b><input type="range" id="track" min="-0.06" max="0.3" step="0.01" value="0" /><span class="val" id="trackv"></span></label>
-    <label><b>blur</b><input type="range" id="blend" min="0" max="9" step="0.1" value="2.2" /><span class="val" id="blendv"></span></label>
+    <label><b>gauge</b><input type="range" autocomplete="off" id="gauge" min="0.03" max="0.16" step="0.002" value="0.078" /><span class="val" id="gaugev"></span></label>
+    <label><b>hand</b><input type="range" autocomplete="off" id="hand" min="0" max="3" step="0.05" value="1" /><span class="val" id="handv"></span></label>
+    <label><b>tracking</b><input type="range" autocomplete="off" id="track" min="-0.06" max="0.3" step="0.01" value="0" /><span class="val" id="trackv"></span></label>
+    <label><b>blur</b><input type="range" autocomplete="off" id="blend" min="0" max="9" step="0.1" value="2.2" /><span class="val" id="blendv"></span></label>
   </div>
 
   <div class="frame"><canvas id="chart" width="760" height="300"></canvas></div>

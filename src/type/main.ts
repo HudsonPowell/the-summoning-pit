@@ -140,16 +140,26 @@ function loop(now: number): void {
 
 // --- wiring ---------------------------------------------------------------
 
+/**
+ * The control is told what it is, not asked.
+ *
+ * Reading the slider's value at startup looked equivalent and was not: a
+ * browser restores form state after load, so reopening the page came back with
+ * whatever the sliders happened to be on last time — a different gauge, the
+ * hand at zero — and the specimen was quietly no longer showing its own
+ * defaults. `cfg` is the source of truth; the DOM is set from it.
+ */
 function bindSlider(id: string, key: keyof typeof cfg, fmt: (v: number) => string, after: () => void): void {
   const el = $<HTMLInputElement>(id);
   const out = $(id + 'v');
-  const apply = () => {
+  el.value = String(cfg[key]);
+  const show = (v: number) => { out.textContent = fmt(v); };
+  el.addEventListener('input', () => {
     (cfg as any)[key] = parseFloat(el.value);
-    out.textContent = fmt(parseFloat(el.value));
+    show(parseFloat(el.value));
     after();
-  };
-  el.addEventListener('input', apply);
-  apply();
+  });
+  show(cfg[key] as number);
 }
 
 const rebuildAll = () => { rebuild(false); buildSheet(); };
@@ -171,6 +181,9 @@ bindSlider('track', 'tracking', v => v.toFixed(2), rebuildAll);
 bindSlider('blend', 'blend', v => v.toFixed(1), () => {});
 
 (async () => {
+  // and the same for the ones that are not sliders
+  $<HTMLInputElement>('text').value = cfg.text;
+  $<HTMLInputElement>('shade').checked = cfg.shade;
   await Promise.all([hero.init(), ...sheets.map(s => s.view.init())]);
   $('mode').textContent = hero.mode.toUpperCase();
   rebuild(true);
