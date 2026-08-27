@@ -81,6 +81,7 @@ export interface Shot {
 }
 
 export interface VoidSim {
+  challengeT: number;        // seconds a lone creature has held the pit
   props: Prop[];             // the scenery, grown from sim.seed
   seed: number;              // the whole pit's layout is this number
   pacts: Pacts;              // who spares whom, and who is owed a killing
@@ -98,6 +99,8 @@ const TURN_RATE = 6;        // radians/sec toward the aim
 const REACH_BASE = 1.15;    // metres, before bulk
 const NOTICE_R = 7;
 const FIGHT_R = 1.5;
+/** How long one creature may hold the pit before the house sends someone. */
+const CHALLENGE_AFTER = 40;
 const STRIKE_PERIOD = 1.1;  // seconds between swings in a fight
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -156,6 +159,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
 
 export function createVoid(roster: Character[], population = 1): VoidSim {
   const sim: VoidSim = {
+    challengeT: 0,
     seed: 1337,
     props: scatterProps(1337, 18),
     pacts: newPacts(),
@@ -756,13 +760,25 @@ export function stepVoid(sim: VoidSim, dt: number): void {
   // spawned while something is alive in there — a challenger has to be summoned
   // by a person. Only an empty pit is refilled, so that a visitor always finds
   // someone waiting.
-  const standing = sim.agents.filter(a => a.deadT < 0).length;
-  if (standing === 0) {
+  const alive = sim.agents.filter(a => a.deadT < 0);
+  if (alive.length === 0) {
     sim.spawnT -= dt;
     if (sim.spawnT <= 0) {
       spawnOne(sim);
       sim.spawnT = rnd(4, 8);
     }
+  } else if (alive.length === 1) {
+    // THE PIT ANSWERS. One creature alone at full health cannot be killed, and
+    // if it belongs to somebody then that person can never summon again —
+    // "wait for yours to fall" only works if something can make it fall. So a
+    // lone holder is challenged. Winning buys you quiet, not permanence.
+    sim.challengeT += dt;
+    if (sim.challengeT > CHALLENGE_AFTER) {
+      sim.challengeT = 0;
+      spawnOne(sim);
+    }
+  } else {
+    sim.challengeT = 0;
   }
 }
 

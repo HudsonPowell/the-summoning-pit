@@ -41,7 +41,8 @@ export class LiveVoid {
 
   constructor() {
     this.sim = {
-      seed: 1337,
+      challengeT: 0,
+    seed: 1337,
     props: scatterProps(1337, 18),
     pacts: newPacts(),
     agents: [], shots: [], roster: [], events: [],

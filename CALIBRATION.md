@@ -1247,3 +1247,23 @@ on `pointerdown` with `stopPropagation` rather than waiting for a `click` that
 capture may never deliver.
 
 Verified by the thing that matters rather than the flag: master gain 1 → 0 → 1.
+
+## a lone holder cannot die, so its owner cannot play (2026-08-27)
+
+"One hero each, wait for yours to fall" only works if something can make it
+fall. Live logs caught the deadlock exactly:
+
+    refused OpP5Q26_3b: Genoul still stands — 8s,   5/5
+    refused OpP5Q26_3b: Genoul still stands — 83s,  6/6
+    refused OpP5Q26_3b: Genoul still stands — 281s, 4/6
+
+Nine refusals in five minutes. One creature, alone, healing to full between
+nothing. Not a long wait — a permanent one.
+
+The pit answers now: a single creature holding alone for 40s is sent a
+challenger. Winning buys quiet, not permanence. Measured: challenged at 40s,
+fell at 85s, owner free again.
+
+This is also what stops a champion becoming immortal, which was a separate
+complaint about the same root cause — nothing in the pit could threaten a
+creature that had already won.
