@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PIT WIRE — specimen</title>
+  <style>
+    :root {
+      --bg: #08080c; --panel: #0d0f16; --line: #1f2230;
+      --ink: #c8cdd6; --dim: #6b7280; --brass: #d6ac60;
+    }
+    * { margin: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--dim);
+      font: 12px/1.6 'SF Mono', ui-monospace, Menlo, monospace;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 14px; padding: 26px 20px 40px; min-height: 100vh;
+    }
+    h1 { color: var(--ink); font-size: 12px; font-weight: 700; letter-spacing: .32em; }
+    h1 span { color: var(--dim); font-weight: 400; letter-spacing: .1em; }
+    .frame { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow: hidden; }
+    canvas { display: block; image-rendering: pixelated; }
+    #hero { width: 760px; height: 260px; }
+    #chart { width: 760px; height: 300px; }
+    #chart2 { width: 760px; height: 190px; }
+    #meta { color: var(--brass); font-size: 11px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; width: 760px; }
+    label { display: flex; align-items: center; gap: 7px; }
+    label b { color: var(--ink); font-weight: 500; }
+    input[type=range] { width: 108px; accent-color: var(--brass); }
+    input[type=text] {
+      background: #05060a; border: 1px solid var(--line); color: var(--brass);
+      font: inherit; letter-spacing: .18em; padding: 6px 9px; border-radius: 4px; width: 300px;
+    }
+    button {
+      background: #12151f; border: 1px solid var(--line); color: var(--ink);
+      font: inherit; padding: 6px 11px; border-radius: 4px; cursor: pointer;
+    }
+    button:hover { border-color: var(--brass); color: var(--brass); }
+    .val { color: var(--brass); min-width: 34px; }
+    .note { width: 760px; color: var(--dim); font-size: 11px; }
+    .note b { color: var(--ink); font-weight: 500; }
+  </style>
+</head>
+<body>
+  <h1>PIT WIRE <span>— after brass wire inlay on wood, 1740</span></h1>
+
+  <div class="frame"><canvas id="hero" width="760" height="260"></canvas></div>
+  <div id="meta">—</div>
+
+  <div class="bar">
+    <input type="text" id="text" value="THE SUMMONING PIT" spellcheck="false" />
+    <button id="replay">summon</button>
+    <button id="drop">cut loose</button>
+    <button id="reseed">re-hammer</button>
+    <label><input type="checkbox" id="shade" checked /> <b>shade</b></label>
+    <span>renderer <b id="mode">…</b></span>
+  </div>
+
+  <div class="bar">
+    <label><b>gauge</b><input type="range" id="gauge" min="0.03" max="0.16" step="0.002" value="0.078" /><span class="val" id="gaugev"></span></label>
+    <label><b>hand</b><input type="range" id="hand" min="0" max="3" step="0.05" value="1" /><span class="val" id="handv"></span></label>
+    <label><b>tracking</b><input type="range" id="track" min="-0.06" max="0.3" step="0.01" value="0" /><span class="val" id="trackv"></span></label>
+    <label><b>blur</b><input type="range" id="blend" min="0" max="9" step="0.1" value="2.2" /><span class="val" id="blendv"></span></label>
+  </div>
+
+  <div class="frame"><canvas id="chart" width="760" height="300"></canvas></div>
+  <div class="frame"><canvas id="chart2" width="760" height="190"></canvas></div>
+
+  <p class="note">
+    Each glyph is one to three lengths of inextensible wire, resampled into beads at a fixed
+    spacing and settled by a Verlet rod with length, bend and home constraints. <b>Hover the word</b>
+    to shove it. <b>Cut loose</b> drops the bend memory. Nothing is drawn as an outline; every link
+    is a capsule going through the same field renderer as the creatures, so the blur is the
+    engine's own smooth-min, not a filter.
+  </p>
+
+  <script type="module" src="/src/type/main.ts"></script>
+</body>
+</html>

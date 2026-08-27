@@ -127,6 +127,7 @@ export default defineConfig({
         bestiary: resolve(__dirname, 'bestiary.html'),
         clash: resolve(__dirname, 'clash.html'),
         grid: resolve(__dirname, 'grid.html'),
+        type: resolve(__dirname, 'type.html'),
       },
     },
   },

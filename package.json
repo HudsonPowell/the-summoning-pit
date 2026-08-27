@@ -19,7 +19,8 @@
     "props": "tsx farm/prop_sheet.ts",
     "start": "tsx server/index.ts",
     "bakeoff": "tsx farm/bakeoff.ts",
-    "gear": "tsx farm/gear_sheet.ts"
+    "gear": "tsx farm/gear_sheet.ts",
+    "type": "tsx farm/type_sheet.ts"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",

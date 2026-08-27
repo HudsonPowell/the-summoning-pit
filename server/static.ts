@@ -14,6 +14,8 @@ const TYPES: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
   '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.wasm': 'application/wasm',
+  // the pit has a voice; octet-stream makes Safari refuse to decode it
+  '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
 };
 
 /** Returns true if it handled the request. */
