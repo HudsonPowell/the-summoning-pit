@@ -1431,3 +1431,20 @@ broke on an actual phone was that the gestures never REACHED them:
 
 Element-level touch-action is necessary but nowhere near sufficient on iOS.
 The page has to give up its own gestures before the game can have them.
+
+## The critical pass (2026-08-27)
+- The status line is the pit's ONE voice. Refusals, falls, disconnection, and
+  the observer's lord line all speak through it, in priority order (whisper >
+  far-away > your-lordship > who-holds-the-pit). No dialogs, ever.
+- A fall is only a fall after 1s of continuous absence — snapshot boundaries
+  can lose the cast for a frame, and that is not a funeral.
+- The in-flight summon guard must be a SET, not a cooldown: any hatch longer
+  than SUMMON_GAP left a window where one owner could stack creatures.
+- `kill $(lsof -ti:PORT)` also kills the BROWSER holding the client socket —
+  the tab reloads and every in-page probe resets. Use -sTCP:LISTEN.
+- element.focus() in a headless/unfocused document may fire no focus event;
+  verify listeners with dispatchEvent(new FocusEvent('focus')).
+- Vite transforms single quotes to double quotes — never .includes() a
+  single-quoted needle against served source.
+- The title stands 4.6m off the fight plane (orthographic = free): at 2.2m the
+  lord stood inside the word and blended to soup.
