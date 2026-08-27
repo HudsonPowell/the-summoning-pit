@@ -10,6 +10,7 @@ import { Camera } from '../render';
 import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
+import { Pit, Bank } from './voice';
 import { LiveVoid } from './live';
 
 const KEY = 'void-look';
@@ -535,6 +536,61 @@ function healthCapsules(a: Agent, mine: boolean): Capsule[] {
   return out;
 }
 
+// --- the pit, heard ---------------------------------------------------------
+// The event stream already says who did what to whom, at what range. That was
+// always going to feed sound; this is it finally doing so.
+
+const pit = new Pit();
+let voicesReady = false;
+
+async function wakeAudio(): Promise<void> {
+  if (voicesReady) { pit.resume(); return; }
+  voicesReady = true;
+  try {
+    const res = await fetch('voices/manifest.json');
+    const names: string[] = res.ok ? await res.json() : [];
+    if (names.length) await pit.start(names);
+  } catch { /* no voices is a silent pit, not a broken one */ }
+}
+// browsers will not make a sound until a person has done something
+for (const ev of ['pointerdown', 'keydown'] as const) {
+  addEventListener(ev, () => void wakeAudio(), { once: false });
+}
+
+const BANK_OF: Partial<Record<string, Bank>> = {
+  strike: 'call', loose: 'call', hit: 'hurt', kill: 'die',
+  notice: 'growl', flee: 'hurt', spawn: 'call', spoil: 'growl',
+};
+
+function voiceFor(a: Agent | undefined) {
+  const sk = a?.genome.skeleton;
+  return {
+    mass: a ? a.bulk : 1,
+    girth: sk ? Math.max(...sk.girth, 0.06) : 0.1,
+    grit: a ? a.temper.aggression : 0.4,
+  };
+}
+
+/** Where it happened, relative to what the camera is looking at. */
+function placeOf(x: number, z: number): { pan: number; dist: number } {
+  const dx = x - (cam.cx ?? 0), dz = z - (cam.cz ?? 0);
+  const c = Math.cos(-cam.yaw), s = Math.sin(-cam.yaw);
+  const sx = dx * c - dz * s;
+  const d = Math.hypot(dx, dz);
+  return { pan: Math.max(-1, Math.min(1, sx / 4)), dist: Math.min(1, d / 9) };
+}
+
+function speak(sim: VoidSim, e: import('./sim').VoidEvent): void {
+  const bank = BANK_OF[e.kind];
+  if (!bank) return;
+  // a hit is voiced by whoever TOOK it, everything else by whoever did it
+  const id = e.kind === 'hit' || e.kind === 'kill' ? e.target?.id : e.actor?.id;
+  const who = sim.agents.find(a => a.id === id);
+  const { pan, dist } = placeOf(e.x, e.z);
+  const force = e.kind === 'kill' ? 1.15 : e.kind === 'hit' ? 0.9 : 0.7;
+  pit.say(bank, voiceFor(who), pan, dist, force);
+}
+
 // --- the feed: the same event stream, read aloud ----------------------------
 
 const feedLines: string[] = [];
@@ -636,6 +692,7 @@ async function boot() {
     for (const e of sim.events) {
       if (e.kind === 'kill') director.punch(1);
       else if (e.kind === 'hit') director.punch(0.45);
+      speak(sim, e);
     }
     driveCamera(sim, dt);
 

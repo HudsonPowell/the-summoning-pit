@@ -1042,3 +1042,39 @@ So the ceiling on the trial is RAM, not tokens/sec. Self-hosting needs a paid
 plan for memory before speed is even a question. A ~0.5B model would fit in
 954 MiB, but 3B is already the weak link in creature quality — going smaller
 trades the whole point away.
+
+## creature voices: the room is the work (2026-08-27)
+
+`src/void/voice.ts`. One room, everything sent to it — that is what makes a
+harvested grunt and a stolen shriek sound like they happened in the same place.
+No audio assets needed for the space itself: a reverb impulse is decaying noise
+with a few early reflections stamped into it (11ms, 19ms, 31ms, 47ms — those
+say "stone chamber"), and the floor is brown noise, band-passed low, drifting
+on a 0.06 Hz LFO so the room is never perfectly still. A silent room reads as
+a bug; a quiet moving one reads as a place.
+
+Per creature, from the body it already has: **mass** sets pitch
+(`rate = (0.62/mass)^0.55` — gentle at the top so giants are not inaudible),
+**girth** sets a peaking filter for throat size, **aggression** sets waveshaper
+grit. Per trigger: detune ±6%, a pitch bend across the sound (a death falls, a
+call pushes up), a 4–9 Hz wobble on the formant. Distance is mostly WETNESS,
+not volume.
+
+### harvesting from Chatterbox — what actually happens
+
+- **Spelled-out roars read as letters.** "GRAAAAAH" sounds like someone saying
+  letters. Guttural phonemes work: `ughhhh`, `khhhh`, `nnnnngh`.
+- **`[laugh]` and `[cough]` are native tags** — real non-speech, no trickery.
+- **Bare fragments make it ramble.** "ugh" with no punctuation gives the model
+  no reason to stop, so it runs the sampler to its 1000-step ceiling. "Ugh."
+  with a full stop is the whole difference between a grunt and a hang.
+- **A runaway kills the server.** Every harvest died the same way: no error, a
+  hard shutdown around step 510 as the KV cache grows. One runaway takes the
+  whole process down, so a 120-sound batch never finishes.
+- **There is no length cap to reach for.** `ChatterboxTTS.generate` exposes
+  repetition_penalty, min_p, top_p, exaggeration, cfg_weight, temperature — and
+  no max_new_tokens. The ceiling lives inside T3.
+
+So a harvest needs a **supervisor**: generate in a child process, kill it on a
+timeout, restart and resume. Not a longer timeout — the process does not
+survive to be waited on.
