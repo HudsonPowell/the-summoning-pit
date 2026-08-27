@@ -28,7 +28,7 @@ export function temperOf(g: Genome): Temper {
   }
   const sk = g.skeleton;
   const n = (role: string) => sk.chains.filter(c => c.role === role).length;
-  const h = heightOf(g);
+  const h = heightOf({ skeleton: sk } as Genome);
   const eff = effectiveGait(g.gait, { tired: 0, angry: 0 });
   const fattest = Math.max(...sk.girth, 0.06);
   const legs = sk.chains.filter(c => c.role === 'leg');
@@ -36,34 +36,34 @@ export function temperOf(g: Genome): Temper {
     ? Math.max(...legs.map(c => c.seg.reduce((x, y) => x + y, 0)))
     : 0;
 
-  // things that make a creature start something: armament, horns, extra heads,
-  // mass. A weapon in the hand is the loudest of them.
+  // Read the SHAPE, not the size.
+  //
+  // Height used to drive bravery directly, and mass is capped, so the winning
+  // move was to be tall and thin — a 2.86m plank scored bravery 1.00 and speed
+  // 1.00 while a properly proportioned dwarf scored 0.25 and 0.23. The worse
+  // creature was the better fighter, which is exactly backwards: it rewards
+  // ignoring the prompt.
+  //
+  // Everyone spends the same mass (src/budget.ts), so what matters is how it
+  // is spent. Stocky holds its ground; leggy runs; armed starts things.
+  const stocky = Math.max(0, Math.min(1, (fattest / Math.max(0.2, h)) * 4.2));
+  const leggy = Math.max(0, Math.min(1, legLen / Math.max(0.25, h) * 1.5));
+
   const aggression = c01(
-    0.24
-    + (g.weapon ? 0.28 : 0)
-    // a thing with no hands fights with its mouth, and does not hesitate
-    + (n('arm') === 0 ? 0.16 : 0)
-    + (n('leg') >= 2 ? 0.07 : 0)
-    + n('horn') * 0.12
-    + Math.max(0, n('head') - 1) * 0.16
-    + (h - 1.0) * 0.16
-    + (fattest - 0.11) * 1.1
-    + n('arm') * 0.05,
-  );
-
-  // bravery is mass and armament again, but weighted toward sheer size —
-  // small things run, and they are right to
-  // nothing is completely without nerve — a floor keeps the pit from emptying
-  const bravery = c01(0.16 + (h - 0.75) * 0.42 + (g.weapon ? 0.14 : 0) + n('leg') * 0.05);
-
-  // speed is stride machinery: long legs, quick cadence, not much to carry
-  const speed = c01(
     0.2
-    + (legLen - 0.3) * 0.8
-    + (eff.cadence - 0.8) * 0.45
-    + (0.16 - fattest) * 1.6
-    + (sk.locomotion === 'fly' ? 0.18 : 0),
+    + (g.weapon ? 0.26 : 0)
+    + (n('arm') === 0 ? 0.16 : 0)      // no hands: it fights with its mouth
+    + n('horn') * 0.11
+    + Math.max(0, n('head') - 1) * 0.15
+    + stocky * 0.22,
   );
+
+  // a thing built like a barrel does not run away; a thing built like a stick does
+  const bravery = c01(0.14 + stocky * 0.62 + (g.weapon ? 0.12 : 0) + n('leg') * 0.04);
+
+  // long legs for your size, and not much to carry
+  const speed = c01(0.16 + leggy * 0.6 + (eff.cadence - 0.8) * 0.35 - stocky * 0.35
+    + (sk.locomotion === 'fly' ? 0.16 : 0));
 
   return { aggression, bravery, speed };
 }

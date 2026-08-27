@@ -916,3 +916,37 @@ That is what makes a size band safe to expose.
   load-bearing part in both is the JSON schema — Ollama enforces it during
   decoding via `format`, the others via `response_format: json_schema`. Without
   it a small model returns prose with JSON in it.
+
+## the bake-off: does a better model make a better creature? (2026-08-27)
+
+`npm run bakeoff` — same prompt, same schema notes, same server pipeline, two
+authors: llama3.2:3b through the hatcher, and genomes written by Opus 5. Both
+go through `sanitiseGenome()`, so both are mass-capped and both have their
+temperament derived from their body.
+
+**Composition: yes, clearly.** The heron and the dwarf are not close — llama
+returned a flat plank on stilts and an orange post, against a wading bird with
+a spearing beak and a broad short-legged figure. **The troll went the other
+way**: llama's read better than mine, because I over-hunched it (slump 0.42 +
+lean 0.34 + headPitch 0.4 folds a creature onto its own face). Authoring is a
+skill and I got one of three wrong.
+
+**Power: it was actively backwards, and that was a real design fault.**
+The first run scored llama's 2.86 m plank at bravery **1.00** and speed
+**1.00**, against the faithful 0.84 m dwarf at 0.25 and 0.23. Temperament read
+raw HEIGHT, and mass is capped — so the optimal play was tall and thin, i.e.
+ignore the prompt.
+
+Now it reads SHAPE, not size:
+
+    stocky = clamp(fattest / height * 4.2)     leggy = clamp(legLen / height * 1.5)
+    bravery    = 0.14 + stocky*0.62 + weapon*0.12 + legChains*0.04
+    speed      = 0.16 + leggy*0.6 + (cadence-0.8)*0.35 - stocky*0.35
+    aggression = 0.2 + weapon*0.26 + noArms*0.16 + horns*0.11 + extraHeads*0.15 + stocky*0.22
+
+Everyone spends the same mass, so what matters is how it is spent: stocky holds
+its ground, leggy runs, armed starts things. The same dwarf now reads bravery
+0.75 against the plank's 0.40, and the heron 0.58 speed against its 0.16.
+
+So: a better model buys **fidelity**, and fidelity is now worth having. It
+cannot buy stats — those are derived here, from the body, under a mass cap.
