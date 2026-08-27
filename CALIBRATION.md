@@ -1004,3 +1004,21 @@ served, health green.
 
 The CLI needs no global install: `npx @railway/cli` works. Only `login` needs a
 human, because it opens a browser.
+
+## bring-your-own-model cannot work over https (2026-08-27)
+
+Shipped, described as a feature, and structurally impossible: a page served from
+`https://` cannot make a request to `http://localhost:11434`. The browser blocks
+it — `net::ERR_BLOCKED_BY_CLIENT` — before Ollama's own CORS rules even come
+into it. Local hatching works on a dev server and nowhere else.
+
+So a hosted pit MUST hatch server-side. `HATCH_API_KEY` is not an optimisation,
+it is the only way anyone but the developer can summon into a deployed pit.
+
+## `?live` should never have been opt-in
+
+Two people opening the deployed link each got their own private simulation and
+neither could see the other — the shared pit was behind a flag left over from
+development. The deployed origin now defaults to live; `?solo` opts out; a dev
+server keeps the opt-in, because there is no pit behind it unless one is
+running.

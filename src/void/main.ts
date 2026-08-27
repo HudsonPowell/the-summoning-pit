@@ -249,6 +249,9 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
         // can summon into is not a pit — so the words go to the pit instead,
         // and it hatches on their behalf.
         if (!live) throw e;
+        // A page served over https cannot reach http://localhost:11434 — the
+        // browser blocks it outright. So "bring your own model" works on a dev
+        // server and nowhere else, and a hosted pit has to hatch for everyone.
         status.textContent = 'summoning…';
         live.send({ t: 'summon', key: myKey, desc });
         busy = false;
@@ -548,14 +551,23 @@ function pushFeed(events: import('./sim').VoidEvent[]) {
 
 // --- boot -------------------------------------------------------------------
 
-const LIVE = new URLSearchParams(location.search).has('live');
+// The shared pit is the DEFAULT, not a flag. `?live` was a development
+// switch, and leaving it opt-in meant anyone opening the deployed link got
+// their own private simulation — two people on the same URL watched two
+// different worlds and neither could see the other. A dev server has no pit
+// behind it unless one is running, so there the old opt-in still applies.
+const DEV_PORT = location.port === '5180' || location.port === '5173';
+const LIVE = new URLSearchParams(location.search).has('solo')
+  ? false
+  : DEV_PORT
+    ? new URLSearchParams(location.search).has('live')
+    : true;
 // Same origin by default, so a deployed pit needs no configuration at all and
 // gets wss:// wherever the page got https://. The dev server is on another
 // port, so there it falls back to the local pit.
 const PIT_URL = new URLSearchParams(location.search).get('pit') ?? (() => {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const devPort = location.port === '5180' || location.port === '5173';
-  return devPort ? `ws://${location.hostname}:8787` : `${proto}//${location.host}`;
+  return DEV_PORT ? `ws://${location.hostname}:8787` : `${proto}//${location.host}`;
 })();
 
 async function boot() {
