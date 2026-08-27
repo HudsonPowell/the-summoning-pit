@@ -65,13 +65,15 @@ export const CROWN: GearPiece = {
   name: 'crown', at: 'head',
   parts: [
     // the band, crossed so it reads as a ring from any angle
-    { a: [-0.34, 0.62, 0], b: [0.34, 0.62, 0], r: 0.17, color: '#e8c14a' },
-    { a: [0, 0.62, -0.34], b: [0, 0.62, 0.34], r: 0.17, color: '#e0b63c' },
-    // and the points
-    { a: [0.3, 0.66, 0], b: [0.36, 1.0, 0], r: 0.08, color: '#f2d264' },
-    { a: [-0.3, 0.66, 0], b: [-0.36, 1.0, 0], r: 0.08, color: '#f2d264' },
-    { a: [0, 0.66, 0.3], b: [0, 1.0, 0.36], r: 0.08, color: '#f2d264' },
-    { a: [0, 0.66, -0.3], b: [0, 1.0, -0.36], r: 0.08, color: '#f2d264' },
+    // dark iron, not gold — the pit does not award treasure, it awards the
+    // fact that you are still standing
+    { a: [-0.34, 0.62, 0], b: [0.34, 0.62, 0], r: 0.17, color: '#2f3338' },
+    { a: [0, 0.62, -0.34], b: [0, 0.62, 0.34], r: 0.17, color: '#282c31' },
+    // the points catch a little more light so the shape still reads
+    { a: [0.3, 0.66, 0], b: [0.36, 1.0, 0], r: 0.08, color: '#4a5058' },
+    { a: [-0.3, 0.66, 0], b: [-0.36, 1.0, 0], r: 0.08, color: '#4a5058' },
+    { a: [0, 0.66, 0.3], b: [0, 1.0, 0.36], r: 0.08, color: '#4a5058' },
+    { a: [0, 0.66, -0.3], b: [0, 1.0, -0.36], r: 0.08, color: '#4a5058' },
   ],
 };
 

@@ -765,7 +765,7 @@ async function boot() {
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
-    sim, cam, look, director, live,
+    sim, cam, look, director, live, pit,
     tick,
     refit: fitCanvas,
     run: (seconds: number, dt = 1 / 60) => {

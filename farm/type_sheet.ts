@@ -8,22 +8,26 @@ import { WireText } from '../src/type/typeset';
 import { drawText } from './font';
 
 const W = 1600;
-const BAND = 190;
+const BAND = 210;
 const VOID: [number, number, number] = [9, 9, 13];
 
 interface Band { label: string; text: string; blend: number; hand: number; gauge?: number }
 
 const BANDS: Band[] = [
-  { label: 'THE NAME, AS THE PIT SETS IT', text: 'THE SUMMONING PIT', blend: 2.6, hand: 1 },
+  { label: 'THE NAME, LOWERCASE — THE PLATE OWN VOCABULARY', text: 'the summoning pit', blend: 2.6, hand: 1 },
+  { label: 'THE NAME, CAPS', text: 'THE SUMMONING PIT', blend: 2.6, hand: 1 },
+  { label: 'FIGURES — COMPARE THE PLATE', text: '1234567890', blend: 0.4, hand: 1 },
+  { label: 'a-m — THE 1 IS THIS n, THE 10 IS THIS nb, THE 0 IS THIS o', text: 'abcdefghijklm', blend: 0.4, hand: 1 },
+  { label: 'n-z', text: 'nopqrstuvwxyz', blend: 0.4, hand: 1 },
   { label: 'A-M', text: 'ABCDEFGHIJKLM', blend: 0.4, hand: 1 },
   { label: 'N-Z', text: 'NOPQRSTUVWXYZ', blend: 0.4, hand: 1 },
-  { label: 'FIGURES — COMPARE THE PLATE', text: '1234567890', blend: 0.4, hand: 1 },
   { label: "MARKS", text: "-.,:'!?", blend: 0.4, hand: 1 },
-  { label: 'HAND 0 — MACHINED, FOR REFERENCE', text: 'HAMMERED', blend: 0.4, hand: 0 },
-  { label: 'HAND 2.4 — BEATEN IN', text: 'HAMMERED', blend: 0.4, hand: 2.4 },
-  { label: 'BLUR 0 / 2 / 5 — THE FIELD DOING THE WORK', text: 'PIT', blend: 0, hand: 1 },
-  { label: '', text: 'PIT', blend: 2.2, hand: 1 },
-  { label: '', text: 'PIT', blend: 5.5, hand: 1 },
+  { label: 'HAND 0 / 1 / 2.4', text: 'hammered', blend: 0.4, hand: 0 },
+  { label: '', text: 'hammered', blend: 0.4, hand: 1 },
+  { label: '', text: 'hammered', blend: 0.4, hand: 2.4 },
+  { label: 'BLUR 0 / 2.2 / 5.5 — THE FIELD DOING THE WORK', text: 'pit', blend: 0, hand: 1 },
+  { label: '', text: 'pit', blend: 2.2, hand: 1 },
+  { label: '', text: 'pit', blend: 5.5, hand: 1 },
 ];
 
 const r = new PixelRenderer(W, BAND);
@@ -35,9 +39,9 @@ BANDS.forEach((b, i) => {
   const t = new WireText(b.text, { hand: b.hand, gauge: b.gauge ?? 0.078, align: 'centre', seed: 1740 });
   t.settle();
   const caps: Capsule[] = t.capsules();
-  const ppm = Math.min(W * 0.82 / Math.max(0.5, t.width), BAND * 0.52);
+  const ppm = Math.min(W * 0.82 / Math.max(0.5, t.width), BAND * 0.44);
   const cam: Camera = {
-    yaw: 0, pitch: 0, ppm, cx: 0, cz: 0, cy: 0.5,
+    yaw: 0, pitch: 0, ppm, cx: 0, cz: 0, cy: 0.44,
     floor: false, blend: b.blend, blendDepth: 0.5, blendMix: 1, blendShape: 0.62,
     voidColor: VOID,
   };

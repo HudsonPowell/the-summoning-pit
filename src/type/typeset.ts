@@ -8,7 +8,7 @@
 import { Capsule } from '../pose';
 import { v3 } from '../vec';
 import { Rod, Strand, centreline, Pt } from './rod';
-import { GLYPHS, GAUGE, Glyph } from './alphabet';
+import { glyphFor, GAUGE, Glyph } from './alphabet';
 
 export interface SetOptions {
   /** Cap height in world metres. Everything else is a multiple of it. */
@@ -95,11 +95,11 @@ export class WireText {
     const r = rng(o.seed);
 
     // --- measure -------------------------------------------------------
-    const chars = [...this.text.toUpperCase()];
+    const chars = [...this.text];
     let adv = 0;
     const xs: number[] = [];
     for (const c of chars) {
-      const gl: Glyph | undefined = GLYPHS[c];
+      const gl: Glyph | undefined = glyphFor(c);
       xs.push(adv);
       adv += (gl ? gl.adv : 0.5) + o.tracking;
     }
@@ -112,7 +112,7 @@ export class WireText {
 
     // --- cut, bend, hammer ----------------------------------------------
     chars.forEach((c, gi) => {
-      const gl = GLYPHS[c];
+      const gl = glyphFor(c);
       if (!gl) return;
       const gx = originX + xs[gi];
       const u = adv > 1e-6 ? (xs[gi] + gl.adv / 2) / adv : 0.5;
