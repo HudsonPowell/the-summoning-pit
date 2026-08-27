@@ -284,12 +284,14 @@ function refuse(ws: WebSocket, owner: string, why: string): void {
 async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   const owner = ownerOf(m.key);
   const since = sim.t - (lastSummon.get(owner) ?? -1e9);
-  if (since < SUMMON_COOLDOWN) {
-    ws.send(JSON.stringify({ t: 'nope', why: `wait ${Math.ceil(SUMMON_COOLDOWN - since)}s` }));
+  if (since < SUMMON_GAP) return;   // a double-press, not a request
+  const held = penaltyUntil.get(owner) ?? 0;
+  if (sim.t < held) {
+    refuse(ws, owner, `that one did not last — ${Math.ceil(held - sim.t)}s`);
     return;
   }
   if (livingOf(owner).length >= MAX_PER_OWNER) {
-    refuse(ws, owner, 'you already have three in the pit');
+    refuse(ws, owner, 'yours is still standing');
     return;
   }
 

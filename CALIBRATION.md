@@ -1190,3 +1190,18 @@ scrum of twelve. Yours now stands in a slowly turning dashed ring on the floor �
 a shape nothing else in the pit makes, readable at any zoom and from directly
 overhead, which is where the camera usually is. The dashes matter: a solid ring
 reads as a puddle.
+
+## the server was never typechecked (2026-08-27)
+
+`tsconfig.json` had `include: ["src", "farm"]`. **Not `server`.** So every
+`tsc --noEmit` run in this project has been blind to the thing that actually
+holds the pit, and a rename that left one stale reference behind —
+`SUMMON_COOLDOWN` — sailed through a clean typecheck, a clean test run, a
+successful build and a successful deploy, then crash-looped the live server on
+its first summon.
+
+The tell was subtle and worth remembering: a `ReferenceError` for a name that
+plainly did not exist, from a build that reported no errors at all. If tsc is
+silent about an obvious error, ask what it is looking at.
+
+`include` now covers `server`. Adding it surfaced nothing else, which is luck.
