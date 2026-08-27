@@ -12,7 +12,7 @@ import { GAUGE } from '../type/alphabet';
 import { Capsule } from '../pose';
 import { v3, rotY } from '../vec';
 
-const HOLD = 4.6;
+const HOLD = 2.1;
 const FALL_EACH = 1.6;
 const FALL_SPREAD = 2.2;
 
@@ -38,10 +38,12 @@ function forgeInks(r: () => number): [number, number, number][] {
     const [rr, gg, bb] = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][seg];
     return [Math.round((rr + m) * 255), Math.round((gg + m) * 255), Math.round((bb + m) * 255)];
   };
-  const s = 0.42 + r() * 0.25;
+  // dull, dark metals: low saturation, lightness kept under 0.5 — the word
+  // should sit IN the gloom, not glow against it
+  const s = 0.2 + r() * 0.16;
   return [
-    mk(hue, s, 0.62), mk(hue, s * 0.85, 0.5), mk(hue, s * 1.1, 0.72),
-    mk(hue, s * 0.7, 0.42), mk(accent, s * 1.15, 0.58),
+    mk(hue, s, 0.44), mk(hue, s * 0.85, 0.33), mk(hue, s * 1.15, 0.5),
+    mk(hue, s * 0.7, 0.26), mk(accent, s * 1.2, 0.38),
   ];
 }
 
@@ -82,7 +84,7 @@ export class WireTitle {
     }
     if (cur) rows.push(cur);
 
-    const lineH = size * 1.55;
+    const lineH = size * 1.18;
     rows.forEach((row, i) => {
       const wire = new WireText(row, {
         size, gauge, inks, align: 'centre',
@@ -117,7 +119,12 @@ export class WireTitle {
     this.lines.forEach((ln, li) => {
       const lt = t - ln.offset;
       if (lt < this.summonEnd - ln.offset && t < this.summonEnd) {
-        if (lt > 0) ln.wire.step(dt, lt);
+        // arriving — and wiggling as it does, the same draught that will
+        // eventually kill it already pulling at it on the way in
+        if (lt > 0) {
+          ln.wire.step(dt, lt);
+          ln.wire.breathe(t + li * 1.7, 0.006);
+        }
         return;
       }
       // ALIVE, not displayed: loose joints, an unsteady draught, the odd shove
@@ -132,9 +139,10 @@ export class WireTitle {
       ln.wire.breathe(t + li * 1.7, 0.0048);
     });
 
-    // a gust every couple of seconds, somewhere along one of the lines
+    // a gust every couple of seconds, somewhere along one of the lines —
+    // during the arrival too, so on and off are the same weather
     this.gustAt -= dt;
-    if (this.gustAt <= 0 && t > this.summonEnd) {
+    if (this.gustAt <= 0 && t > 0.8) {
       this.gustAt = 1.1 + this.r() * 2.2;
       const ln = this.lines[Math.floor(this.r() * this.lines.length)];
       const x = ln.wire.left + this.r() * ln.wire.width;
@@ -159,14 +167,16 @@ export class WireTitle {
         const rad = cap.r * (0.82 + gv * 0.5);
         // rivets have no glyph; a negative index walked off the ink array
         const gi = Math.max(0, g);
-        const alt = this.inks[(gi * 3 + li + 1) % this.inks.length];
         const len = Math.hypot(cap.b.x - cap.a.x, cap.b.y - cap.a.y, cap.b.z - cap.a.z);
         const chunks = Math.max(1, Math.min(4, Math.round(len / 0.16)));
         for (let ci = 0; ci < chunks; ci++) {
           const t0 = ci / chunks, t1 = (ci + 1) / chunks;
           const ax = cap.a.x + (cap.b.x - cap.a.x) * t0, ay = cap.a.y + (cap.b.y - cap.a.y) * t0, az = cap.a.z + (cap.b.z - cap.a.z) * t0;
           const bx = cap.a.x + (cap.b.x - cap.a.x) * t1, by = cap.a.y + (cap.b.y - cap.a.y) * t1, bz = cap.a.z + (cap.b.z - cap.a.z) * t1;
-          const ink = (ci + gi) % 2 === 0 ? cap.color : alt;
+          // each chunk draws from the whole palette, hashed stably — a
+          // letter is three or four metals, and the field cross-fades them
+          const pick = hash01(gi * 131 + ci * 17 + li * 7);
+          const ink = pick < 0.4 ? cap.color : this.inks[Math.floor(pick * this.inks.length) % this.inks.length];
           const a = rotY(v3(ax, 0, az), -camYaw);
           const b = rotY(v3(bx, 0, bz), -camYaw);
           this.out.push({
