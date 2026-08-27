@@ -387,8 +387,9 @@ function driveCamera(sim: VoidSim, dt: number) {
   if (camCold) {
     // damping in from a cold camera means a second of looking at nothing
     camCold = false;
-    cam.cx = rig.ax = you ? you.x : 0;
-    cam.cz = rig.az = you ? you.z : 0;
+    const titleUp = title && !title.done;
+    cam.cx = rig.ax = you && !titleUp ? you.x : 0;
+    cam.cz = rig.az = you && !titleUp ? you.z : 0;
     cam.cy = you ? you.bulk * 0.55 : 0.9;
     cam.ppm = (view.size.H * (you ? 0.26 / Math.max(0.7, you.bulk) : 0.34 / 5)) * look.zoom;
     cam.yaw = you ? 0.5 : watchYaw;
@@ -440,7 +441,12 @@ function driveCamera(sim: VoidSim, dt: number) {
   const spread = live.map(a => Math.hypot(a.x - cx, a.z - cz)).sort((p, q) => p - q);
   // an empty pit frames the TITLE, not a guess about absent creatures
   const most = spread.length ? spread[Math.floor(spread.length * 0.7)] : 2.8;
-  const reach = Math.max(2.6, Math.min(5.4, most + 1.6));
+  let reach = Math.max(2.6, Math.min(5.4, most + 1.6));
+  // While the title stands, the title IS the show. The observer used to chase
+  // whatever creature was wandering the far side of the pit, and on a phone
+  // the whole opening played off-screen. The camera holds the stage until the
+  // word has died, then goes back to its cast.
+  if (title && !title.done) { cx = 0; cz = 0; reach = 4.4; }
 
   watchYaw = (watchYaw + dt * 0.045) % (Math.PI * 2);   // a turn every 2.3 min
 

@@ -67,12 +67,15 @@ export class WireTitle {
   done = false;
 
   constructor(text = 'the summoning pit', maxWidth = 12, baseline = 1.15) {
-    const size = 0.62;
+    const words = text.split(/\s+/);
+    // A word cannot wrap. On a phone-narrow frame the longest word sets the
+    // size, with a little air either side, or 'summoning' grazes the bezels.
+    const widestEm = Math.max(...words.map(w => new WireText(w, { size: 1 }).width));
+    const size = Math.min(0.62, (maxWidth * 0.84) / widestEm);
     const inks = forgeInks(this.r);
     this.inks = inks;
-    const gauge = GAUGE * 1.15;
+    const gauge = GAUGE * 1.15 * Math.max(0.82, size / 0.62);
 
-    const words = text.split(/\s+/);
     const fits = (s: string) => new WireText(s, { size: 1 }).width * size <= maxWidth * 0.92;
     const rows: string[] = [];
     let cur = '';
