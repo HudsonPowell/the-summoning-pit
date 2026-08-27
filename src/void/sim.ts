@@ -165,7 +165,8 @@ export function createVoid(roster: Character[], population = 1): VoidSim {
     pacts: newPacts(),
     agents: [], shots: [], roster, events: [], t: 0, spawnT: 0, population, peace: 0.35,
   };
-  for (let i = 0; i < Math.max(1, population); i++) spawnOne(sim, true);
+  // population 0 is legitimate now: the pit spawns NOTHING of its own.
+  for (let i = 0; i < population; i++) spawnOne(sim, true);
   return sim;
 }
 
@@ -752,34 +753,12 @@ export function stepVoid(sim: VoidSim, dt: number): void {
   }
   sim.shots = sim.shots.filter(s => s.life > 0);
 
-  // the fallen fade, and the void refills
-  const before = sim.agents.length;
+  // The fallen fade. Nothing spawns by itself — no keeper, no refill, no
+  // house challenger. Every creature in the pit was summoned by a person, and
+  // an empty pit is an empty pit; the scenery and the title carry the room
+  // until someone types. (The keeper design lasted a day: it made the pit
+  // feel inhabited, and made every identity bug look like something else.)
   sim.agents = sim.agents.filter(a => a.deadT < 0 || a.deadT < 3.5);
-  // THE KEEPER. The pit holds the last one standing and nothing else: whoever
-  // won stays, and stays whether anyone is watching or not. Nothing new is
-  // spawned while something is alive in there — a challenger has to be summoned
-  // by a person. Only an empty pit is refilled, so that a visitor always finds
-  // someone waiting.
-  const alive = sim.agents.filter(a => a.deadT < 0);
-  if (alive.length === 0) {
-    sim.spawnT -= dt;
-    if (sim.spawnT <= 0) {
-      spawnOne(sim);
-      sim.spawnT = rnd(4, 8);
-    }
-  } else if (alive.length === 1) {
-    // THE PIT ANSWERS. One creature alone at full health cannot be killed, and
-    // if it belongs to somebody then that person can never summon again —
-    // "wait for yours to fall" only works if something can make it fall. So a
-    // lone holder is challenged. Winning buys you quiet, not permanence.
-    sim.challengeT += dt;
-    if (sim.challengeT > CHALLENGE_AFTER) {
-      sim.challengeT = 0;
-      spawnOne(sim);
-    }
-  } else {
-    sim.challengeT = 0;
-  }
 }
 
 /** Where the interesting thing is happening, for the camera to look at. */

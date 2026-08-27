@@ -1293,3 +1293,32 @@ Two fixes, because one was not enough:
 A secret that travels in a shareable link is not a secret. If the thing people
 are meant to send each other is the same string that proves who they are, the
 design is wrong however carefully it is implemented.
+
+## the mobile batch (2026-08-27)
+
+- **Portrait was ~10x the pixels.** `res` is horizontal; the buffer height is
+  `res * aspect`, so a phone in portrait (aspect ~2) rendered 1120x2240 on the
+  weakest hardware we serve. Landscape fine, portrait crawling — exactly the
+  report. The buffer is capped by AREA now (`MAX_BUFFER_PX = 1120*760`), so
+  total pixels are constant whatever the shape.
+- **Blend is a pixel radius**, and both zoom (ppm) and the new buffer cap change
+  what a pixel is worth — a fixed blend read as soup close up and vanished
+  zoomed out or on a phone. It now scales with ppm (`look.blend * ppm/42`), so
+  softness is a property of the world again.
+- **iOS zooms the page on focusing any input under 16px.** That was most of
+  "the keyboard is messy". 16px font, and the box blurs itself the moment you
+  press Enter so the keyboard leaves with the summon.
+- **Pinch zooms; two fingers never orbit.** The wheel does not exist on a phone.
+- **The input field is the state**: active (summon), disabled+"summoning…",
+  disabled+"<name> is in play". The status line says exactly one thing — YOU
+  ARE PIT LORD or not — and every other dialog died. Lordship no longer
+  requires a kill: the lord is whoever holds the pit, including a lone first
+  summon.
+- **No system spawns, anywhere.** No initial cast, no refill, no keeper, no
+  challenger, stir only wakes, and house creatures are not resurrected from the
+  state file. User prompts or nothing. The keeper design lasted one day.
+- **Build tag** injected at build (`RAILWAY_GIT_COMMIT_SHA` → git → 'dev'),
+  bottom-right, 9px. "Which version am I looking at" stops being a guess.
+- **The title** is capsule geometry mid-scene on load — 5x7 strokes run-length
+  merged, billboarded to the camera, rises/holds/melts like a figure dying.
+  Placeholder font until the real type system lands.

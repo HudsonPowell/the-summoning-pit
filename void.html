@@ -29,7 +29,13 @@
       border-bottom: 1px solid var(--line); padding-bottom: 4px;
     }
     #panel h2:first-child { margin-top: 0; }
-    #stage { position: relative; }
+    #stage { position: relative; touch-action: none; }
+    #stage canvas#view { touch-action: none; }
+    #buildTag {
+      position: absolute; bottom: 8px; right: 10px; z-index: 6;
+      font-size: 9px; letter-spacing: .08em; color: #3d434b;
+      user-select: none; pointer-events: none;
+    }
     #muteIcon {
       position: absolute; top: 16px; right: 16px; z-index: 6;
       width: 46px; height: 46px; cursor: pointer;
@@ -45,9 +51,17 @@
       width: 100%; box-sizing: border-box; padding: 11px 14px;
       background: rgba(8, 10, 13, .72); backdrop-filter: blur(6px);
       border: 1px solid rgba(120, 140, 160, .22); border-radius: 4px;
-      color: #dbe3ed; font: inherit; font-size: 13px; letter-spacing: .05em;
-      transition: border-color .18s, background .18s;
+      /* 16px: anything smaller and iOS zooms the page every time the field is
+         focused, which is most of what made the keyboard feel broken */
+      color: #dbe3ed; font: inherit; font-size: 16px; letter-spacing: .05em;
+      transition: border-color .18s, background .18s, opacity .3s;
     }
+    /* the field IS the state: dim and untouchable while a hero is in play */
+    #summonBar input:disabled {
+      opacity: .45; cursor: default;
+      border-color: rgba(120, 140, 160, .1);
+    }
+    #summonStatus.lord { color: #b8975a; letter-spacing: .18em; }
     #summonBar input:focus {
       outline: none; border-color: rgba(75, 179, 166, .8);
       background: rgba(8, 10, 13, .9);
@@ -96,6 +110,7 @@
     <div id="stage">
       <canvas id="view"></canvas>
       <canvas id="muteIcon" title="sound"></canvas>
+      <div id="buildTag"></div>
       <div id="summonBar"><input id="summonBox" type="text" placeholder="summon…" autocomplete="off" spellcheck="false"><div id="summonStatus"></div></div>
     </div>
     <aside id="panel"><div id="panelInner"></div></aside>

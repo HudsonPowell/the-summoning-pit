@@ -1,7 +1,7 @@
 // A 5x7 bitmap font, because a stress sheet is useless if you cannot read
 // which prompt produced which creature. No dependency, no font file.
 
-const G: Record<string, string> = {
+export const GLYPHS: Record<string, string> = {
   A: '01110/10001/10001/11111/10001/10001/10001',
   B: '11110/10001/10001/11110/10001/10001/11110',
   C: '01110/10001/10000/10000/10000/10001/01110',
@@ -72,7 +72,7 @@ export function drawText(
 ): void {
   let cx = x0;
   for (const raw of text.toUpperCase()) {
-    const rows = (G[raw] ?? '11111/10001/10001/10001/10001/10001/11111').split('/');
+    const rows = (GLYPHS[raw] ?? '11111/10001/10001/10001/10001/10001/11111').split('/');
     for (let ry = 0; ry < GLYPH_H; ry++) {
       for (let rx = 0; rx < GLYPH_W; rx++) {
         if (rows[ry][rx] !== '1') continue;

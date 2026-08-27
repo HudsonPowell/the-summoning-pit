@@ -11,11 +11,18 @@ import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
 import { Pit, Bank } from './voice';
+import { Title } from './title';
 import { MuteIcon } from './icon';
 import { CROWN } from '../gear';
 import { LiveVoid } from './live';
 
 const KEY = 'void-look';
+
+declare const __BUILD__: string;
+{
+  const tag = document.getElementById('buildTag');
+  if (tag) tag.textContent = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
+}
 
 interface Look {
   res: number;
@@ -51,7 +58,7 @@ const DEFAULT_LOOK: Look = {
   round: 1,
   closeness: 0.72, response: 0.5, lead: 0.5,
   voidCol: '#000000', floorColA: '#2a2f3a', floorColB: '#22262f',
-  flat: true, pitch: 0.34, orbit: 0.16, population: 1, peace: 0.35,
+  flat: true, pitch: 0.34, orbit: 0.16, population: 0, peace: 0.35,
   panel: false,
 };
 
@@ -86,6 +93,14 @@ const REF_RES = 320;
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 // the display canvas matches the window; the low-res buffer inside it is what
 // `resolution` controls, so the pixels stay square and the frame stays full
+/**
+ * The buffer is capped by AREA, not width. `res` is horizontal resolution, so
+ * a portrait phone (aspect ~2) was quietly rendering res * 2 rows — at 1120
+ * that is a 1120x2240 buffer, ~10x the pixels the look was tuned on, on the
+ * weakest hardware we run on. Landscape was fine, portrait crawled, which is
+ * exactly the report. The cap keeps total pixels constant whatever the shape.
+ */
+const MAX_BUFFER_PX = 1120 * 760;
 function fitCanvas() {
   const stage = document.getElementById('stage')!;
   const w = Math.max(240, Math.round(stage.clientWidth));
@@ -93,7 +108,8 @@ function fitCanvas() {
   canvas.width = w;
   canvas.height = h;
   const aspect = h / w;
-  view.setSize(look.res, Math.max(80, Math.round(look.res * aspect)));
+  const res = Math.min(look.res, Math.floor(Math.sqrt(MAX_BUFFER_PX / aspect)));
+  view.setSize(res, Math.max(80, Math.round(res * aspect)));
 }
 const view = new PixelView(canvas, look.res, Math.round(look.res * 0.625));
 view.init();
@@ -204,6 +220,11 @@ function keepKey(key: string, owner: string): void {
 }
 
 let yours: Agent | null = null;
+
+// The title, standing in the scene on load, dying like the figures do. Built
+// from the placeholder bitmap font until Jody's type system lands.
+let title: Title | null = new Title(['THE', 'SUMMONING', 'PIT'], 0.17);
+
 const orbit = { yaw: 0, zoom: 0, idle: 99 };
 
 // The camera's own inertia. Chasing the creature frame by frame is what made
@@ -260,74 +281,86 @@ function myModel(): { model?: string; url?: string } {
   return { model: get('model'), url: get('ollama') };
 }
 
+/**
+ * The input field is the state, and it only has three:
+ *
+ *   active      — you have no hero; type and summon.
+ *   summoning   — disabled while the pit hatches.
+ *   in play     — disabled, carrying your hero's name, until it falls.
+ *
+ * The line under it says exactly one thing: whether you are Pit Lord. No
+ * chatter, no refusal dialogs, no "X answers" — the creature walking in IS the
+ * answer, and the disabled field already says why you cannot type.
+ */
+let summoning = false;
+
+function summonUI(sim: VoidSim): void {
+  const box = document.getElementById('summonBox') as HTMLInputElement | null;
+  const status = document.getElementById('summonStatus');
+  if (!box || !status) return;
+
+  const mine = sim.agents.find(a => a.by === ME && a.deadT < 0) ?? null;
+  if (mine) yours = mine;
+
+  const state = summoning ? 'summoning' : mine ? 'inplay' : 'active';
+  if (box.dataset.state !== state) {
+    box.dataset.state = state;
+    box.disabled = state !== 'active';
+    box.placeholder =
+      state === 'summoning' ? 'summoning…'
+      : state === 'inplay' ? `${mine!.ch.name} is in play`
+      : 'summon…';
+  }
+
+  const lordText = mine
+    ? (mine.id === lordId ? 'YOU ARE PIT LORD' : 'you are not pit lord')
+    : '';
+  if (status.textContent !== lordText) status.textContent = lordText;
+  status.classList.toggle('lord', !!mine && mine.id === lordId);
+}
+
 function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
   const box = document.getElementById('summonBox') as HTMLInputElement;
-  const status = document.getElementById('summonStatus')!;
 
-  let busy = false;
-  let waiting = 0;
-  /**
-   * The pit answers every summon now, but a lost socket or a dropped packet
-   * still leaves someone staring at "summoning…" with no idea whether to wait
-   * or try again. Say so rather than hang.
-   */
-  function armTimeout(): void {
-    clearTimeout(waiting);
-    waiting = window.setTimeout(() => {
-      if (status.textContent === 'sending…' || status.textContent === 'summoning…') {
-        status.textContent = 'no answer — try again';
-        busy = false;
-      }
-    }, 45000);
+  let settle = 0;
+  function done(): void {
+    clearTimeout(settle);
+    summoning = false;
   }
 
   async function summon() {
     const desc = box.value.trim();
-    if (!desc || busy) return;
-    busy = true;
+    if (!desc || summoning) return;
+    summoning = true;
     box.value = '';
-    status.textContent = 'summoning…';
+    box.blur();          // the phone keyboard goes away the moment you commit
+    // a lost packet must not wedge the field shut forever
+    settle = window.setTimeout(done, 45000);
     try {
       const mine = myModel();
       let g;
       try {
-        g = await hatchGenome(desc, mine.model, mine.url, chars => {
-          status.textContent = `summoning… ${chars}`;
-        });
-      } catch (e) {
-        // No model here. Most people will never run one, and a pit only they
-        // can summon into is not a pit — so the words go to the pit instead,
-        // and it hatches on their behalf.
-        if (!live) throw e;
-        // A page served over https cannot reach http://localhost:11434 — the
-        // browser blocks it outright. So "bring your own model" works on a dev
-        // server and nowhere else, and a hosted pit has to hatch for everyone.
-        status.textContent = 'summoning…';
+        g = await hatchGenome(desc, mine.model, mine.url);
+      } catch {
+        // No local model — the words go to the pit and it hatches for them.
+        if (!live) { done(); return; }
         live.send({ t: 'summon', key: myKey, desc });
-        armTimeout();
-        busy = false;
         return;
       }
       if (live) {
-        // The words were hatched HERE and are thrown away here. Only the body
-        // goes over the wire — the pit never learns what anyone typed.
+        // Hatched HERE; only the body crosses the wire.
         live.send({ t: 'summon', key: myKey, genome: g });
-        status.textContent = 'sending…';
-        armTimeout();
       } else {
         const a = spawnChar(sim, makeCharacter(g, 'beast'), ME);
         yours = a;
-        status.textContent = `${a.ch.name} answers`;
         director.punch(0.7);
+        done();
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      status.textContent = msg.includes('fetch')
-        ? 'nothing answered — is ollama running?'
-        : 'nothing answered';
+    } catch {
+      done();
     }
-    busy = false;
   }
+  (buildSummon as any).finish = done;
 
   box.addEventListener('keydown', e => {
     e.stopPropagation();
@@ -403,7 +436,8 @@ function driveCamera(sim: VoidSim, dt: number) {
   // should not shrink everyone else to specks: frame the bulk of the cast and
   // let a stray sit outside the frame until it comes back.
   const spread = live.map(a => Math.hypot(a.x - cx, a.z - cz)).sort((p, q) => p - q);
-  const most = spread.length ? spread[Math.floor(spread.length * 0.7)] : 3;
+  // an empty pit frames the TITLE, not a guess about absent creatures
+  const most = spread.length ? spread[Math.floor(spread.length * 0.7)] : 2.8;
   const reach = Math.max(2.6, Math.min(5.4, most + 1.6));
 
   watchYaw = (watchYaw + dt * 0.045) % (Math.PI * 2);   // a turn every 2.3 min
@@ -454,7 +488,8 @@ let lordId = -1;
 function findLord(sim: VoidSim): void {
   let best: Agent | null = null;
   for (const a of sim.agents) {
-    if (a.deadT >= 0 || a.deeds.kills < 1) continue;
+    // the lord is whoever HOLDS the pit — a lone first summon qualifies
+    if (a.deadT >= 0) continue;
     if (!best || a.deeds.kills > best.deeds.kills
       || (a.deeds.kills === best.deeds.kills && a.deeds.born < best.deeds.born)) best = a;
   }
@@ -795,21 +830,19 @@ async function boot() {
 
   if (live) {
     live.onKey = keepKey;
-    live.onYours = (id, name) => {
-      const status = document.getElementById('summonStatus');
-      if (status) status.textContent = `${name} answers`;
+    // No dialogs. The field's state and the creature walking in are the whole
+    // conversation; refusals just release the field.
+    live.onYours = (id) => {
       const a = sim.agents.find(x => x.id === id);
       if (a) yours = a;
+      (buildSummon as any).finish?.();
       director.punch(0.7);
     };
     live.onNope = why => {
-      const status = document.getElementById('summonStatus');
-      if (status) status.textContent = why;
+      console.log('[pit]', why);
+      (buildSummon as any).finish?.();
     };
-    live.onSworn = (to, stance) => {
-      const status = document.getElementById('summonStatus');
-      if (status) status.textContent = stance === 'feud' ? `you have sworn against ${to}` : `you have sworn to ${to}`;
-    };
+    live.onSworn = () => { /* pacts are silent by design */ };
     live.send({ t: 'key', key: myKey || undefined });
     // a pact link is spent the moment it is opened, and leaves no trace in
     // the address bar — see keepKey
@@ -843,8 +876,18 @@ async function boot() {
     idleVoices(sim, dt);
     driveCamera(sim, dt);
 
+    // Blend is a PIXEL radius, and both the zoom and the mobile buffer cap
+    // change how many pixels a metre is — so a fixed value read as soup up
+    // close and as nothing zoomed out or on a phone. Tie it to ppm and the
+    // softness is a property of the world again. 42 px/m is where 1.8 was
+    // tuned.
+    cam.blend = Math.min(6, Math.max(0.35, look.blend * (cam.ppm / 42)));
+
     findLord(sim);
+    summonUI(sim);
     const caps: Capsule[] = [];
+    if (title && !title.done) caps.push(...title.caps(dt, cam.yaw, 0.9));
+    else title = null;
     // scenery first: it never moves, so it is the same list every frame
     for (const pr of sim.props) caps.push(...pr.caps);
     for (const a of sim.agents) {
@@ -867,7 +910,7 @@ async function boot() {
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
-    sim, cam, look, director, live, pit,
+    sim, cam, look, director, live, pit, get title() { return title; },
     tick,
     refit: fitCanvas,
     run: (seconds: number, dt = 1 / 60) => {
@@ -1017,10 +1060,13 @@ function setPanel(open: boolean) {
   fitCanvas();
 }
 
-// dragging the stage orbits; the wheel pushes in and out
+// dragging the stage orbits; the wheel pushes in and out; two fingers pinch
 (() => {
   const stage = document.getElementById('stage')!;
   let down = false, lastX = 0;
+  // pinch state: the wheel does not exist on a phone
+  const touches = new Map<number, { x: number; y: number }>();
+  let pinchDist = 0;
   stage.addEventListener('pointerdown', e => {
     // The controls live INSIDE the stage, and this handler captures the
     // pointer — so a click on the mute icon was swallowed by the orbit drag

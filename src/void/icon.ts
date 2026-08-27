@@ -11,32 +11,37 @@ import { Capsule } from '../pose';
 import { v3 } from '../vec';
 
 const S = 46;                       // the icon's buffer, in pixels
-const INK: [number, number, number] = [150, 160, 172];
+// A one-colour icon reads as a glyph; parts in different inks read as a THING
+// built from pieces, which is what everything else in the pit is. Same trick
+// as a creature's palette: torso, limbs, accent.
+const BOX: [number, number, number] = [110, 118, 130];
+const CONE: [number, number, number] = [176, 184, 196];
+const ARC: [number, number, number] = [110, 232, 214];
 const OFF: [number, number, number] = [196, 96, 84];
 
 function speaker(muted: boolean): Capsule[] {
   const c: Capsule[] = [];
-  const put = (ax: number, ay: number, bx: number, by: number, r: number, col = INK) =>
+  const put = (ax: number, ay: number, bx: number, by: number, r: number, col: [number, number, number]) =>
     c.push({ a: v3(ax, ay, 0), b: v3(bx, by, 0), r, color: col, part: 'icon' });
 
-  // the box, then the cone opening out from it — two capsules and the blend
-  // does the rest, which is the whole point of using it
-  put(-0.34, 0, -0.16, 0, 0.17);
-  put(-0.05, 0.34, -0.05, -0.34, 0.13);
-  put(-0.16, 0.2, -0.05, 0.3, 0.1);
-  put(-0.16, -0.2, -0.05, -0.3, 0.1);
+  // the box, then the cone opening out from it — the blend fuses them but the
+  // two inks keep the join visible, which is what makes it feel built
+  put(-0.34, 0, -0.16, 0, 0.17, BOX);
+  put(-0.05, 0.34, -0.05, -0.34, 0.13, CONE);
+  put(-0.16, 0.2, -0.05, 0.3, 0.1, CONE);
+  put(-0.16, -0.2, -0.05, -0.3, 0.1, CONE);
 
   if (muted) {
     // a bar across it. Red, because the state it describes is a loss.
     put(0.06, 0.36, 0.52, -0.36, 0.075, OFF);
   } else {
-    // two arcs, drawn as short segments so they curve
+    // the waves carry the sigil teal — sound leaving the thing
     for (const [rad, seg] of [[0.26, 3], [0.44, 4]] as const) {
       for (let i = 0; i < seg; i++) {
         const a0 = -0.7 + (i / seg) * 1.4;
         const a1 = -0.7 + ((i + 1) / seg) * 1.4;
         put(0.1 + Math.cos(a0) * rad, Math.sin(a0) * rad,
-            0.1 + Math.cos(a1) * rad, Math.sin(a1) * rad, 0.055);
+            0.1 + Math.cos(a1) * rad, Math.sin(a1) * rad, 0.055, ARC);
       }
     }
   }
@@ -58,7 +63,7 @@ export class MuteIcon {
     if (!this.ctx) return;
     const cam: Camera = {
       yaw: 0, pitch: 0, ppm: S * 0.62, cy: 0,
-      floor: false, blend: 0.55, blendShape: 0.5, blendMix: 1,
+      floor: false, blend: 0.85, blendShape: 0.55, blendMix: 0.7,
       // FLAT ink. Without it the shading lights a head-on icon to near-white
       // and the red of the muted bar disappears with everything else.
       flat: true,

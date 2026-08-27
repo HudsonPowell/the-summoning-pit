@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { defineConfig, Plugin } from 'vite';
 import { writeFileSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
@@ -115,7 +116,22 @@ function genomeStore(): Plugin {
   };
 }
 
+// The build tag: Railway supplies the commit sha at build time; a local dev
+// server asks git; anything else is 'dev'. Shown tiny in the corner so "which
+// version am I looking at" stops being a guessing game.
+function buildTag(): string {
+  const sha = process.env.RAILWAY_GIT_COMMIT_SHA;
+  if (sha) return sha.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim() || 'dev';
+  } catch {
+    return 'dev';
+  }
+}
+
 export default defineConfig({
+  define: { __BUILD__: JSON.stringify(buildTag()) },
   plugins: [genomeStore(), jsonStore('/api/characters', 'characters')],
   // Every page is an entry point. Vite builds index.html and nothing else by
   // default, so a deploy shipped a pit with no /void.html in it.

@@ -11,7 +11,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Character, migrateCharacter, makeCharacter } from '../src/character';
 import { defaultBiped } from '../src/genome';
-import { createVoid, stepVoid, spawnOne, spawnChar, makeAgent, whoOf, VoidSim, VoidEvent, Agent } from '../src/void/sim';
+import { createVoid, stepVoid, spawnChar, makeAgent, whoOf, VoidSim, VoidEvent, Agent } from '../src/void/sim';
 import { declare } from '../src/void/pacts';
 import { titleFor } from '../src/naming';
 import { hatchGenome, OLLAMA_URL, HATCH_MODEL, HATCH_API_KEY } from '../src/hatch';
@@ -24,7 +24,7 @@ import { warm, warmModel } from './warm';
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_HZ = 30;
 const SNAP_HZ = 12;
-const POPULATION = Number(process.env.PIT_POPULATION ?? 1);
+const POPULATION = Number(process.env.PIT_POPULATION ?? 0);
 const STATE_FILE = process.env.PIT_STATE ?? 'pit-state.json';
 /** Can this pit hatch for people who have no model of their own? */
 const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
@@ -38,9 +38,6 @@ const MAX_PER_OWNER = 1;              // one hero each — the pit is not a kenn
 const SUMMON_GAP = 2;                 // seconds, only to swallow a double-press
 const SHORT_LIFE = 10;                // a hero gone this fast was barely a hero
 const SHORT_PENALTY = 6;              // a beat, not a punishment
-const STIR_CAP = 7;                   // house creatures a stirred pit may hold
-const STIR_GAP = 1500;                // ms between stirs, from anyone
-let lastStir = 0;
 
 // --- the cast ---------------------------------------------------------------
 
@@ -100,6 +97,9 @@ function restore(): void {
   sim.t = saved.t;
   wallBase = saved.wall - saved.t * 1000;
   for (const s of saved.agents) {
+    // house creatures do not come back: the pit spawns nothing of its own now,
+    // and that includes resurrecting its old cast from disk
+    if (!s.by) continue;
     const g = sanitiseGenome(s.genome);
     if (!g) continue;
     const a = makeAgent(makeCharacter(g, 'beast'), s.x, s.z, s.by);
