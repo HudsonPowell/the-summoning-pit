@@ -1322,3 +1322,19 @@ design is wrong however carefully it is implemented.
 - **The title** is capsule geometry mid-scene on load — 5x7 strokes run-length
   merged, billboarded to the camera, rises/holds/melts like a figure dying.
   Placeholder font until the real type system lands.
+
+## the wire title is in the void (2026-08-27)
+
+`src/void/wiretitle.ts` wraps the type system (`src/type/`): on load the word
+coils in the dark under the floor, `step()` pulls it up into the letterform
+glyph by glyph (~4.4s), it hangs and `breathe()`s for ~3.6s, and then it is cut
+loose — `simulate({home: 0, gravity: -3.2})` — and crumples back into the dark
+as wire, fading as it goes. The page opens with a summoning.
+
+The wrapper billboards the word to the camera with `rotY(p, -yaw)` — the VIEW
+applies `rotY(+yaw)`, so the billboard is its inverse, through the same helper.
+A hand-rolled rotation had the sign wrong and put the word at DOUBLE the yaw:
+nearly edge-on, rendering as a diagonal brass smear. Billboards use the
+engine's own rotation or they will eventually be wrong.
+
+The placeholder bitmap title (src/void/title.ts) is deleted.

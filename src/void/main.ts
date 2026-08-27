@@ -11,7 +11,7 @@ import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
 import { Pit, Bank } from './voice';
-import { Title } from './title';
+import { WireTitle } from './wiretitle';
 import { MuteIcon } from './icon';
 import { CROWN } from '../gear';
 import { LiveVoid } from './live';
@@ -221,9 +221,10 @@ function keepKey(key: string, owner: string): void {
 
 let yours: Agent | null = null;
 
-// The title, standing in the scene on load, dying like the figures do. Built
-// from the placeholder bitmap font until Jody's type system lands.
-let title: Title | null = new Title(['THE', 'SUMMONING', 'PIT'], 0.17);
+// The title, set in the wire type: it coils under the floor, is pulled up
+// into the letterform, breathes a moment, and is cut loose to fall back into
+// the dark. The page opens with a summoning.
+let title: WireTitle | null = new WireTitle();
 
 const orbit = { yaw: 0, zoom: 0, idle: 99 };
 
@@ -886,7 +887,7 @@ async function boot() {
     findLord(sim);
     summonUI(sim);
     const caps: Capsule[] = [];
-    if (title && !title.done) caps.push(...title.caps(dt, cam.yaw, 0.9));
+    if (title && !title.done) caps.push(...title.caps(dt, cam.yaw));
     else title = null;
     // scenery first: it never moves, so it is the same list every frame
     for (const pr of sim.props) caps.push(...pr.caps);
