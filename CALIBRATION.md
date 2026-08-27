@@ -986,3 +986,21 @@ anything left unmet is recorded on `genome.missing` rather than invented.
 What a checklist CANNOT judge is whether the thing looks like a hippo. That is
 the CLIP judge in `farm/judge.ts`, and it is the only place a second opinion
 from a model earns its latency.
+
+## the Dockerfile bug that builds clean and cannot start (2026-08-27)
+
+    ENV NODE_ENV=production
+    RUN npm ci
+
+`npm ci` under `NODE_ENV=production` skips devDependencies. The server runs
+from TypeScript through **tsx, which is a devDependency** — so the image builds
+without a single error and then fails the moment it is asked to run. Must be
+`npm ci --include=dev`.
+
+Deploy config lives in `railway.json`: Dockerfile builder, `/health` as the
+healthcheck, restart on failure. Verified locally by building the client and
+booting the server exactly as the container does — one keeper standing, client
+served, health green.
+
+The CLI needs no global install: `npx @railway/cli` works. Only `login` needs a
+human, because it opens a browser.

@@ -11,8 +11,10 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-# tsx is a devDependency and the server runs from TypeScript, so keep them
-RUN npm ci && npm cache clean --force
+# --include=dev is load-bearing: the server runs from TypeScript through tsx,
+# which is a devDependency, and `npm ci` under NODE_ENV=production skips those.
+# Without this the image builds cleanly and then cannot start.
+RUN npm ci --include=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY src ./src
