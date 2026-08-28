@@ -201,6 +201,8 @@ async function loadRoster(): Promise<Character[]> {
  */
 const KEY_STORE = 'pit-key2';
 let myKey = localStorage.getItem(KEY_STORE) ?? '';
+// no key yet = never been here: the pit introduces itself, once, in whispers
+const FIRST_VISIT = !myKey;
 let ME = 'local';
 
 /**
@@ -311,7 +313,24 @@ function whisper(text: string, secs: number, sticky = false): void {
   whisperState.until = performance.now() / 1000 + secs;
   whisperState.sticky = sticky;
 }
-function hushWhisper(): void { whisperState.text = ''; whisperState.sticky = false; }
+let introStop = false;   // reaching for the box ends the introduction
+function hushWhisper(): void {
+  whisperState.text = '';
+  whisperState.sticky = false;
+  introStop = true;
+}
+
+/** The whole game, told to a first visitor in three whispers. */
+function introduce(): void {
+  if (!FIRST_VISIT) return;
+  const lines = ['one pit, all of us.', 'summon.', 'pit lord survives.'];
+  lines.forEach((line, i) => {
+    setTimeout(() => {
+      if (introStop || whisperState.sticky) return;
+      whisper(line, 3.4);
+    }, 4600 + i * 3800);
+  });
+}
 
 // the fall of YOUR creature is the loop's biggest beat; carry enough of it
 // to say something when the agent is suddenly not there any more. The absence
@@ -1023,6 +1042,7 @@ async function boot() {
 
   buildPanel(sim, live);
   buildSummon(sim, live);
+  introduce();
 
   // how many metres of world the empty-pit observer will show across
   const frameW = (view.size.W * 4.4) / (0.46 * view.size.H);
