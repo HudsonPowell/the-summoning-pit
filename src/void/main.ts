@@ -313,23 +313,46 @@ function whisper(text: string, secs: number, sticky = false): void {
   whisperState.until = performance.now() / 1000 + secs;
   whisperState.sticky = sticky;
 }
-let introStop = false;   // reaching for the box ends the introduction
 function hushWhisper(): void {
   whisperState.text = '';
   whisperState.sticky = false;
-  introStop = true;
 }
 
-/** The whole game, told to a first visitor in three whispers. */
-function introduce(): void {
-  if (!FIRST_VISIT) return;
-  const lines = ['one pit, all of us.', 'summon.', 'pit lord survives.'];
-  lines.forEach((line, i) => {
-    setTimeout(() => {
-      if (introStop || whisperState.sticky) return;
-      whisper(line, 3.4);
-    }, 4600 + i * 3800);
-  });
+/**
+ * The box tells the whole game itself: on load the placeholder is TYPED on,
+ * line by line, and the last line it types is the verb — which is exactly
+ * the placeholder the box would have worn anyway, so the introduction ends
+ * by becoming the interface. Timed from load on a wall clock, so a box that
+ * was busy (a hero in play) while the window passed simply never plays it.
+ */
+const INTRO_LINES = ['One pit, all of us.', 'Pit lord survives.', 'summon…'];
+const introClock = { t0: performance.now() / 1000 + 1.2, on: true };
+function introText(now: number): string | null {
+  if (!introClock.on) return null;
+  const TYPE = 0.05, HOLD = 1.5, ERASE = 0.02, GAP = 0.35;
+  let t = now - introClock.t0;
+  if (t < 0) return '';
+  for (let i = 0; i < INTRO_LINES.length; i++) {
+    const line = INTRO_LINES[i];
+    const typeD = line.length * TYPE;
+    if (i === INTRO_LINES.length - 1) {
+      // the verb stays — and the LAST write is guaranteed, because a stalled
+      // frame (backgrounded tab) can skip clean over the typing window
+      if (t >= typeD) { introClock.on = false; }
+      return t < typeD ? line.slice(0, Math.ceil(t / TYPE)) : line;
+    }
+    if (t < typeD) return line.slice(0, Math.ceil(t / TYPE));
+    t -= typeD;
+    if (t < HOLD) return line;
+    t -= HOLD;
+    const eraseD = line.length * ERASE;
+    if (t < eraseD) return line.slice(0, line.length - Math.ceil(t / ERASE));
+    t -= eraseD;
+    if (t < GAP) return '';
+    t -= GAP;
+  }
+  introClock.on = false;
+  return null;
 }
 
 // the fall of YOUR creature is the loop's biggest beat; carry enough of it
@@ -385,6 +408,11 @@ function summonUI(sim: VoidSim, net: LiveVoid | null): void {
   if (state === 'summoning') {
     const murmur = SUMMON_MURMURS[Math.floor((now - summonAt) / 2.8) % SUMMON_MURMURS.length];
     if (box.placeholder !== murmur) box.placeholder = murmur;
+  }
+  // on load the box types its own introduction, ending on the verb
+  if (state === 'active') {
+    const line = introText(now);
+    if (line !== null && box.placeholder !== line) box.placeholder = line;
   }
 
   let lordText = '';
@@ -452,7 +480,7 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
   }
   (buildSummon as any).finish = done;
 
-  box.addEventListener('focus', hushWhisper);
+  box.addEventListener('focus', () => { hushWhisper(); introClock.on = false; });
   box.addEventListener('keydown', e => {
     e.stopPropagation();
     if (e.key === 'Enter') summon();
@@ -1042,7 +1070,6 @@ async function boot() {
 
   buildPanel(sim, live);
   buildSummon(sim, live);
-  introduce();
 
   // how many metres of world the empty-pit observer will show across
   const frameW = (view.size.W * 4.4) / (0.46 * view.size.H);
