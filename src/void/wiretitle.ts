@@ -44,12 +44,19 @@ function forgeInks(r: () => number): [number, number, number][] {
     return [Math.round((rr + m) * 255), Math.round((gg + m) * 255), Math.round((bb + m) * 255)];
   };
   const warm = 0.05 + r() * 0.05;              // the browns live here
+  // two NATURAL tints ride along with the earth — moss, rust, ochre, slate —
+  // muted enough to read as weathering rather than paint
+  const tints = [0.24 + r() * 0.06, 0.07 + r() * 0.03, 0.11 + r() * 0.03, 0.55 + r() * 0.07];
+  const t1 = tints[Math.floor(r() * tints.length) % tints.length];
+  const t2 = tints[Math.floor(r() * tints.length) % tints.length];
   return [
-    mk(warm, 0.22 + r() * 0.12, 0.3 + r() * 0.07),   // brown
-    mk(warm, 0.16 + r() * 0.08, 0.2 + r() * 0.05),   // dark brown
-    mk(warm + 0.02, 0.04 + r() * 0.04, 0.36 + r() * 0.06), // grey
-    mk(warm, 0.05, 0.22 + r() * 0.04),               // dark grey
-    mk(warm, 0.1, 0.13 + r() * 0.03),                // near-black
+    mk(warm, 0.22 + r() * 0.12, 0.33 + r() * 0.07),  // brown
+    mk(warm, 0.16 + r() * 0.08, 0.23 + r() * 0.05),  // dark brown
+    mk(warm + 0.02, 0.04 + r() * 0.04, 0.39 + r() * 0.06), // grey
+    mk(warm, 0.05, 0.25 + r() * 0.04),               // dark grey
+    mk(warm, 0.1, 0.16 + r() * 0.03),                // near-black
+    mk(t1, 0.2 + r() * 0.12, 0.32 + r() * 0.08),     // a natural tint
+    mk(t2, 0.16 + r() * 0.1, 0.28 + r() * 0.08),     // and another
   ];
 }
 
@@ -63,8 +70,8 @@ interface Line { wire: WireText; beads: number }
  */
 function lift(c: [number, number, number]): [number, number, number] {
   const m = Math.max(c[0], c[1], c[2]);
-  if (m >= 68) return c;
-  const k = 68 / Math.max(1, m);
+  if (m >= 74) return c;
+  const k = 74 / Math.max(1, m);
   return [c[0] * k, c[1] * k, c[2] * k];
 }
 

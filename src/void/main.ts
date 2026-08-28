@@ -189,24 +189,24 @@ async function loadRoster(): Promise<Character[]> {
 // only proof any creature is yours — bookmark it and you are you, lose it and
 // your creatures carry on without anyone able to claim them. The OWNER id is a
 // hash of it: safe to hand out, and what a pact link points at.
-const KEY_STORE = 'pit-key';
-let myKey = new URLSearchParams(location.search).get('k')
-  ?? localStorage.getItem(KEY_STORE)
-  ?? '';
+/**
+ * 'pit-key2', not 'pit-key': the first slot is POISONED. In the shared-URL
+ * era a copied address carried its owner's key, and everyone who opened it
+ * became the same person — and 'honouring old bookmarks once' kept feeding
+ * that merge long after the URLs were fixed. A friend's summon would read as
+ * YOURS, crown you lord of a creature you never made, and lock your box. So:
+ * a key from a URL is never accepted again, and the old storage slot is
+ * retired unread. Every browser mints its own identity from here on; the old
+ * cast goes wild — still standing, still killable, owned by no one.
+ */
+const KEY_STORE = 'pit-key2';
+let myKey = localStorage.getItem(KEY_STORE) ?? '';
 let ME = 'local';
 
 /**
- * The key NEVER goes in the address bar.
- *
- * It used to: "the URL is the account, bookmark it and you are you". But
- * sharing a link is how this game spreads, and anyone who copied their own
- * address bar to send to a friend sent their identity with it. Everyone who
- * opened that link became the same person — one owner, one hero between them,
- * so the first to summon silently blocked the rest. That is exactly what "only
- * one summon at a time" and "my friend gets nothing" looked like from outside.
- *
- * A key that arrives in a URL is still honoured once, for old bookmarks, and
- * then stripped immediately so the visible link is always safe to pass on.
+ * The key NEVER goes in the address bar, and one arriving there is never
+ * honoured (see KEY_STORE above for the scar). It is still STRIPPED, so an
+ * old bookmark's URL comes clean and stays safe to pass on.
  */
 function keepKey(key: string, owner: string): void {
   myKey = key;
@@ -358,7 +358,7 @@ function summonUI(sim: VoidSim, net: LiveVoid | null): void {
     box.disabled = state !== 'active';
     box.placeholder =
       state === 'summoning' ? 'summoning…'
-      : state === 'inplay' ? `${mine!.ch.name} is in play`
+      : state === 'inplay' ? `${mine!.ch.name.split(' ')[0]} stands — yours`
       : state === 'paused' ? 'summoning paused — back soon'
       : 'summon…';
   }
