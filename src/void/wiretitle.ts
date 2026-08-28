@@ -109,10 +109,16 @@ export class WireTitle {
     if (cur) rows.push(cur);
 
     const lineH = size * 1.18;
+    // Centre the BLOCK, not the first baseline: the word stands 4.6m toward
+    // a pitched camera, which drags it down-screen, and one desktop line sat
+    // visibly low while three phone lines looked fine. Aim the block's middle
+    // at a fixed height and let the row count fall out of it.
+    const mid = 2.3;
+    const base = Math.max(0.9, mid - ((rows.length - 1) * lineH) / 2 - size * 0.35);
     rows.forEach((row, i) => {
       const wire = new WireText(row, {
         size, gauge, inks, align: 'centre',
-        baseline: baseline + (rows.length - 1 - i) * lineH,
+        baseline: base + (rows.length - 1 - i) * lineH,
         seed: 1740 + i,
       });
       wire.settle();
