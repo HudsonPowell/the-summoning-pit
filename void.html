@@ -49,32 +49,32 @@
     #muteIcon:hover { opacity: 1; }
     #summonBar {
       position: absolute; left: 50%; transform: translateX(-50%);
-      bottom: 26px; width: min(520px, 74%); z-index: 5;
+      bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+      width: min(520px, 74%); z-index: 5;
     }
+    /* The pill from hudson-powell.com/TDK_BUILD, in its dark theme: 48px
+       tall, radius 18 (soft, not a capsule), rgba(55,55,55,.55) under a
+       22px blur, NO border and NO shadow — the blur is the whole edge. */
     #summonBar input {
-      width: 100%; box-sizing: border-box; padding: 12px 22px;
-      /* a soft pill, not a terminal field: lighter surface, fully round,
-         no hard edge — the box should sit in the dark like a worn button */
-      background: rgba(222, 230, 238, .10); backdrop-filter: blur(8px);
-      border: 1px solid rgba(222, 230, 238, .08); border-radius: 999px;
-      box-shadow: 0 4px 18px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .05);
+      width: 100%; box-sizing: border-box; height: 48px; padding: 5px 19px;
+      background: rgba(55, 55, 55, .55);
+      backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+      border: none; border-radius: 18px;
       text-align: center;
+      color: #f2f2f2;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       /* 16px: anything smaller and iOS zooms the page every time the field is
          focused, which is most of what made the keyboard feel broken */
-      color: #e4ebf3; font: inherit; font-size: 16px; letter-spacing: .05em;
-      transition: border-color .18s, background .18s, opacity .3s;
+      font-size: 16px; font-weight: 500; letter-spacing: .03em;
+      transition: background .25s, opacity .3s;
     }
     /* the field IS the state: dim and untouchable while a hero is in play */
-    #summonBar input:disabled {
-      opacity: .45; cursor: default;
-      border-color: rgba(222, 230, 238, .04);
-    }
+    #summonBar input:disabled { opacity: .45; cursor: default; }
     #summonStatus.lord { color: #b8975a; letter-spacing: .18em; }
     #summonBar input:focus {
-      outline: none; border-color: rgba(75, 179, 166, .55);
-      background: rgba(222, 230, 238, .15);
+      outline: none; background: rgba(70, 70, 70, .62);
     }
-    #summonBar input::placeholder { color: #77828d; }
+    #summonBar input::placeholder { color: #8a8a8a; }
     #summonStatus {
       margin-top: 6px; min-height: 12px; text-align: center;
       font-size: 10px; color: #6f7b86; letter-spacing: .06em;
