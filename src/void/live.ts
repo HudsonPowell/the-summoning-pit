@@ -204,6 +204,12 @@ export class LiveVoid {
       const eff = effectiveGait(a.genome.gait, { tired: 0, angry: a.state === 'fight' ? 0.7 : 0 });
       a.phase = (a.phase + eff.cadence * a.move * dt) % 1;
       a.idleT += dt;
+      // settling and standing back up, at the sim's own rates — without this
+      // a lone lord SAID it was resting while every watcher saw it bolt
+      // upright, because rest never crosses the wire
+      a.rest = a.state === 'rest'
+        ? Math.min(1, a.rest + dt * 0.35)
+        : Math.max(0, a.rest - dt * 1.6);
       if (a.hurtT > 0) a.hurtT -= dt;
       if (a.strikeT >= 0) {
         a.strikeT += dt;
