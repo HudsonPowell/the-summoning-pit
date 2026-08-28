@@ -62,7 +62,9 @@
        dark like every other blob in the field — no card, no rim. The input
        on top stays crisp for the text. */
     #summonBar::before {
-      content: ''; position: absolute; inset: 0;
+      /* the glass covers the INPUT only — inset:0 spanned the whole bar,
+         status line included, and read as a too-tall pill with high text */
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 48px;
       background: rgba(58, 60, 63, .48);
       backdrop-filter: blur(34px); -webkit-backdrop-filter: blur(34px);
       border-radius: 22px;
