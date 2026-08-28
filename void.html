@@ -55,6 +55,16 @@
     /* The pill from hudson-powell.com/TDK_BUILD, in its dark theme: 48px
        tall, radius 18 (soft, not a capsule), rgba(55,55,55,.55) under a
        22px blur, NO border and NO shadow — the blur is the whole edge. */
+    /* Modula Sans, when its files land in public/fonts/ — until then the
+       stack falls through to Helvetica and nothing breaks */
+    @font-face {
+      font-family: 'Modula Sans';
+      src: url('/fonts/ModulaSans.woff2') format('woff2'),
+           url('/fonts/ModulaSans.woff') format('woff'),
+           url('/fonts/ModulaSans.otf') format('opentype');
+      font-weight: 400 500;
+      font-display: swap;
+    }
     #summonBar input {
       width: 100%; box-sizing: border-box; height: 48px; padding: 5px 19px;
       background: rgba(55, 55, 55, .55);
@@ -62,7 +72,7 @@
       border: none; border-radius: 18px;
       text-align: center;
       color: #f2f2f2;
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-family: "Modula Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
       /* 16px: anything smaller and iOS zooms the page every time the field is
          focused, which is most of what made the keyboard feel broken */
       font-size: 16px; font-weight: 500; letter-spacing: .03em;
