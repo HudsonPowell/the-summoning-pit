@@ -57,9 +57,21 @@
       bottom: calc(24px + env(safe-area-inset-bottom, 0px));
       width: min(520px, 74%); z-index: 5;
     }
-    /* The pill from hudson-powell.com/TDK_BUILD, in its dark theme: 48px
-       tall, radius 18 (soft, not a capsule), rgba(55,55,55,.55) under a
-       22px blur, NO border and NO shadow — the blur is the whole edge. */
+    /* The TDK pill, pushed toward the pit's own look: the GLASS lives on a
+       ::before layer that is itself blurred, so its edge feathers into the
+       dark like every other blob in the field — no card, no rim. The input
+       on top stays crisp for the text. */
+    #summonBar::before {
+      content: ''; position: absolute; inset: 0;
+      background: rgba(58, 60, 63, .48);
+      backdrop-filter: blur(34px); -webkit-backdrop-filter: blur(34px);
+      border-radius: 22px;
+      filter: blur(5px);
+      transition: background .25s;
+      pointer-events: none;
+    }
+    #summonBar:focus-within::before { background: rgba(72, 74, 78, .55); }
+    #summonBar:has(input:disabled)::before { background: rgba(58, 60, 63, .26); }
     /* Modula Sans, when its files land in public/fonts/ — until then the
        stack falls through to Helvetica and nothing breaks */
     @font-face {
@@ -71,10 +83,10 @@
       font-display: swap;
     }
     #summonBar input {
+      position: relative;
       width: 100%; box-sizing: border-box; height: 48px; padding: 5px 19px;
-      background: rgba(55, 55, 55, .55);
-      backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
-      border: none; border-radius: 18px;
+      background: none;
+      border: none; border-radius: 22px;
       text-align: center;
       color: #f2f2f2;
       font-family: "Modula Sans", "Unica One", "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -86,9 +98,7 @@
     /* the field IS the state: dim and untouchable while a hero is in play */
     #summonBar input:disabled { opacity: .45; cursor: default; }
     #summonStatus.lord { color: #b8975a; letter-spacing: .18em; }
-    #summonBar input:focus {
-      outline: none; background: rgba(70, 70, 70, .62);
-    }
+    #summonBar input:focus { outline: none; }
     #summonBar input::placeholder { color: #8a8a8a; }
     #summonStatus {
       margin-top: 6px; min-height: 12px; text-align: center;
