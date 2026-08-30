@@ -211,6 +211,17 @@ export const STRIKE_THROW: StrikeSpec = {
   ranged: { speed: 12, range: 8, size: 0.08, color: '#c9b795', arcing: true, trail: 4, sticks: true },
 };
 
+/**
+ * Not a strike: a stance. The arm brings the held thing up and ACROSS, and
+ * holds it there — the pose the whole block/riposte exchange reads from.
+ * Used frozen at mid-arc (u ~0.5) with the guard's own weight.
+ */
+export const GUARD_STANCE: StrikeSpec = {
+  duration: 1, windup: 0.5, strike: 0.3,
+  posts: [[0.55, 0.25, 0.35], [0.5, 0.55, 0.05], [0.55, 0.4, -0.3]],
+  reachMin: 0.5, reachMax: 0.62, twist: 0.1,
+};
+
 export const STRIKE_STYLES: Record<string, StrikeSpec> = {
   swipe: STRIKE_SWIPE, slam: STRIKE_SLAM, thrust: STRIKE_THRUST,
   bite: STRIKE_BITE, lash: STRIKE_LASH, cast: STRIKE_CAST, shoot: STRIKE_SHOOT,

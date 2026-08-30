@@ -15,6 +15,7 @@ import { Pit, Bank } from './voice';
 import { WireTitle } from './wiretitle';
 import { MuteIcon } from './icon';
 import { CROWN, GearPiece } from '../gear';
+import { GUARD_STANCE } from '../character';
 import { LiveVoid } from './live';
 
 const KEY = 'void-look';
@@ -765,6 +766,9 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     const spec = strikeSpecOf(a);
     const u = Math.min(1, a.strikeT / (spec?.duration ?? 0.5));
     intent = { slash: { t: u, weight: slashWeight(u), spec } };
+  } else if (a.guardT > 0) {
+    // the block is held, not swung: the guard stance frozen at mid-arc
+    intent = { slash: { t: 0.5, weight: Math.min(1, a.guardT * 6), spec: GUARD_STANCE } };
   }
 
   const caps = solvePose(

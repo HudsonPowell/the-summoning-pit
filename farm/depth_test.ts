@@ -63,3 +63,33 @@ function armed(name: string, weapon: string) {
   }
   console.log(`thrower: threw=${stuck} spearOnFloor=${relicSeen} meleeWhileOut=${meleeWhileOut} reclaimed=${reclaimed} alive=${a.deadT < 0}`);
 }
+
+// --- 3: the exchange — strike, block, riposte --------------------------------
+{
+  const knightA = armed('knightA', 'sword');
+  knightA.offhand = { name: 'shield', parts: [{ a: [0.04, -0.26, 0], b: [0.04, 0.26, 0], r: 0.1, color: '#6b7280' }] };
+  const knightB = armed('knightB', 'axe');
+  const sim = createVoid([knightA, knightB], 0);
+  sim.peace = 0;
+  const a = makeAgent(knightA, -2, 0);
+  const b = makeAgent(knightB, 2, 0);
+  a.deeds.born = -60; b.deeds.born = -60;
+  sim.agents.push(a, b);
+  let blocked = 0, parried = 0, guards = 0, staggers = 0, ripostes = 0, plainHits = 0;
+  let prevRipA = 0, prevRipB = 0;
+  for (let f = 0; f < 60 * 90; f++) {
+    stepVoid(sim, 1 / 60);
+    for (const e of sim.events) {
+      if (e.kind !== 'hit') continue;
+      if (e.how === 'blocked') blocked++;
+      else if (e.how === 'parried') parried++;
+      else plainHits++;
+    }
+    if (a.guardT > 0 || b.guardT > 0) guards++;
+    if (a.staggerT > 0 || b.staggerT > 0) staggers++;
+    if ((prevRipA > 0 && a.riposteT === 0 && a.strikeT >= 0) || (prevRipB > 0 && b.riposteT === 0 && b.strikeT >= 0)) ripostes++;
+    prevRipA = a.riposteT; prevRipB = b.riposteT;
+    if (a.deadT >= 0 || b.deadT >= 0) break;
+  }
+  console.log(`exchange: hits=${plainHits} blocked=${blocked} parried=${parried} guard-frames=${guards} stagger-frames=${staggers} ripostes~=${ripostes}`);
+}

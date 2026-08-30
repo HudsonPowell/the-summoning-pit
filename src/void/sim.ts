@@ -44,6 +44,9 @@ export interface Agent {
   calm: number;              // seconds since anything happened to it
   rest: number;              // 0 up .. 1 lying down, for the long wait
   thrownRelic: number | null;// the spear is OUT THERE, and this is where
+  guardT: number;            // seconds left holding a block up
+  staggerT: number;          // seconds of recovery after being parried
+  riposteT: number;          // a window to answer a blocked blow
   lookAt: number;            // world angle the head is resting on
   scanT: number;             // seconds until it looks somewhere else
   turnRate: number;          // radians/sec, for secondary motion
@@ -153,6 +156,9 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     calm: 0,
     rest: 0,
     thrownRelic: null,
+    guardT: 0,
+    staggerT: 0,
+    riposteT: 0,
     lookAt: rnd(-Math.PI, Math.PI),
     scanT: rnd(0, 0.8),
     turnRate: 0,
@@ -372,15 +378,55 @@ function varyStrike(base: StrikeSpec, r: number): StrikeSpec {
 }
 
 /** Used by the live client so watchers see varied swings too. */
-export function varyFor(a: Agent, heavy: boolean, r: number): StrikeSpec {
-  return varyStrike(strikeStyleOf(a, heavy), r);
+/** The same swing on every screen: seed strikes from the sim clock. */
+export function strikeSeed(t: number, id: number): number {
+  return ((t * 9301 + id * 49297) % 233280) / 233280;
 }
 
-export function beginStrike(a: Agent, heavy: boolean): void {
+/**
+ * WEAPONS PICK SPOTS. A swing is aimed at a place on the victim's body —
+ * head, torso, or legs, left or right — and the strike arc bends to reach
+ * it: the posts rise for a skull, drop for a hamstring, and pull across for
+ * the chosen side. The spot comes off the deterministic seed, so every
+ * watcher sees the same blow land in the same place.
+ */
+function aimAtSpot(v: StrikeSpec, a: Agent, r: number): StrikeSpec {
+  const t = a.target;
+  if (!t || t.deadT >= 0 || v.ranged || v.limb === 'head' || v.limb === 'tail') return v;
+  const h = r < 0.33 ? 0.9 : r < 0.72 ? 0.55 : 0.22;          // head / torso / legs
+  const side = ((r * 7919) % 1) < 0.5 ? -1 : 1;
+  const dy = Math.max(-0.5, Math.min(0.5, (t.bulk * h - a.bulk * 0.55) * 0.9));
+  const posts = v.posts.map(p => [...p]) as StrikeSpec['posts'];
+  posts[1][1] += dy * 0.6;
+  posts[2][1] += dy;
+  posts[2][2] += side * 0.22;
+  return { ...v, posts };
+}
+
+export function varyFor(a: Agent, heavy: boolean, r: number): StrikeSpec {
+  return aimAtSpot(varyStrike(strikeStyleOf(a, heavy), r), a, r);
+}
+
+/**
+ * THE DEFENCE IS A DECISION, made while the windup is readable: a fighter
+ * who sees the blow coming — facing, armed, hands free — gets its guard up
+ * for the length of it. Nerve decides. Called wherever a strike begins.
+ */
+export function offerGuard(attacker: Agent, spec: StrikeSpec): void {
+  const t = attacker.target;
+  if (!t || t.deadT >= 0 || spec.ranged) return;
+  const seesIt = Math.cos(Math.atan2(attacker.z - t.z, attacker.x - t.x) - t.heading) > -0.1;
+  const armed = !!(t.ch.weapon || t.ch.offhand);
+  if (seesIt && armed && t.strikeT < 0 && Math.random() < 0.35 + t.temper.bravery * 0.4) {
+    t.guardT = spec.duration * (spec.windup + spec.strike) + 0.15;
+  }
+}
+
+export function beginStrike(a: Agent, heavy: boolean, seed = Math.random()): void {
   a.strikeT = 0;
   a.struck = false;
   a.heavy = heavy;
-  const v = varyStrike(strikeStyleOf(a, heavy), Math.random());
+  const v = aimAtSpot(varyStrike(strikeStyleOf(a, heavy), seed), a, seed);
   // A head strike moves a head, and a head is small: on a hound that is 64cm
   // of neck in an animal a metre long, which reads as nothing at all. An
   // animal that bites throws its whole body at you.
@@ -394,6 +440,35 @@ export function beginStrike(a: Agent, heavy: boolean): void {
 
 function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, how?: string): void {
   if (a.hurtT > 0 || a.deadT >= 0) return;
+
+  // A RAISED GUARD TURNS THE BLOW. Blocking is a decision made during the
+  // attacker's windup, not a dice roll at contact — and turning a blow
+  // STAGGERS the attacker, which opens the riposte window. This is the
+  // exchange: strike, block, answer. Loops of whacks become conversations.
+  if (a.guardT > 0 && how !== 'bolt' && how !== 'spell') {
+    const toThreat = Math.atan2(fromZ - a.z, fromX - a.x);
+    if (Math.cos(toThreat - a.heading) > -0.1) {
+      const shielded = /shield|buckler/.test(a.ch.offhand?.name ?? '');
+      a.guardT = 0;
+      a.hurtT = 0.3;
+      jolt(a.sec, shielded ? 0.16 : 0.24, toThreat - a.heading, a.bulk);
+      // a weapon parry stings a little; a shield takes it clean
+      if (!shielded && Math.random() < 0.25) a.hp = Math.max(1, a.hp - 1);
+      if (by && by.deadT < 0) {
+        by.staggerT = 0.55;
+        by.strikeT = -1;
+        by.swing = null;
+        jolt(by.sec, 0.3, Math.atan2(a.z - by.z, a.x - by.x) - by.heading, by.bulk);
+      }
+      a.riposteT = 0.5;
+      sim.events.push({
+        kind: 'hit', t: sim.t, x: a.x, z: a.z,
+        actor: by ? whoOf(by) : undefined, target: whoOf(a),
+        how: shielded ? 'blocked' : 'parried',
+      });
+      return;
+    }
+  }
 
   // THE SHIELD DOES ITS JOB. A blow from the front, against a creature
   // carrying one, has a real chance of being taken on the shield — arrows
@@ -525,6 +600,9 @@ export function stepVoid(sim: VoidSim, dt: number): void {
   for (const a of sim.agents) {
     a.stateT += dt;
     a.idleT += dt;
+    if (a.guardT > 0) a.guardT -= dt;
+    if (a.staggerT > 0) a.staggerT -= dt;
+    if (a.riposteT > 0) a.riposteT -= dt;
 
     // Nothing healed, ever. Every creature was on a one-way trip from spawn to
     // death, which is why the pit was all churn and no history: it does not
@@ -652,7 +730,8 @@ export function stepVoid(sim: VoidSim, dt: number): void {
           // it is in reach.
           if (d < reachOf(a) + 0.5 && a.strikeT < 0
             && Math.random() < dt / (STRIKE_PERIOD * (1.1 - a.temper.aggression * 0.5))) {
-            beginStrike(a, Math.random() < 0.3);
+            beginStrike(a, Math.random() < 0.3, strikeSeed(sim.t, a.id));
+            offerGuard(a, strikeSpecOf(a));
             sim.events.push({
               kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
               target: whoOf(t), how: styleName(a), range: d,
@@ -678,23 +757,50 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         a.aim = Math.atan2(t.z - a.z, t.x - a.x);
         const want = preferredRange(a);
         if (d > want * 1.5) { setState(a, 'approach'); break; }
+        // STAGGERED: the blow was turned and the answer is coming. Stand
+        // there and take the lesson.
+        if (a.staggerT > 0) {
+          a.move += (0.05 - a.move) * Math.min(1, 8 * dt);
+          break;
+        }
         // an archer backs off when something closes on it
         if (rangedOf(a) && d < want * 0.55) walk(a, dt, -1.1);
-        // circle and jockey rather than stand still
-        const circling = Math.sin(sim.t * 1.3 + a.phase * 6) * 0.5;
-        a.move += (0.45 - a.move) * Math.min(1, 5 * dt);
-        a.x += Math.cos(a.heading + Math.PI / 2) * circling * dt * 0.8;
-        a.z += Math.sin(a.heading + Math.PI / 2) * circling * dt * 0.8;
-        if (!rangedOf(a) && d < reachOf(a) * 0.75) walk(a, dt, -0.35); // too close, give ground
+        // FEET PLANT FOR THE SWING. The old circling drift ran straight
+        // through strikes and blocks — most of the sliding he could see was
+        // fighters strafing mid-blow with their gait ignoring it.
+        const busy = a.strikeT >= 0 || a.guardT > 0;
+        if (!busy) {
+          const circling = Math.sin(sim.t * 1.3 + a.phase * 6) * 0.5;
+          a.move += (0.45 - a.move) * Math.min(1, 5 * dt);
+          a.x += Math.cos(a.heading + Math.PI / 2) * circling * dt * 0.8;
+          a.z += Math.sin(a.heading + Math.PI / 2) * circling * dt * 0.8;
+          if (!rangedOf(a) && d < reachOf(a) * 0.75) walk(a, dt, -0.35); // too close, give ground
+        } else {
+          a.move += (0.1 - a.move) * Math.min(1, 8 * dt);
+        }
+        // A RIPOSTE ANSWERS A BLOCK: the window is short and it takes it.
+        if (a.riposteT > 0 && a.strikeT < 0 && d < reachOf(a) + 0.6) {
+          a.riposteT = 0;
+          const seed = strikeSeed(sim.t, a.id);
+          beginStrike(a, false, seed);
+          offerGuard(a, strikeSpecOf(a));
+          sim.events.push({
+            kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
+            target: whoOf(t), how: styleName(a), range: d,
+          });
+          break;
+        }
         // an aggressive thing swings oftener, and swings heavy
         const period = STRIKE_PERIOD * (1.5 - a.temper.aggression * 0.85);
         if (a.strikeT < 0 && a.stateT > 0.35 && Math.random() < dt / period) {
-          beginStrike(a, Math.random() < 0.15 + a.temper.aggression * 0.4);
+          const seed = strikeSeed(sim.t, a.id);
+          beginStrike(a, Math.random() < 0.15 + a.temper.aggression * 0.4, seed);
           sim.events.push({
             kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
             target: t ? whoOf(t) : undefined, how: styleName(a),
             range: Math.hypot(t.x - a.x, t.z - a.z),
           });
+          offerGuard(a, strikeSpecOf(a));
         }
         break;
       }
