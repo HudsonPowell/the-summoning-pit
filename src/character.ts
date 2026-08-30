@@ -182,10 +182,11 @@ export const STRIKE_CAST: StrikeSpec = {
   ranged: { speed: 9, range: 9, size: 0.11, color: '#8fd6ff', arcing: false, trail: 4 },
 };
 
-/** Draw and loose — flatter and faster than a cast. */
+/** Draw and loose — flatter and faster than a cast. The bow arm rises to the
+ * eye line and holds there through the draw; it used to loose from the hip. */
 export const STRIKE_SHOOT: StrikeSpec = {
   duration: 0.6,
-  posts: [[-0.7, 0.25, 0.25], [0.9, 0.12, 0.0], [0.8, 0.05, -0.05]],
+  posts: [[-0.55, 0.5, 0.3], [0.9, 0.42, 0.05], [0.85, 0.38, 0.0]],
   windup: 0.62, strike: 0.1, reachMin: 0.45, reachMax: 1.05, twist: 0.3,
   ranged: { speed: 15, range: 12, size: 0.055, color: '#e8d9a8', arcing: false, trail: 6 },
 };
@@ -331,6 +332,22 @@ export function tuneStrike(
   return { light: one(pair.light), heavy: one(pair.heavy) };
 }
 
+// each bow is its own school — the longbow a slow far spear of a shot, the
+// shortbow a flurry, the greatbow a siege engine lobbing arcs. One entry here
+// serves both style tables so "bow" never collapses back to a single draw.
+function bowSchool(w: string): { light: StrikeSpec; heavy: StrikeSpec } | null {
+  if (/longbow|warbow/.test(w)) {
+    return { light: { ...STRIKE_SHOOT, duration: 0.8, ranged: { ...STRIKE_SHOOT.ranged!, speed: 18, range: 15, size: 0.05 } }, heavy: STRIKE_SHOOT };
+  }
+  if (/shortbow|horsebow/.test(w)) {
+    return { light: { ...STRIKE_SHOOT, duration: 0.42, ranged: { ...STRIKE_SHOOT.ranged!, speed: 14, range: 8, size: 0.05 } }, heavy: STRIKE_SHOOT };
+  }
+  if (/greatbow|siege bow/.test(w)) {
+    return { light: { ...STRIKE_SHOOT, duration: 1.0, ranged: { ...STRIKE_SHOOT.ranged!, speed: 12, range: 14, size: 0.09, arcing: true } }, heavy: STRIKE_SHOOT };
+  }
+  return null;
+}
+
 export function styleForStrict(weaponName: string): { light: StrikeSpec; heavy: StrikeSpec } | null {
   const w = weaponName.toLowerCase();
   if (/javelin|harpoon|throwing spear|throwing axe|throwing knife|boomerang/.test(w)) {
@@ -339,6 +356,8 @@ export function styleForStrict(weaponName: string): { light: StrikeSpec; heavy: 
   if (/crossbow|arbalest/.test(w)) {
     return { light: { ...STRIKE_SHOOT, ranged: { ...STRIKE_SHOOT.ranged!, speed: 19, range: 11, color: '#d8cfc0' } }, heavy: STRIKE_SHOOT };
   }
+  const bow = bowSchool(w);
+  if (bow) return bow;
   if (/bow\b|sling/.test(w)) return { light: STRIKE_SHOOT, heavy: STRIKE_SHOOT };
   if (/staff|stave/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_FIREBALL };
   if (/\bwand\b|rod\b|sceptre|scepter/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_ARCANE };
@@ -379,6 +398,8 @@ export function styleFor(
   if (/crossbow|arbalest/.test(w)) {
     return { light: { ...STRIKE_SHOOT, ranged: { ...STRIKE_SHOOT.ranged!, speed: 19, range: 11, color: '#d8cfc0' } }, heavy: STRIKE_SHOOT };
   }
+  const bow = bowSchool(w);
+  if (bow) return bow;
   if (/bow|sling/.test(w)) return { light: STRIKE_SHOOT, heavy: STRIKE_SHOOT };
   if (/staff|stave/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_FIREBALL };
   if (/\bwand\b|rod\b|sceptre|scepter/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_ARCANE };

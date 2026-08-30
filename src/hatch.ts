@@ -85,6 +85,11 @@ held: if the words name ANYTHING carried in a hand — a weapon, a tool, an
   an arrow, "cast" hurls arcane bolts, "fireball" lobs an exploding ball,
   "frost" throws slow ice, "zap" strikes as lightning, "throw" hurls the
   thing itself (it sticks in the ground and must be fetched back).
+  A bow reads as a bow only with all three: curved limbs running in ±y, a
+  thin string part (r ~0.007) joining the tips, and an arrow part along +x.
+  Vary the silhouette — tall elegant longbows, stubby recurves, brutal
+  iron-tipped siege limbs — and match attack.shot (speed 12-18, size
+  0.04-0.09) to the build.
 offhand: a second held thing — a shield, torch, or twin of the first — same
   rules. Omit held/offhand entirely for creatures with nothing in hand.
 worn: what it WEARS, designed piece by piece — an ornate crown, a bone mask,

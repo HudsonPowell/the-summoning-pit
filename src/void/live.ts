@@ -137,7 +137,9 @@ export class LiveVoid {
   /** Events drive the things that must not wait for the next position packet. */
   private applyEvent(ev: VoidEvent): void {
     const a = ev.actor ? this.byId.get(ev.actor.id) : undefined;
-    if ((ev.kind === 'strike' || ev.kind === 'loose') && a) {
+    // the dead swing nothing: a late strike event landing on a corpse had it
+    // re-playing the start of its last draw forever — the dead man's bow
+    if ((ev.kind === 'strike' || ev.kind === 'loose') && a && a.deadT < 0) {
       a.strikeT = 0;
       a.struck = false;
       a.heavy = false;
@@ -237,6 +239,7 @@ export class LiveVoid {
         : Math.max(0, a.rest - dt * 1.6);
       if (a.hurtT > 0) a.hurtT -= dt;
       if (a.flinch && (a.flinch.t -= dt) <= 0) a.flinch = null;
+      if (a.deadT >= 0 && a.strikeT >= 0) { a.strikeT = -1; a.swing = null; }
       if (a.strikeT >= 0) {
         a.strikeT += dt;
         const spec = a.swing ?? (a.ch.behaviors['attack-light'] as any)?.strike;
@@ -256,12 +259,23 @@ export class LiveVoid {
       if (i >= 0) this.sim.agents.splice(i, 1);
     }
 
-    this.sim.shots = (this.next.shots as any[]).map((s): Shot => ({
-      x: s.x, z: s.z, y: s.y, vx: 0, vz: 0, life: 1,
-      spec: { speed: 0, range: 0, size: s.r, color: s.c, arcing: false, trail: s.tr.length },
-      from: this.sim.agents[0],
-      trail: s.tr.map((t: number[]) => ({ x: t[0], y: t[1], z: t[2] })),
-    }));
+    // shots ride the same interpolated clock as the bodies that loosed them.
+    // Stamped raw from the packet they popped along at 12Hz, a quarter-second
+    // AHEAD of their archer — arrows materialising beside whoever stood there
+    const prevShot = new Map<number, any>(((this.prev.shots ?? []) as any[]).map(s => [s.i, s]));
+    this.sim.shots = (this.next.shots as any[]).map((s): Shot => {
+      const p = prevShot.get(s.i) ?? s;
+      const x = p.x + (s.x - p.x) * u, z = p.z + (s.z - p.z) * u, y = p.y + (s.y - p.y) * u;
+      // the trail rides with the head, or it would trail IN FRONT of it
+      const ox = x - s.x, oz = z - s.z, oy = y - s.y;
+      return {
+        id: s.i, x, z, y,
+        vx: 0, vz: 0, life: 1,
+        spec: { speed: 0, range: 0, size: s.r, color: s.c, arcing: false, trail: s.tr.length },
+        from: this.sim.agents[0],
+        trail: s.tr.map((t: number[]) => ({ x: t[0] + ox, y: t[1] + oy, z: t[2] + oz })),
+      };
+    });
 
     // the floor's memory rides the same snapshots. Positions lerp so a kicked
     // bone skitters instead of teleporting between packets.

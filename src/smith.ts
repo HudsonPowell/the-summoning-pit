@@ -186,12 +186,50 @@ const A2: Record<string, WeaponSpec> = {
     { a: [-0.05, 0, 0], b: [0.72, 0, 0], r: 0.018, color: '#3a2f26' },
     { a: [-0.05, 0, 0], b: [-0.05, 0.09, 0], r: 0.024, color: '#8a8f99' },
   ]},
-  // the bow is held across the hand: its limbs run in y, not x
+  // Bows are held across the hand: limbs run in y, not x. Each one is drawn
+  // with a STRING and a nocked arrow along +x — the old bow was a bare
+  // stringless V and read as a bent stick in every fist that held it.
   bow: { name: 'bow', parts: [
-    { a: [0.06, 0, 0], b: [0.1, 0.34, 0], r: 0.018, color: '#7a5a34' },
-    { a: [0.06, 0, 0], b: [0.1, -0.34, 0], r: 0.018, color: '#7a5a34' },
-    { a: [0.1, 0.34, 0], b: [0.02, 0.46, 0], r: 0.014, color: '#6b4a2f' },
-    { a: [0.1, -0.34, 0], b: [0.02, -0.46, 0], r: 0.014, color: '#6b4a2f' },
+    // riser, then recurve limbs: out, back, and the tips flare forward again
+    { a: [0.05, -0.11, 0], b: [0.05, 0.11, 0], r: 0.026, color: '#7a5a34' },
+    { a: [0.05, 0.11, 0], b: [-0.02, 0.36, 0], r: 0.018, color: '#7a5a34' },
+    { a: [-0.02, 0.36, 0], b: [0.07, 0.52, 0], r: 0.012, color: '#6b4a2f' },
+    { a: [0.05, -0.11, 0], b: [-0.02, -0.36, 0], r: 0.018, color: '#7a5a34' },
+    { a: [-0.02, -0.36, 0], b: [0.07, -0.52, 0], r: 0.012, color: '#6b4a2f' },
+    { a: [0.07, 0.52, 0], b: [0.07, -0.52, 0], r: 0.007, color: '#d8d2c4' },
+    { a: [-0.08, 0, 0], b: [0.44, 0, 0], r: 0.011, color: '#8a7a5c' },
+    { a: [0.44, 0, 0], b: [0.5, 0, 0], r: 0.017, color: '#aab2bd' },
+  ]},
+  longbow: { name: 'longbow', parts: [
+    // one tall clean D-curve, taller than the arm that draws it
+    { a: [0.02, -0.66, 0], b: [0.09, -0.3, 0], r: 0.015, color: '#5f4a30' },
+    { a: [0.09, -0.3, 0], b: [0.11, 0, 0], r: 0.02, color: '#6b543a' },
+    { a: [0.11, 0, 0], b: [0.09, 0.3, 0], r: 0.02, color: '#6b543a' },
+    { a: [0.09, 0.3, 0], b: [0.02, 0.66, 0], r: 0.015, color: '#5f4a30' },
+    { a: [0.02, 0.66, 0], b: [0.02, -0.66, 0], r: 0.006, color: '#e3ddcf' },
+    { a: [-0.1, 0, 0], b: [0.52, 0, 0], r: 0.011, color: '#8a7a5c' },
+    { a: [0.52, 0, 0], b: [0.58, 0, 0], r: 0.016, color: '#c8ccd4' },
+  ]},
+  shortbow: { name: 'shortbow', parts: [
+    // stubby and sharply recurved, a rider's bow
+    { a: [0.06, -0.08, 0], b: [0.06, 0.08, 0], r: 0.024, color: '#7d5b38' },
+    { a: [0.06, 0.08, 0], b: [-0.04, 0.24, 0], r: 0.016, color: '#7d5b38' },
+    { a: [-0.04, 0.24, 0], b: [0.09, 0.34, 0], r: 0.011, color: '#8f6f45' },
+    { a: [0.06, -0.08, 0], b: [-0.04, -0.24, 0], r: 0.016, color: '#7d5b38' },
+    { a: [-0.04, -0.24, 0], b: [0.09, -0.34, 0], r: 0.011, color: '#8f6f45' },
+    { a: [0.09, 0.34, 0], b: [0.09, -0.34, 0], r: 0.006, color: '#d8d2c4' },
+    { a: [-0.06, 0, 0], b: [0.36, 0, 0], r: 0.01, color: '#8a7a5c' },
+  ]},
+  greatbow: { name: 'greatbow', parts: [
+    // a siege limb of dark wood and iron, arrow like a fence post
+    { a: [0.05, -0.15, 0], b: [0.05, 0.15, 0], r: 0.034, color: '#3f3226' },
+    { a: [0.05, 0.15, 0], b: [-0.05, 0.5, 0], r: 0.024, color: '#4a3b2c' },
+    { a: [-0.05, 0.5, 0], b: [0.08, 0.7, 0], r: 0.016, color: '#8f949c' },
+    { a: [0.05, -0.15, 0], b: [-0.05, -0.5, 0], r: 0.024, color: '#4a3b2c' },
+    { a: [-0.05, -0.5, 0], b: [0.08, -0.7, 0], r: 0.016, color: '#8f949c' },
+    { a: [0.08, 0.7, 0], b: [0.08, -0.7, 0], r: 0.008, color: '#b8b2a4' },
+    { a: [-0.12, 0, 0], b: [0.56, 0, 0], r: 0.016, color: '#6e5f48' },
+    { a: [0.56, 0, 0], b: [0.64, 0, 0], r: 0.024, color: '#9aa1ab' },
   ]},
   crossbow: { name: 'crossbow', parts: [
     { a: [-0.12, 0, 0], b: [0.5, 0, 0], r: 0.026, color: '#5a4433' },
@@ -280,7 +318,10 @@ export function weaponsFromWords(desc: string): { main?: WeaponSpec; off?: Weapo
     [/\borb\b|crystal ball|sphere of/, A3.orb],
     [/cleaver|butcher/, A3.cleaver],
     [/crossbow|arbalest/, A2.crossbow],
-    [/longbow|shortbow|\bbow\b|archer/, A2.bow],
+    [/longbow|warbow/, A2.longbow],
+    [/shortbow|horsebow/, A2.shortbow],
+    [/greatbow|siege bow/, A2.greatbow],
+    [/\bbow\b|archer/, A2.bow],
     [/scimitar|cutlass|sabre|saber|falchion/, A2.scimitar],
     [/rapier|estoc|foil\b/, A2.rapier],
     [/dagger|knive|knife|dirk|shiv|stiletto/, A2.dagger],

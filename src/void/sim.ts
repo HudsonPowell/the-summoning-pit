@@ -78,8 +78,11 @@ export interface VoidEvent {
   spotS?: number;    // and which side
 }
 
+let shotSeq = 1;
+
 /** Something in flight. Nobody owns it once it leaves. */
 export interface Shot {
+  id: number;        // stable across snapshots, so clients can interpolate it
   x: number; z: number; y: number;
   vx: number; vz: number;
   life: number;
@@ -708,6 +711,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
           // (Unless it STICKS: a spear is a possession in flight.)
           const aim = t && t.deadT < 0 ? Math.atan2(t.z - a.z, t.x - a.x) : a.heading;
           sim.shots.push({
+            id: shotSeq++,
             x: a.x + Math.cos(aim) * 0.35,
             z: a.z + Math.sin(aim) * 0.35,
             y: a.bulk * 0.62,
@@ -1028,6 +1032,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
       for (let k = 0; k < 6; k++) {
         const a2 = (k / 6) * Math.PI * 2 + Math.random() * 0.5;
         sim.shots.push({
+          id: shotSeq++,
           x: s.x, z: s.z, y: Math.max(0.1, s.y),
           vx: Math.cos(a2) * 3.2, vz: Math.sin(a2) * 3.2,
           life: 0.22 + Math.random() * 0.1,

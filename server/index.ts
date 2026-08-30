@@ -217,6 +217,7 @@ function snapshot() {
       ...(a.guardT > 0 ? { gd: 1 } : {}),
     })),
     shots: sim.shots.map(s => ({
+      i: s.id,
       x: r2(s.x), z: r2(s.z), y: r2(s.y),
       c: s.spec.color, r: s.spec.size,
       tr: s.trail.map(p => [r2(p.x), r2(p.y), r2(p.z)]),

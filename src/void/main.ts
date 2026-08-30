@@ -1079,11 +1079,22 @@ function relicCapsules(r: import('./relics').Relic): Capsule[] {
   return caps;
 }
 
+// a plant's base geometry is pure (kind, seed) — building it fresh every
+// frame for every plant was a steady drip of allocation the phones felt
+const floraBase = new Map<string, Capsule[]>();
+
 function floraCapsules(f: import('./relics').Flora): Capsule[] {
   const grown = 0.3 + 0.7 * f.growth;
   const bend = f.hurt;                     // trampled plants lean and flatten
   const c = Math.cos(f.yaw), sn = Math.sin(f.yaw);
-  return makeProp(f.kind as PropKind, f.seed).map(cp => {
+  const key = f.kind + ':' + f.seed;
+  let base = floraBase.get(key);
+  if (!base) {
+    if (floraBase.size > 96) floraBase.clear();  // reseeds retire old keys
+    base = makeProp(f.kind as PropKind, f.seed);
+    floraBase.set(key, base);
+  }
+  return base.map(cp => {
     const bendAt = (p: { x: number; y: number; z: number }) => {
       // height shrinks with damage and the top shears sideways — a plant
       // pressed down, not a plant scaled down
