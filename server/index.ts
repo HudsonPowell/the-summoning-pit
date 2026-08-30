@@ -7,7 +7,8 @@
 // expensive data is the only part that never changes.
 
 import { createServer } from 'node:http';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Character, migrateCharacter, makeCharacter } from '../src/character';
 import { defaultBiped } from '../src/genome';
@@ -208,10 +209,21 @@ restore();
 if (SERVER_HATCH && !HATCH_API_KEY) {
   void warmModel(OLLAMA_URL, HATCH_MODEL);
 }
-// so does the judge — CLIP caches on the volume and survives deploys
-if (TASTE && SERVER_HATCH && HATCH_API_KEY) {
+// The volume is for the pit's MEMORY, never for model weights: caching CLIP
+// there filled it to ENOSPC in eight seconds and took the state file hostage.
+// Clean up any weights a previous boot left behind, then cache on the
+// container disk — ephemeral, re-downloaded per deploy, and roomy.
+{
   const vol = process.env.RAILWAY_VOLUME_MOUNT_PATH;
-  warmTaste(vol ? `${vol}/hf-cache` : undefined);
+  if (vol) {
+    try {
+      rmSync(`${vol}/hf-cache`, { recursive: true, force: true });
+    } catch { /* nothing there, or nothing we can do */ }
+  }
+}
+// the judge downloads in the background too; the pit opens immediately
+if (TASTE && SERVER_HATCH && HATCH_API_KEY) {
+  warmTaste(`${tmpdir()}/pit-hf-cache`);
 }
 
 // --- who is here ------------------------------------------------------------

@@ -118,15 +118,26 @@ let clip: any | 'loading' | 'dead' = null;
 export function warmTaste(cacheDir?: string): void {
   if (clip) return;
   clip = 'loading';
+  // The download can die as an unhandled STREAM error (ENOSPC did, and took
+  // the whole pit down with it) — no try/catch sees those. While the judge
+  // is being seated, a process-level net catches whatever falls; it comes
+  // down the moment loading resolves either way.
+  const fell = (e: Error) => {
+    clip = 'dead';
+    console.log(`[taste] the judge fell on the stairs: ${e.message.slice(0, 80)}`);
+  };
+  if (typeof process !== 'undefined') process.on('uncaughtException', fell);
   void (async () => {
     try {
       const tf: any = await import('@huggingface/transformers');
       if (cacheDir) tf.env.cacheDir = cacheDir;
-      clip = await tf.pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
-      console.log('[taste] the judge is seated');
+      const p = await tf.pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
+      if (clip === 'loading') { clip = p; console.log('[taste] the judge is seated'); }
     } catch (e) {
       clip = 'dead';
       console.log(`[taste] no judge today: ${(e as Error).message.slice(0, 80)}`);
+    } finally {
+      if (typeof process !== 'undefined') process.removeListener('uncaughtException', fell);
     }
   })();
 }
