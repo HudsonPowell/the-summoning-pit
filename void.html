@@ -92,6 +92,30 @@
     }
     #summonBar:focus-within::before { background: rgba(72, 74, 78, .55); }
     #summonBar:has(input:disabled)::before { background: rgba(58, 60, 63, .26); }
+    /* While the pit is thinking, the glass BREATHES — a slow lift and fall
+       rather than a spinner. Long enough (4.2s) to read as breath and not as
+       a pulse; the murmuring placeholder rides the same rhythm, a shade
+       behind the glass, so the whole pill inhales together. The animation
+       outranks the dimmed-disabled rule above, which is what it is for. */
+    @keyframes summonBreath {
+      0%, 100% { background: rgba(58, 60, 63, .30); }
+      50%      { background: rgba(104, 107, 114, .62); }
+    }
+    @keyframes summonBreathText {
+      0%, 100% { opacity: .42; }
+      50%      { opacity: .72; }
+    }
+    #summonBar:has(input[data-state="summoning"])::before {
+      animation: summonBreath 4.2s ease-in-out infinite;
+    }
+    #summonBar input[data-state="summoning"] {
+      animation: summonBreathText 4.2s ease-in-out infinite;
+      animation-delay: .35s;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #summonBar:has(input[data-state="summoning"])::before,
+      #summonBar input[data-state="summoning"] { animation: none; }
+    }
     /* Modula Sans, when its files land in public/fonts/ — until then the
        stack falls through to Helvetica and nothing breaks */
     @font-face {

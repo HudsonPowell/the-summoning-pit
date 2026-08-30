@@ -108,6 +108,18 @@ const MAX_BUFFER_PX = 1120 * 760;
 // and their 60 back — the soft-field look hides the resolution far better
 // than it hides a stutter.
 const MAX_BUFFER_CPU_PX = 500_000;
+/**
+ * Every device is a device we have never tested. Two fixed caps — one for
+ * WebGPU, one for the hand-rasterised fallback — are a guess about hardware,
+ * and a guess is what leaves a phone rendering four times the pixels it can
+ * afford while the pit insists everything is fine. So the buffer is governed
+ * by what the frames actually COST here: it gives back resolution until the
+ * frames come in on time, and takes it back the moment there is headroom.
+ * The soft-field look hides a smaller buffer far better than it hides a
+ * stutter, which is the whole reason this trade is available.
+ */
+const PERF_FLOOR = 0.3;              // never below a third of the cap
+let perfScale = 1;
 function fitCanvas() {
   const stage = document.getElementById('stage')!;
   const w = Math.max(240, Math.round(stage.clientWidth));
@@ -115,9 +127,36 @@ function fitCanvas() {
   canvas.width = w;
   canvas.height = h;
   const aspect = h / w;
-  const cap = view.mode === 'cpu' ? MAX_BUFFER_CPU_PX : MAX_BUFFER_PX;
+  const cap = (view.mode === 'cpu' ? MAX_BUFFER_CPU_PX : MAX_BUFFER_PX) * perfScale;
   const res = Math.min(look.res, Math.floor(Math.sqrt(cap / aspect)));
   view.setSize(res, Math.max(80, Math.round(res * aspect)));
+}
+
+// the last second and a half of real frame times, and the last time we moved
+const frameMs: number[] = [];
+let sinceGovern = 0;
+let medianMs = 0;
+/**
+ * Judge on the MEDIAN, not the mean: a single 300ms hitch from a hatch or a
+ * garbage collection would otherwise drag the buffer down and keep it there.
+ */
+function govern(ms: number): void {
+  if (ms > 0 && ms < 400) frameMs.push(ms);
+  if (frameMs.length > 90) frameMs.shift();
+  sinceGovern += ms;
+  if (frameMs.length < 40 || sinceGovern < 1500) return;
+  sinceGovern = 0;
+  const sorted = frameMs.slice().sort((a, b) => a - b);
+  medianMs = sorted[sorted.length >> 1];
+  const was = perfScale;
+  // 20ms is 50fps: below that the eye reads stutter, so give up pixels fast
+  if (medianMs > 20) perfScale = Math.max(PERF_FLOOR, perfScale * 0.8);
+  // and take them back slowly, so a lull does not start an oscillation
+  else if (medianMs < 11 && perfScale < 1) perfScale = Math.min(1, perfScale * 1.1);
+  if (perfScale !== was) {
+    frameMs.length = 0;          // the old times describe the old buffer
+    fitCanvas();
+  }
 }
 const view = new PixelView(canvas, look.res, Math.round(look.res * 0.625));
 view.init();
@@ -1221,6 +1260,9 @@ async function boot() {
   title = new WireTitle('the summoning pit', frameW);
 
   let last = performance.now();
+  const caps: Capsule[] = [];
+  const propCaps: Capsule[] = [];
+  const add = (list: Capsule[]): void => { for (let i = 0; i < list.length; i++) caps.push(list[i]); };
   function tick(dt: number) {
     if (live) live.update(dt); else stepVoid(sim, dt);
     pushFeed(sim.events);
@@ -1283,8 +1325,12 @@ async function boot() {
     }
     findLord(sim);
     summonUI(sim, live);
-    const caps: Capsule[] = [];
-    if (title && !title.done) caps.push(...title.caps(dt, cam.yaw));
+    // ONE array, emptied and refilled. A fresh array every frame, filled with
+    // `push(...list)` for every creature, relic, plant and shot, was hundreds
+    // of throwaway objects and dozens of throwaway arrays per frame — sixty
+    // times a second, on a phone, which pays for it in collections mid-fight.
+    caps.length = 0;
+    if (title && !title.done) add(title.caps(dt, cam.yaw));
     else if (title) {
       // the title has died. A first visitor gets the introduction NEXT, in
       // the same wire hand, standing where the title stood — the pit says
@@ -1296,31 +1342,57 @@ async function boot() {
         title = new WireTitle('one pit, all of us. pit lord survives.', frameW * 0.5, 1.4, 0.44);
       }
     }
-    // scenery first: it never moves, so it is the same list every frame
-    for (const pr of sim.props) caps.push(...pr.caps);
-    for (const r of sim.relics) caps.push(...relicCapsules(r));
-    for (const f of sim.flora) caps.push(...floraCapsules(f));
-    for (const a of sim.agents) {
-      caps.push(...agentCapsules(a, sim.t));
-      caps.push(...sigilCapsules(a, sim.t));
-      caps.push(...healthCapsules(a, a.by === ME));
+    // the scenery never moves: it is flattened once and appended whole
+    if (propCaps.length !== sim.props.reduce((n, p) => n + p.caps.length, 0)) {
+      propCaps.length = 0;
+      for (const pr of sim.props) for (const c of pr.caps) propCaps.push(c);
     }
-    for (const s of sim.shots) caps.push(...shotCapsules(s));
+    add(propCaps);
+    for (const r of sim.relics) add(relicCapsules(r));
+    for (const f of sim.flora) add(floraCapsules(f));
+    for (const a of sim.agents) {
+      add(agentCapsules(a, sim.t));
+      add(sigilCapsules(a, sim.t));
+      add(healthCapsules(a, a.by === ME));
+    }
+    for (const s of sim.shots) add(shotCapsules(s));
     view.render(caps, cam, 0);
 
   }
 
+  // ?fps puts the numbers on the glass — the only way to learn what a phone
+  // we do not own is actually doing, without asking its owner to describe it
+  const fpsTag = new URLSearchParams(location.search).has('fps')
+    ? (() => {
+        const el = document.createElement('div');
+        el.style.cssText = 'position:absolute;left:8px;top:8px;z-index:9;font:10px ui-monospace,monospace;color:#8a9099;letter-spacing:.06em;pointer-events:none';
+        document.getElementById('stage')!.appendChild(el);
+        return el;
+      })()
+    : null;
+  let tagAt = 0;
+
   function frame(now: number) {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const raw = now - last;
+    const dt = Math.min(0.05, raw / 1000);
     last = now;
     tick(dt);
+    govern(raw);
+    if (fpsTag && now - tagAt > 500) {
+      tagAt = now;
+      fpsTag.textContent =
+        `${medianMs ? Math.round(1000 / medianMs) : 0}fps  ${medianMs.toFixed(1)}ms  ${view.mode}  `
+        + `${view.size.W}x${view.size.H}  x${perfScale.toFixed(2)}  ${caps.length}caps`;
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
-    sim, cam, look, director, live, pit, get title() { return title; },
+    sim, cam, look, director, live, pit, view, get title() { return title; },
+    get perf() { return { medianMs, fps: medianMs ? 1000 / medianMs : 0, scale: perfScale, mode: view.mode, buffer: view.size, caps: caps.length }; },
+    govern,
     tick,
     refit: fitCanvas,
     run: (seconds: number, dt = 1 / 60) => {
