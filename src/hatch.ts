@@ -175,6 +175,7 @@ export const GENOME_SCHEMA = {
     },
     held: {
       type: 'object',
+      required: ['name', 'style', 'parts'],
       properties: {
         name: { type: 'string' },
         style: { type: 'string', enum: ['swipe', 'slam', 'thrust', 'lash', 'shoot', 'cast', 'fireball', 'frost', 'zap', 'throw'] },
@@ -195,6 +196,7 @@ export const GENOME_SCHEMA = {
     },
     offhand: {
       type: 'object',
+      required: ['name', 'parts'],
       properties: {
         name: { type: 'string' },
         parts: {
@@ -649,12 +651,36 @@ export function validateGenome(raw: any, desc: string): Genome {
   return genome;
 }
 
+/**
+ * A weapon noun found in the words — a single generic token, safe to become
+ * a name and to travel the wire. NEVER a slice of the prompt itself.
+ */
+const IMPLEMENT_WORD = /nunchucks?|staff|stave|wand|sceptre|scepter|orb|tome|grimoire|crossbow|longbow|shortbow|bow|javelin|harpoon|spear|pike|lance|trident|glaive|halberd|scythe|sword|blade|katana|scimitar|rapier|dagger|kni[fv]e|axe|hatchet|cleaver|hammer|maul|mace|flail|club|cudgel|whip|scourge|net|censer|chain|sickle|pick/;
+
+/** The designer forgot to say how it is used; the noun usually says. */
+function styleFromName(name: string): string | undefined {
+  const n = name.toLowerCase();
+  if (/staff|stave/.test(n)) return 'fireball';
+  if (/wand|sceptre|scepter/.test(n)) return 'cast';
+  if (/orb/.test(n)) return 'frost';
+  if (/tome|grimoire|spellbook/.test(n)) return 'zap';
+  if (/crossbow|bow|sling/.test(n)) return 'shoot';
+  if (/javelin|harpoon|throwing/.test(n)) return 'throw';
+  if (/whip|scourge|lash/.test(n)) return 'lash';
+  if (/spear|pike|lance|trident|rapier/.test(n)) return 'thrust';
+  return undefined;
+}
+
 /** The model's held-thing design, clamped, priced and dressed — or nothing. */
 function validHeld(raw: any, desc: string): WeaponSpec | undefined {
   if (!raw || !Array.isArray(raw.parts) || !raw.parts.length) return undefined;
-  const spec = validateWeapon(raw, typeof raw.name === 'string' ? raw.name : 'held');
+  // the fallback NAME must never be a slice of the prompt — a weapon name
+  // travels the wire and sits in the save. A matched noun is a safe token.
+  const fallbackName = desc.toLowerCase().match(IMPLEMENT_WORD)?.[0] ?? 'relic';
+  const named = typeof raw.name === 'string' && raw.name.trim() ? raw.name : fallbackName;
+  const spec = validateWeapon({ ...raw, name: named }, named);
   if (!spec.parts.length) return undefined;
-  const style = typeof raw.style === 'string' ? raw.style : undefined;
+  const style = typeof raw.style === 'string' ? raw.style : styleFromName(spec.name);
   const priced = priceWeapon(dressWeapon(spec, desc));
   return style ? { ...priced, style } : priced;
 }
@@ -683,7 +709,16 @@ export async function hatchGenome(
     && namesImplement(desc)) {
     try {
       const forged = await askSmith(desc, model, url);
-      if (forged.parts.length) genome.weapon = priceWeapon(dressWeapon(forged, desc));
+      if (forged.parts.length) {
+        const safeName = /[a-z]/.test(forged.name) && forged.name.length <= 24
+          && !forged.name.includes(' with ') ? forged.name
+          : (desc.toLowerCase().match(IMPLEMENT_WORD)?.[0] ?? 'relic');
+        const style = styleFromName(safeName);
+        genome.weapon = {
+          ...priceWeapon(dressWeapon({ ...forged, name: safeName }, desc)),
+          ...(style ? { style } : {}),
+        };
+      }
     } catch { /* bare hands, then — the fight goes on */ }
   }
   return genome;
