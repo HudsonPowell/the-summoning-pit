@@ -239,7 +239,8 @@ const orbit = { yaw: 0, zoom: 0, idle: 99 };
 // follows an ANCHOR that only moves when the creature genuinely leaves, and
 // everything else is critically damped over most of a second.
 const rig = {
-  ax: 0, az: 0,                                    // the anchor, not the creature
+  ax: 0, az: 0,
+  crowd: 0,   // how often the keep-in clamps have fired lately: earned zoom-out                                    // the anchor, not the creature
   vx: { v: 0 }, vz: { v: 0 }, vy: { v: 0 },
   vppm: { v: 0 }, vyaw: { v: 0 },
 };
@@ -630,7 +631,11 @@ function driveCamera(sim: VoidSim, dt: number) {
     // height comes off its SIZE, never off its bob — following the bounce is
     // following a spring with a camera bolted to it
     cam.cy = smoothDamp(cam.cy, you.bulk * 0.55, rig.vy, 1.1, dt);
-    let want = (frameH * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom);
+    // a creature that keeps hitting the frame's edge earns a wider frame;
+    // calm ones get the close-up back as the memory decays
+    rig.crowd = (rig.crowd ?? 0) * Math.exp(-dt * 0.5);
+    let want = (frameH * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom)
+      * (1 - Math.min(0.35, rig.crowd ?? 0));
     if (foe) {
       // zoom out until the whole duel fits, whatever the damps are doing
       const sep = foeSep(foe);
@@ -660,6 +665,9 @@ function driveCamera(sim: VoidSim, dt: number) {
         const back = rotY(v3(ex, 0, ez), -cam.yaw);
         cam.cx = (cam.cx ?? 0) + back.x;
         cam.cz = (cam.cz ?? 0) + back.z;
+        // the clamp firing means the zoom is too tight for this creature's
+        // speed — remember it, and the framing eases wider (see want)
+        rig.crowd = Math.min(0.4, (rig.crowd ?? 0) + Math.hypot(ex, ez) * 0.6);
       }
     };
     if (foe) keepIn(foe.x, foe.z, 0.42, 0.34);
@@ -799,7 +807,17 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       jiggle: a.sec.jiggle,
     },
   );
-  const flash = a.hurtT > 0 && Math.sin(t * 40) > 0;
+  // BEING HIT IS A WAVE, not a strobe. The blow lands somewhere; a pulse of
+  // the body's OWN colours, brightened, travels outward from that spot
+  // through the limbs and fades as it goes — a chain reaction in light
+  // instead of a white flash.
+  const wave = a.flinch;
+  const waveAge = wave ? 1 - wave.t / 0.5 : 0;
+  const waveR = waveAge * a.bulk * 1.9;
+  const waveAmp = wave ? Math.pow(wave.t / 0.5, 0.6) * 1.5 : 0;
+  const sigma = Math.max(0.12, a.bulk * 0.3);
+  const spotY = wave ? a.bulk * wave.h : 0;
+  const spotZ = wave ? wave.side * a.bulk * 0.18 : 0;
   const fade = a.deadT >= 0
     ? (a.recalled ? Math.max(0, 1 - a.deadT / 0.9) : Math.max(0, 1 - Math.max(0, a.deadT - 2) / 1.5))
     : 1;
@@ -807,9 +825,16 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
   return caps.map(c => {
     const p = rotY(c.a, yaw);
     const q = rotY(c.b, yaw);
-    const col: [number, number, number] = flash
-      ? [255, 235, 235]
-      : [c.color[0] * fade, c.color[1] * fade, c.color[2] * fade];
+    let col: [number, number, number] = [c.color[0] * fade, c.color[1] * fade, c.color[2] * fade];
+    if (wave && waveAmp > 0.02) {
+      const mx = (c.a.x + c.b.x) / 2, my = (c.a.y + c.b.y) / 2, mz = (c.a.z + c.b.z) / 2;
+      const d = Math.hypot(mx * 0.6, my - spotY, mz - spotZ);
+      const g = Math.exp(-((d - waveR) * (d - waveR)) / (2 * sigma * sigma)) * waveAmp;
+      if (g > 0.03) {
+        const k = 1 + g;
+        col = [Math.min(255, col[0] * k + 40 * g), Math.min(255, col[1] * k + 40 * g), Math.min(255, col[2] * k + 40 * g)];
+      }
+    }
     return {
       ...c,
       a: v3(p.x + a.x, p.y, p.z + a.z),

@@ -13,7 +13,7 @@ import { Character, migrateCharacter } from '../character';
 import { effectiveGait } from '../genome';
 import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
 
-const DELAY = 0.12; // render this far in the past, so there is always a pair
+const DELAY = 0.15; // render this far in the past, so there is always a pair
 
 interface Snap {
   at: number;
@@ -126,8 +126,12 @@ export class LiveVoid {
     if (typeof m.w === 'number') this.watchers = m.w;
     this.prev = this.next;
     this.next = { at: performance.now() / 1000, time: m.time, agents: m.agents, shots: m.shots, relics: m.relics, flora: m.flora };
-    if (!this.prev) this.prev = this.next;
-    this.clock = this.next.at - DELAY;
+    if (!this.prev) {
+      this.prev = this.next;
+      this.clock = this.next.at - DELAY;
+    }
+    // NO hard resync here: snapping the clock to every arrival replayed the
+    // network's jitter as visible stutter. update() eases toward the target.
   }
 
   /** Events drive the things that must not wait for the next position packet. */
@@ -175,10 +179,16 @@ export class LiveVoid {
     // events arrive between frames, so they are drained by the caller AFTER
     // it has read them — clearing here would destroy them unread
     if (!this.next || !this.prev) return;
+    // the clock ADVANCES with the frame and EASES toward where the buffer
+    // says it should be — jitter is absorbed instead of replayed
     this.clock += dt;
+    const target = this.next.at - DELAY;
+    this.clock += (target - this.clock) * Math.min(1, dt * 4);
 
     const span = Math.max(1e-3, this.next.at - this.prev.at);
-    const u = Math.max(0, Math.min(1, (this.clock - this.prev.at) / span));
+    // a late packet no longer freezes the world at u=1: motion carries on a
+    // short way along its last known line, then holds
+    const u = Math.max(0, Math.min(1.3, (this.clock - this.prev.at) / span));
     this.sim.t = this.prev.time + (this.next.time - this.prev.time) * u;
 
     const prevById = new Map<number, any>(this.prev.agents.map((r: any) => [r.i, r]));
