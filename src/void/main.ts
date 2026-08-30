@@ -384,26 +384,6 @@ let pactHinted = false;
 const SUMMON_MURMURS = ['the pit listens…', 'something forms…', 'it is coming…'];
 
 /**
- * While the pit hatches, a thin wisp turns over the centre of the floor —
- * the wait is watched, not endured. Three pale strands orbiting and rising,
- * built from the same capsules as everything else.
- */
-function formingWisp(t: number): Capsule[] {
-  const caps: Capsule[] = [];
-  for (let k = 0; k < 3; k++) {
-    const ph = t * (0.9 + k * 0.17) + k * 2.1;
-    const rad = 0.34 + Math.sin(t * 0.7 + k) * 0.08;
-    const rise = ((t * 0.35 + k * 0.33) % 1);
-    const y = 0.08 + rise * 1.1;
-    const fade = Math.sin(Math.PI * rise) * 0.85;
-    const a = v3(Math.cos(ph) * rad, y, Math.sin(ph) * rad);
-    const b = v3(Math.cos(ph + 0.9) * rad * 0.8, y + 0.16, Math.sin(ph + 0.9) * rad * 0.8);
-    caps.push({ a, b, r: 0.045 + 0.02 * fade, color: [120 * fade, 150 * fade, 148 * fade], part: 'wisp' });
-  }
-  return caps;
-}
-
-/**
  * A reign should LOOK like a reign: the crown's points grow with the hours
  * held, so a visitor arriving to a quiet pit still reads the story.
  */
@@ -613,13 +593,26 @@ function driveCamera(sim: VoidSim, dt: number) {
       orbit.zoom = smoothDamp(orbit.zoom, 0, { v: 0 }, 2.4, dt);
     }
 
+    // THE FIGHT IS THE FRAME. When yours is engaged, its opponent must be
+    // on screen too — a duel with one fencer visible is nothing. The anchor
+    // drifts toward the pair's midpoint (biased to yours), and the zoom
+    // backs out below until both fit.
+    const foeSep = (o: Agent) => Math.hypot(o.x - you.x, o.z - you.z);
+    // engagement begins at the DECISION, not at sword-length: two creatures
+    // stalking each other from across the pit are already a duel
+    const foe =
+      (you.target && you.target.deadT < 0 && foeSep(you.target) < 12) ? you.target
+      : sim.agents.find(o => o !== you && o.deadT < 0 && o.target === you && foeSep(o) < 12) ?? null;
+    const aimX = foe ? you.x + (foe.x - you.x) * 0.42 : you.x;
+    const aimZ = foe ? you.z + (foe.z - you.z) * 0.42 : you.z;
+
     // the anchor only gives when the creature has actually gone somewhere.
     // The deadzone is WORLD metres, but 'has gone somewhere' is a question
     // about the SCREEN: 0.9m was 50px of slack on a desktop and most of the
     // width on a zoomed-in phone, which is exactly a creature parked on the
     // bezel with the camera calling it centred.
     const dead = Math.min(DEADZONE, (view.size.W * 0.18) / cam.ppm);
-    const dx = you.x - rig.ax, dz = you.z - rig.az;
+    const dx = aimX - rig.ax, dz = aimZ - rig.az;
     const d = Math.hypot(dx, dz);
     if (d > dead) {
       const pull = (d - dead) / d;
@@ -636,27 +629,40 @@ function driveCamera(sim: VoidSim, dt: number) {
     // height comes off its SIZE, never off its bob — following the bounce is
     // following a spring with a camera bolted to it
     cam.cy = smoothDamp(cam.cy, you.bulk * 0.55, rig.vy, 1.1, dt);
-    const want = (frameH * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom);
-    cam.ppm = smoothDamp(cam.ppm, want, rig.vppm, 1.3, dt);
+    let want = (frameH * 0.26 / Math.max(0.7, you.bulk)) * look.zoom * Math.exp(orbit.zoom);
+    if (foe) {
+      // zoom out until the whole duel fits, whatever the damps are doing
+      const sep = foeSep(foe);
+      const fit = (Math.min(view.size.W, view.size.H) * 0.42) / (sep * 0.5 + 1.5);
+      want = Math.min(want, Math.max(fit, 20));
+    }
+    // the cut to duel-framing is a CUT, not a drift — while the zoom lags,
+    // the two keep-in clamps are geometrically unsatisfiable
+    cam.ppm = smoothDamp(cam.ppm, want, rig.vppm, foe ? 0.35 : 1.3, dt);
     // The director leaves cam.yaw unwrapped — it had wound to 17 radians by
     // the time a creature died and came back. Interpolating that linearly to
     // 0.5 spins the camera two and a half times, which is exactly the thing
     // that makes people feel ill. Always take the short way round.
     cam.yaw = smoothDampAngle(wrapAngle(cam.yaw), 0.5 + orbit.yaw, rig.vyaw, 1.1, dt);
-    // A guarantee, not a tendency: however far the damps lag, your creature
-    // does not leave the middle of the frame. This runs LAST, against the
-    // frame's final yaw and zoom — clamping before the yaw damp let the
-    // rotated axes leak depth-slack back into the horizontal.
-    const off = rotY(v3(you.x - cam.cx, 0, you.z - cam.cz), cam.yaw);
-    const mx = (view.size.W * 0.3) / cam.ppm;
-    const mz = (view.size.H * 0.26) / cam.ppm;
-    const ex = off.x - Math.max(-mx, Math.min(mx, off.x));
-    const ez = off.z - Math.max(-mz, Math.min(mz, off.z));
-    if (ex || ez) {
-      const back = rotY(v3(ex, 0, ez), -cam.yaw);
-      cam.cx += back.x;
-      cam.cz += back.z;
-    }
+    // A guarantee, not a tendency: however far the damps lag, the fighters do
+    // not leave the frame. This runs LAST, against the frame's final yaw and
+    // zoom — clamping before the yaw damp let the rotated axes leak
+    // depth-slack back into the horizontal. The foe's clamp runs FIRST and
+    // looser, so when both pull, yours wins.
+    const keepIn = (px: number, pz: number, fx: number, fz: number) => {
+      const off = rotY(v3(px - (cam.cx ?? 0), 0, pz - (cam.cz ?? 0)), cam.yaw);
+      const mx = (view.size.W * fx) / cam.ppm;
+      const mz = (view.size.H * fz) / cam.ppm;
+      const ex = off.x - Math.max(-mx, Math.min(mx, off.x));
+      const ez = off.z - Math.max(-mz, Math.min(mz, off.z));
+      if (ex || ez) {
+        const back = rotY(v3(ex, 0, ez), -cam.yaw);
+        cam.cx = (cam.cx ?? 0) + back.x;
+        cam.cz = (cam.cz ?? 0) + back.z;
+      }
+    };
+    if (foe) keepIn(foe.x, foe.z, 0.42, 0.34);
+    keepIn(you.x, you.z, 0.3, 0.26);
     return;
   }
   // NOTHING OF YOURS IS IN THERE. You are not in the fight, so the camera
@@ -675,6 +681,18 @@ function driveCamera(sim: VoidSim, dt: number) {
   // an empty pit frames the TITLE, not a guess about absent creatures
   const most = spread.length ? spread[Math.floor(spread.length * 0.7)] : 2.8;
   let reach = Math.max(2.6, Math.min(5.4, most + 1.6));
+  // A FIGHT OUTRANKS THE CENTROID: two creatures duelling at the pit's edge
+  // were being averaged with the sleepers and clipped off screen. Centre on
+  // the pair and take both in.
+  const brawler = live.find(a => (a.state === 'fight' || a.state === 'approach')
+    && a.target && a.target.deadT < 0);
+  if (brawler && brawler.target) {
+    const t2 = brawler.target;
+    cx = (brawler.x + t2.x) / 2;
+    cz = (brawler.z + t2.z) / 2;
+    const sep = Math.hypot(brawler.x - t2.x, brawler.z - t2.z);
+    reach = Math.max(2.6, Math.min(5.4, sep * 0.5 + 2.2));
+  }
   // While the title stands, the title IS the show. The observer used to chase
   // whatever creature was wandering the far side of the pit, and on a phone
   // the whole opening played off-screen. The camera holds the stage until the
@@ -832,6 +850,10 @@ function sigilCapsules(a: Agent, t: number): Capsule[] {
   const rad = Math.max(0.28, a.bulk * 0.42);
   const seg = 14;
   const spin = t * 0.5;
+  // desaturated greys, not the owner's hue — the pit is candle-lit, and a
+  // saturated ring read as neon in it. The dashes alternate three greys so
+  // the turn is still legible.
+  const GREYS: [number, number, number][] = [[128, 132, 138], [96, 100, 106], [148, 152, 158]];
   for (let i = 0; i < seg; i++) {
     // a dashed ring: gaps make it read as a marker rather than a puddle
     if (i % 2) continue;
@@ -840,7 +862,7 @@ function sigilCapsules(a: Agent, t: number): Capsule[] {
     out.push({
       a: v3(a.x + Math.cos(a0) * rad, 0.015, a.z + Math.sin(a0) * rad),
       b: v3(a.x + Math.cos(a1) * rad, 0.015, a.z + Math.sin(a1) * rad),
-      r: 0.028, color: col, part: 'sigil',
+      r: 0.028, color: GREYS[(i >> 1) % 3], part: 'sigil',
     });
   }
   return out;
@@ -1224,7 +1246,6 @@ async function boot() {
     findLord(sim);
     summonUI(sim, live);
     const caps: Capsule[] = [];
-    if (summoning) caps.push(...formingWisp(sim.t));
     if (title && !title.done) caps.push(...title.caps(dt, cam.yaw));
     else title = null;
     // scenery first: it never moves, so it is the same list every frame
