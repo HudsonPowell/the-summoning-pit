@@ -147,7 +147,13 @@ export class LiveVoid {
     }
     if (ev.kind === 'hit' && ev.target) {
       const t = this.byId.get(ev.target.id);
-      if (t) t.hurtT = 0.55;
+      if (t) {
+        t.hurtT = 0.55;
+        // the struck part carries the blow on every screen
+        if (typeof ev.spotH === 'number') {
+          t.flinch = { h: ev.spotH, side: ev.spotS ?? 1, t: 0.5 };
+        }
+      }
     }
   }
 
@@ -220,9 +226,14 @@ export class LiveVoid {
         ? Math.min(1, a.rest + dt * 0.35)
         : Math.max(0, a.rest - dt * 1.6);
       if (a.hurtT > 0) a.hurtT -= dt;
+      if (a.flinch && (a.flinch.t -= dt) <= 0) a.flinch = null;
       if (a.strikeT >= 0) {
         a.strikeT += dt;
-        const spec = (a.ch.behaviors['attack-light'] as any)?.strike;
+        const spec = a.swing ?? (a.ch.behaviors['attack-light'] as any)?.strike;
+        // the feint turns on every screen at the same beat
+        if (a.swing?.feintPosts && spec && a.strikeT >= spec.duration * spec.windup) {
+          a.swing = { ...a.swing, posts: a.swing.feintPosts, feintPosts: undefined, feinted: true };
+        }
         if (a.strikeT > (spec?.duration ?? 0.5)) a.strikeT = -1;
       }
     }

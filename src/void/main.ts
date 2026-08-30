@@ -776,7 +776,11 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     // Dead is a full collapse; resting is most of one. A RECALL is neither —
     // the creature is not beaten, its summoner replaced it, so it stays on its
     // feet and simply goes.
-    a.deadT >= 0 ? (a.recalled ? 0 : Math.min(1, a.deadT / 0.5)) : a.rest * 0.72,
+    // a blow to the LEGS buckles them for a beat — a fraction of the
+    // collapse blend, decaying with the flinch
+    a.deadT >= 0 ? (a.recalled ? 0 : Math.min(1, a.deadT / 0.5))
+      : Math.min(0.9, a.rest * 0.72
+        + (a.flinch && a.flinch.h < 0.35 ? 0.22 * (a.flinch.t / 0.5) : 0)),
     {
       // a thrown spear is in the FLOOR, not the hand — the relic renders it
       weapon: a.thrownRelic != null ? undefined : a.ch.weapon,
@@ -786,7 +790,9 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       turn: a.turnRate,
       // the head has already been through its own spring — it arrives late
       // and goes past, rather than snapping onto the target
-      lookYaw: Math.max(-0.9, Math.min(0.9, a.sec.head)),
+      // a blow to the head SNAPS it aside; the spring brings it back
+      lookYaw: Math.max(-1.1, Math.min(1.1, a.sec.head
+        + (a.flinch && a.flinch.h > 0.75 ? a.flinch.side * 0.8 * (a.flinch.t / 0.5) : 0))),
       lean: a.sec.lean,
       twist: a.sec.twist,
       bob: a.sec.bob,

@@ -60,6 +60,14 @@ export interface StrikeSpec {
   limb?: StrikeLimb;                     // default 'arm'
   lunge?: number;                        // metres the whole body drives forward
   ranged?: RangedSpec;                   // releases instead of connecting
+  /** Where on the victim this blow is aimed (height ratio, side). */
+  spot?: { h: number; side: number };
+  /** A FEINT: these posts replace the shown ones the moment the windup ends —
+   *  the blow arrives on a different line than the one the guard was raised
+   *  against. */
+  feintPosts?: [number[], number[], number[]];
+  /** Set once the feint has turned — the guard it beat needs to know. */
+  feinted?: boolean;
 }
 export interface StrikeBehavior {
   type: 'strike';

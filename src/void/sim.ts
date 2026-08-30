@@ -47,6 +47,7 @@ export interface Agent {
   guardT: number;            // seconds left holding a block up
   staggerT: number;          // seconds of recovery after being parried
   riposteT: number;          // a window to answer a blocked blow
+  flinch: { h: number; side: number; t: number } | null; // where the last blow landed
   lookAt: number;            // world angle the head is resting on
   scanT: number;             // seconds until it looks somewhere else
   turnRate: number;          // radians/sec, for secondary motion
@@ -73,6 +74,8 @@ export interface VoidEvent {
   target?: EventWho;
   how?: string;      // 'bite' | 'lash' | 'swipe' | 'thrust' | 'bolt' | 'spell'
   range?: number;    // metres between them when it happened
+  spotH?: number;    // where on the body a blow landed (height ratio)
+  spotS?: number;    // and which side
 }
 
 /** Something in flight. Nobody owns it once it leaves. */
@@ -159,6 +162,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     guardT: 0,
     staggerT: 0,
     riposteT: 0,
+    flinch: null,
     lookAt: rnd(-Math.PI, Math.PI),
     scanT: rnd(0, 0.8),
     turnRate: 0,
@@ -390,17 +394,35 @@ export function strikeSeed(t: number, id: number): number {
  * the chosen side. The spot comes off the deterministic seed, so every
  * watcher sees the same blow land in the same place.
  */
-function aimAtSpot(v: StrikeSpec, a: Agent, r: number): StrikeSpec {
-  const t = a.target;
-  if (!t || t.deadT >= 0 || v.ranged || v.limb === 'head' || v.limb === 'tail') return v;
-  const h = r < 0.33 ? 0.9 : r < 0.72 ? 0.55 : 0.22;          // head / torso / legs
-  const side = ((r * 7919) % 1) < 0.5 ? -1 : 1;
+function spotPosts(v: StrikeSpec, a: Agent, t: Agent, h: number, side: number): StrikeSpec['posts'] {
   const dy = Math.max(-0.5, Math.min(0.5, (t.bulk * h - a.bulk * 0.55) * 0.9));
   const posts = v.posts.map(p => [...p]) as StrikeSpec['posts'];
   posts[1][1] += dy * 0.6;
   posts[2][1] += dy;
   posts[2][2] += side * 0.22;
-  return { ...v, posts };
+  return posts;
+}
+
+function aimAtSpot(v: StrikeSpec, a: Agent, r: number): StrikeSpec {
+  const t = a.target;
+  if (!t || t.deadT >= 0 || v.ranged || v.limb === 'head' || v.limb === 'tail') return v;
+  const h = r < 0.33 ? 0.9 : r < 0.72 ? 0.55 : 0.22;          // head / torso / legs
+  const side = ((r * 7919) % 1) < 0.5 ? -1 : 1;
+  const spot = { h, side };
+  // A FEINT shows one line and lands on another: the windup draws the guard
+  // high, the blow goes low (or the reverse, or across). Cunning is
+  // aggression here — the ones who swing most also lie best.
+  const feinting = !v.limb && ((r * 3571) % 1) < 0.1 + a.temper.aggression * 0.22;
+  if (feinting) {
+    const shownH = h > 0.5 ? 0.22 : 0.9;                       // the opposite line
+    return {
+      ...v,
+      spot,
+      posts: spotPosts(v, a, t, shownH, -side),                // the lie, shown
+      feintPosts: spotPosts(v, a, t, h, side),                 // the truth, landed
+    };
+  }
+  return { ...v, spot, posts: spotPosts(v, a, t, h, side) };
 }
 
 export function varyFor(a: Agent, heavy: boolean, r: number): StrikeSpec {
@@ -441,32 +463,57 @@ export function beginStrike(a: Agent, heavy: boolean, seed = Math.random()): voi
 function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, how?: string): void {
   if (a.hurtT > 0 || a.deadT >= 0) return;
 
-  // A RAISED GUARD TURNS THE BLOW. Blocking is a decision made during the
-  // attacker's windup, not a dice roll at contact — and turning a blow
-  // STAGGERS the attacker, which opens the riposte window. This is the
-  // exchange: strike, block, answer. Loops of whacks become conversations.
+  // A RAISED GUARD TURNS THE BLOW — unless it was drawn by a FEINT (wrong
+  // line, wrong-footed) or smashed by a HEAVY (guard-break). This is the
+  // triangle: light blows lose to guards, guards lose to feints and heavies,
+  // heavies lose to the quick interrupt below. The exchange has stakes in
+  // every direction now.
+  let guardBeaten = false;
   if (a.guardT > 0 && how !== 'bolt' && how !== 'spell') {
     const toThreat = Math.atan2(fromZ - a.z, fromX - a.x);
     if (Math.cos(toThreat - a.heading) > -0.1) {
       const shielded = /shield|buckler/.test(a.ch.offhand?.name ?? '');
-      a.guardT = 0;
-      a.hurtT = 0.3;
-      jolt(a.sec, shielded ? 0.16 : 0.24, toThreat - a.heading, a.bulk);
-      // a weapon parry stings a little; a shield takes it clean
-      if (!shielded && Math.random() < 0.25) a.hp = Math.max(1, a.hp - 1);
-      if (by && by.deadT < 0) {
-        by.staggerT = 0.55;
-        by.strikeT = -1;
-        by.swing = null;
-        jolt(by.sec, 0.3, Math.atan2(a.z - by.z, a.x - by.x) - by.heading, by.bulk);
+      const feinted = !!by?.swing?.feinted;
+      if (feinted && Math.random() < 0.6) {
+        // the guard went to the shown line; the blow arrives on the other
+        a.guardT = 0;
+        guardBeaten = true;
+      } else if (by?.heavy) {
+        // GUARD-BREAK: the heavy comes down through the guard
+        a.guardT = 0;
+        a.staggerT = 0.45;
+        a.hurtT = 0.4;
+        jolt(a.sec, 0.34, toThreat - a.heading, a.bulk);
+        if (shielded) {
+          // the shield holds most of it: one point, and knocked open
+          a.hp = Math.max(1, a.hp - 1);
+          sim.events.push({
+            kind: 'hit', t: sim.t, x: a.x, z: a.z,
+            actor: by ? whoOf(by) : undefined, target: whoOf(a), how: 'guard-broken',
+          });
+          return;
+        }
+        guardBeaten = true;   // a bare parry is simply smashed aside
+      } else {
+        a.guardT = 0;
+        a.hurtT = 0.3;
+        jolt(a.sec, shielded ? 0.16 : 0.24, toThreat - a.heading, a.bulk);
+        // a weapon parry stings a little; a shield takes it clean
+        if (!shielded && Math.random() < 0.25) a.hp = Math.max(1, a.hp - 1);
+        if (by && by.deadT < 0) {
+          by.staggerT = 0.55;
+          by.strikeT = -1;
+          by.swing = null;
+          jolt(by.sec, 0.3, Math.atan2(a.z - by.z, a.x - by.x) - by.heading, by.bulk);
+        }
+        a.riposteT = 0.5;
+        sim.events.push({
+          kind: 'hit', t: sim.t, x: a.x, z: a.z,
+          actor: by ? whoOf(by) : undefined, target: whoOf(a),
+          how: shielded ? 'blocked' : 'parried',
+        });
+        return;
       }
-      a.riposteT = 0.5;
-      sim.events.push({
-        kind: 'hit', t: sim.t, x: a.x, z: a.z,
-        actor: by ? whoOf(by) : undefined, target: whoOf(a),
-        how: shielded ? 'blocked' : 'parried',
-      });
-      return;
     }
   }
 
@@ -476,7 +523,7 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
   // and walk through the arrows. From behind it helps nobody.
   const held = a.ch.offhand?.name ?? '';
   const shieldy = held === 'shield' ? 0.55 : held === 'buckler' ? 0.3 : 0;
-  if (shieldy > 0) {
+  if (shieldy > 0 && !guardBeaten) {
     const toThreat = Math.atan2(fromZ - a.z, fromX - a.x);
     // generous arc: a shield is carried, not bolted to the sternum
     const frontal = Math.cos(toThreat - a.heading) > -0.2;
@@ -555,7 +602,25 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
     how,
     range: by ? Math.hypot(by.x - a.x, by.z - a.z) : undefined,
   };
-  sim.events.push({ kind: 'hit', ...common });
+  // THE INTERRUPT: land a real blow on something mid-windup and its swing
+  // dies in its hand — the quick answer to the heavy. Third side of the
+  // triangle.
+  if (a.strikeT >= 0) {
+    const sw = strikeSpecOf(a);
+    if (a.strikeT < sw.duration * sw.windup) {
+      a.strikeT = -1;
+      a.swing = null;
+      a.hurtT = Math.max(a.hurtT, 0.25);
+    }
+  }
+  // where it landed is how it hurts: the struck part carries the blow
+  const spot = by?.swing?.spot;
+  a.flinch = {
+    h: spot?.h ?? 0.55,
+    side: spot?.side ?? (Math.random() < 0.5 ? -1 : 1),
+    t: 0.5,
+  };
+  sim.events.push({ kind: 'hit', ...common, spotH: a.flinch.h, spotS: a.flinch.side });
   if (a.hp <= 0) {
     a.deadT = 0;
     a.state = 'down';
@@ -603,6 +668,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     if (a.guardT > 0) a.guardT -= dt;
     if (a.staggerT > 0) a.staggerT -= dt;
     if (a.riposteT > 0) a.riposteT -= dt;
+    if (a.flinch && (a.flinch.t -= dt) <= 0) a.flinch = null;
 
     // Nothing healed, ever. Every creature was on a one-way trip from spawn to
     // death, which is why the pit was all churn and no history: it does not
@@ -629,6 +695,10 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     if (a.strikeT >= 0) {
       a.strikeT += dt;
       const spec = strikeSpecOf(a);
+      // the feint turns: at windup's end the shown line becomes the true one
+      if (a.swing?.feintPosts && a.strikeT >= spec.duration * spec.windup) {
+        a.swing = { ...a.swing, posts: a.swing.feintPosts, feintPosts: undefined, feinted: true };
+      }
       const hitAt = spec.windup + spec.strike * 0.5;
       if (!a.struck && a.strikeT >= spec.duration * hitAt) {
         a.struck = true;

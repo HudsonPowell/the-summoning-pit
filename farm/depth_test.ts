@@ -93,3 +93,36 @@ function armed(name: string, weapon: string) {
   }
   console.log(`exchange: hits=${plainHits} blocked=${blocked} parried=${parried} guard-frames=${guards} stagger-frames=${staggers} ripostes~=${ripostes}`);
 }
+
+// --- 4: the triangle — feints, guard-breaks, interrupts, flinches ------------
+{
+  const A = armed('duellistA', 'sword');
+  A.offhand = { name: 'shield', parts: [{ a: [0.04, -0.26, 0], b: [0.04, 0.26, 0], r: 0.1, color: '#6b7280' }] };
+  const B = armed('duellistB', 'axe');
+  const sim = createVoid([A, B], 0);
+  sim.peace = 0;
+  const a = makeAgent(A, -2, 0);
+  const b = makeAgent(B, 2, 0);
+  a.deeds.born = -60; b.deeds.born = -60;
+  a.temper.aggression = 0.9; b.temper.aggression = 0.9;   // liars, both
+  sim.agents.push(a, b);
+  let feints = 0, breaks = 0, interrupts = 0, flinchHi = 0, flinchLo = 0;
+  let prevStrikeA = -1, prevStrikeB = -1;
+  for (let f = 0; f < 60 * 120; f++) {
+    stepVoid(sim, 1 / 60);
+    if (a.swing?.feinted || b.swing?.feinted) feints++;
+    for (const e of sim.events) {
+      if (e.kind === 'hit' && e.how === 'guard-broken') breaks++;
+      if (e.kind === 'hit' && typeof e.spotH === 'number') {
+        if (e.spotH > 0.75) flinchHi++;
+        if (e.spotH < 0.35) flinchLo++;
+      }
+    }
+    // an interrupt: a windup that vanished without its own hit landing
+    if (prevStrikeA >= 0 && a.strikeT < 0 && a.hurtT > 0.2 && !a.struck) interrupts++;
+    if (prevStrikeB >= 0 && b.strikeT < 0 && b.hurtT > 0.2 && !b.struck) interrupts++;
+    prevStrikeA = a.strikeT; prevStrikeB = b.strikeT;
+    if (a.deadT >= 0 || b.deadT >= 0) break;
+  }
+  console.log(`triangle: feint-frames=${feints} guard-breaks=${breaks} interrupts~=${interrupts} headHits=${flinchHi} legHits=${flinchLo}`);
+}
