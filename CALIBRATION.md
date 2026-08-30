@@ -1488,3 +1488,22 @@ The page has to give up its own gestures before the game can have them.
 - A tight synthetic tick loop BLOCKS the event loop: in live mode no
   snapshots arrive during it, so per-frame measurements replay one frozen
   interpolation window. Measure live behaviour with async sampling.
+
+## Verified 2026-08-31 (the pit's taste, `src/taste.ts`)
+
+### Judge = picker, not gate
+- The judge chooses the better of two parallel hatches for the SAME prompt. Absolute
+  thresholds are noisy; pairwise ranking was correct on every calibration pair
+  (3 wins + 1 tie, 0 inversions across 70B-vs-V4-Pro-mess pairs).
+- CLIP must be fed a PNG FILE. RawImage from our render buffer scored every image
+  identically — silent, no error, pure noise.
+- The separating axis is `'a living character standing on legs'` vs `'random floating
+  debris'` — worst good 0.98, best mess 0.65. `'a creature…limbs'` vs `'scattered…shapes'`
+  backs it up (catches fragment clouds). Weights: standing 0.5, creature 0.25,
+  desc-match 0.25, anatomy ×0.8.
+- Anatomy (geometry alone) canNOT catch messes reliably: fragment specks are
+  volumetrically negligible (connected ≈ 0.98 on visible debris) and a bent pole is a
+  connected, grounded "body". Count stray components (−0.06 each, cap 0.25), but the
+  taste layer is CLIP's.
+- Union-find touch slack for posed capsules: `(r1+r2)*1.2 + 0.03` — all five exemplars
+  read as one component at this slack.

@@ -15,6 +15,7 @@ import { createVoid, stepVoid, spawnChar, makeAgent, whoOf, VoidSim, VoidEvent, 
 import { declare } from '../src/void/pacts';
 import { titleFor } from '../src/naming';
 import { hatchGenome, OLLAMA_URL, HATCH_MODEL, HATCH_API_KEY } from '../src/hatch';
+import { warmTaste, tasteReady, tasteScores } from '../src/taste';
 import { mintKey, ownerOf, looksLikeKey } from './keys';
 import { sanitiseGenome } from './sanitise';
 import { load as loadPit, save as savePit, SavedPit } from './persist';
@@ -28,6 +29,31 @@ const POPULATION = Number(process.env.PIT_POPULATION ?? 0);
 const STATE_FILE = process.env.PIT_STATE ?? 'pit-state.json';
 /** Can this pit hatch for people who have no model of their own? */
 const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
+/**
+ * The pit has taste: hosted summons hatch TWO candidates in parallel and the
+ * judge keeps the one that reads as a creature (anatomy always; CLIP when
+ * seated). Same latency, double the pennies, no more abstract messes walking
+ * in when a coherent sibling was available. PIT_TASTE=0 turns it off.
+ */
+const TASTE = process.env.PIT_TASTE !== '0';
+
+async function hatchJudged(desc: string, temperature: () => number): Promise<unknown> {
+  const one = () => hatchGenome(desc, undefined, undefined, undefined, temperature());
+  // a local 3B hatches slowly and serially — two would double the wait
+  if (!TASTE || !HATCH_API_KEY) return one();
+  const pair = await Promise.allSettled([one(), one()]);
+  const hatched = pair.filter(p => p.status === 'fulfilled').map(p => (p as PromiseFulfilledResult<any>).value);
+  if (!hatched.length) throw (pair[0] as PromiseRejectedResult).reason;
+  if (hatched.length === 1) return hatched[0];
+  try {
+    const scores = await tasteScores(hatched, desc);
+    const best = scores[1] > scores[0] ? 1 : 0;
+    console.log(`[taste] kept ${scores[best].toFixed(2)} over ${scores[1 - best].toFixed(2)}${tasteReady() ? '' : ' (anatomy only)'}`);
+    return hatched[best];
+  } catch {
+    return hatched[0];
+  }
+}
 const SAVE_EVERY = 5;                 // seconds
 const MAX_PER_OWNER = 1;              // one hero each — the pit is not a kennel
 /**
@@ -182,6 +208,11 @@ restore();
 if (SERVER_HATCH && !HATCH_API_KEY) {
   void warmModel(OLLAMA_URL, HATCH_MODEL);
 }
+// so does the judge — CLIP caches on the volume and survives deploys
+if (TASTE && SERVER_HATCH && HATCH_API_KEY) {
+  const vol = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+  warmTaste(vol ? `${vol}/hf-cache` : undefined);
+}
 
 // --- who is here ------------------------------------------------------------
 
@@ -269,6 +300,7 @@ const http = createServer((req, res) => {
       openFor: Math.round((Date.now() - wallBase) / 1000),
       oldest: Math.round(Math.max(0, ...sim.agents.filter(a => a.deadT < 0).map(a => sim.t - a.deeds.born))),
       model: HATCH_API_KEY ? 'hosted' : warm.ready ? 'ready' : warm.error ? `error: ${warm.error}` : warm.progress || 'starting',
+      taste: !TASTE ? 'off' : tasteReady() ? 'seated' : 'anatomy',
       paused: pauseFor(),
     }));
     return;
@@ -499,7 +531,7 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
     try {
       // identical words should not hatch identical bodies twice: a little
       // temperature jitter keeps repeat summons diverging
-      raw = await hatchGenome(m.desc.slice(0, 200), undefined, undefined, undefined, 0.75 + Math.random() * 0.3);
+      raw = await hatchJudged(m.desc.slice(0, 200), () => 0.75 + Math.random() * 0.3);
       if (pausedUntil) setPaused(false);   // the probe got through: credit lives
     } catch (e) {
       lastSummon.set(owner, -1e9);
