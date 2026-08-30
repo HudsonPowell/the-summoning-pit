@@ -1471,3 +1471,20 @@ The page has to give up its own gestures before the game can have them.
   nobody's target, while staying free to start its own fight.
 - The og card and touch icon are rendered by the pit's own PixelRenderer
   (farm/og_card.ts) — one hand draws everything.
+
+## The generative arc, completed live (2026-08-31)
+- The thesis is now end-to-end in production: the model composes the body,
+  the held things, the worn things, and HOW it fights; the engine prices
+  all of it (volume budget for held, tempo x reach and shot-power caps for
+  attacks). The regex tables are fallbacks, not sources.
+- migrateWeapon has now silently dropped two designer fields (style, then
+  attack). Migrate must carry everything it does not understand the loss
+  of; when adding a field to a spec, grep for the migrate that rebuilds it.
+- Combat is a triangle: light loses to guard, guard loses to feint and
+  heavy, heavy loses to the interrupt. Engagement (for the camera) begins
+  at the DECISION, twelve metres out, not at sword-length.
+- Backticks in `git commit -m "..."` are COMMAND SUBSTITUTION - the message
+  shipped with holes. Use -F - with a quoted heredoc for prose messages.
+- A tight synthetic tick loop BLOCKS the event loop: in live mode no
+  snapshots arrive during it, so per-frame measurements replay one frozen
+  interpolation window. Measure live behaviour with async sampling.
