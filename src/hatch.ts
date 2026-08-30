@@ -16,7 +16,7 @@ import { weaponsFromWords, validateWeapon, dressWeapon, priceWeapon, smithPrompt
 import type { WeaponSpec } from './character';
 import { HATCH_MODEL, OLLAMA_URL, HATCH_API_KEY, HATCH_API_URL } from './ollama';
 import { temperOf, temperFromWords } from './temper';
-import { gearFromWords } from './gear';
+import { gearFromWords, GearPiece } from './gear';
 import { separate } from './palette';
 import { auditGenome } from './audit';
 
@@ -87,6 +87,13 @@ held: if the words name ANYTHING carried in a hand — a weapon, a tool, an
   thing itself (it sticks in the ground and must be fetched back).
 offhand: a second held thing — a shield, torch, or twin of the first — same
   rules. Omit held/offhand entirely for creatures with nothing in hand.
+worn: what it WEARS, designed piece by piece — an ornate crown, a bone mask,
+  a feathered mantle, whatever the words deserve. Each piece anchors to
+  "head", "shoulder" (mirror:true for a pair), "torso", "back" or "waist".
+  Anchor space: +x forward, +y up, +z out to the side, scaled to the part it
+  hangs on; a helmet dome is r ~0.6 near [0, 0.15, 0]. Pieces must stand
+  PROUD of the body (big radii, pushed outward) or the blend swallows them.
+  Omit for bare creatures.
 held.attack: HOW it fights, if the words imply it. speed: 0.6 ponderous to
   1.6 flurry. reach: 0.7 close-in to 1.4 sweeping. arc: "high" (overhead),
   "low" (at the legs), "wide" (great sweeps), "straight" (thrusts). For
@@ -233,6 +240,31 @@ export const GENOME_SCHEMA = {
               b: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
               r: num(0.012, 0.1),
               color: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    worn: {
+      type: 'array', maxItems: 3,
+      items: {
+        type: 'object',
+        required: ['name', 'at', 'parts'],
+        properties: {
+          name: { type: 'string' },
+          at: { type: 'string', enum: ['head', 'shoulder', 'torso', 'back', 'waist'] },
+          mirror: { type: 'boolean' },
+          parts: {
+            type: 'array', minItems: 1, maxItems: 5,
+            items: {
+              type: 'object',
+              required: ['a', 'b', 'r', 'color'],
+              properties: {
+                a: { type: 'array', minItems: 3, maxItems: 3, items: num(-1.5, 2) },
+                b: { type: 'array', minItems: 3, maxItems: 3, items: num(-1.5, 2) },
+                r: num(0.06, 1.2),
+                color: { type: 'string' },
+              },
             },
           },
         },
@@ -694,10 +726,14 @@ export function validateGenome(raw: any, desc: string): Genome {
   // the word that made it so.
   genome.temper = temperFromWords(desc, temperOf(genome));
 
-  // and what it is wearing. Armour, a helm, a hood, a cloak — the things that
-  // make a knight look different from a nomad, which palette alone never did.
-  const worn = gearFromWords(desc);
-  if (worn.length) genome.gear = worn;
+  // and what it is wearing. The MODEL designs pieces now — a bone mask is a
+  // bone mask, not the nearest of our seven helmets — and the word-table
+  // fills whatever anchors it left bare.
+  const designedWorn = validWorn((raw as any).worn);
+  const wordWorn = gearFromWords(desc);
+  const anchorsTaken = new Set(designedWorn.map(g => g.at));
+  const merged = [...designedWorn, ...wordWorn.filter(g => !anchorsTaken.has(g.at))].slice(0, 5);
+  if (merged.length) genome.gear = merged;
 
   // The last thing before it leaves: check it against what was asked for, and
   // fix what is cheaply fixable. A winged thing gets wings; a two-headed thing
@@ -779,6 +815,30 @@ function materialise(genome: Genome, desc: string): void {
     // the accent stays loud — a gold statue still gets its one wrong colour
     return;
   }
+}
+
+/** The model's worn designs, clamped to the anchor-space the pose expects. */
+function validWorn(raw: any): GearPiece[] {
+  if (!Array.isArray(raw)) return [];
+  const ANCHORS = ['head', 'shoulder', 'torso', 'back', 'waist'];
+  const out: GearPiece[] = [];
+  for (const piece of raw.slice(0, 3)) {
+    if (!piece || !ANCHORS.includes(piece.at) || !Array.isArray(piece.parts)) continue;
+    const parts = piece.parts.slice(0, 5).map((q: any) => ({
+      a: [clampN(q?.a?.[0], -1.5, 2, 0), clampN(q?.a?.[1], -1.5, 2, 0), clampN(q?.a?.[2], -1.5, 2, 0)] as [number, number, number],
+      b: [clampN(q?.b?.[0], -1.5, 2, 0.2), clampN(q?.b?.[1], -1.5, 2, 0), clampN(q?.b?.[2], -1.5, 2, 0)] as [number, number, number],
+      r: clampN(q?.r, 0.06, 1.2, 0.3),
+      color: typeof q?.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(q.color) ? q.color : '#8c939d',
+    }));
+    if (!parts.length) continue;
+    out.push({
+      name: typeof piece.name === 'string' ? piece.name.slice(0, 24) : 'worn',
+      at: piece.at,
+      ...(piece.mirror ? { mirror: true } : {}),
+      parts,
+    });
+  }
+  return out;
 }
 
 export async function hatchGenome(
