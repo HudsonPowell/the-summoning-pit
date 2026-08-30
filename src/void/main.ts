@@ -918,6 +918,16 @@ function healthCapsules(a: Agent, mine: boolean): Capsule[] {
       r: r * 0.72, color: col, part: 'hpFill',
     });
   }
+  // the reign's open wounds: the far end of the track healing can no longer
+  // reach, sealed off in dried-blood dark. An old lord wears its history.
+  const scarFrac = Math.min(0.6, a.scars / Math.max(1, a.maxHp));
+  if (scarFrac > 0.001) {
+    out.push({
+      a: v3(lx + rx * w * (1 - scarFrac), y, lz + rz * w * (1 - scarFrac)),
+      b: v3(a.x + rx * half, y, a.z + rz * half),
+      r: r * 0.82, color: [64, 34, 36], part: 'hpScar',
+    });
+  }
   return out;
 }
 

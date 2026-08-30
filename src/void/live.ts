@@ -222,6 +222,7 @@ export class LiveVoid {
       a.state = row.st;
       a.thrownRelic = row.tw ? 1 : null;
       a.guardT = row.gd ? 0.3 : 0;
+      a.scars = row.sc ?? 0;
       a.deadT = row.d;
       a.recalled = row.rc === 1;
       a.by = row.by;

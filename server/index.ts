@@ -215,6 +215,7 @@ function snapshot() {
       sp: a.deeds.spoils.length,
       ...(a.thrownRelic != null ? { tw: 1 } : {}),
       ...(a.guardT > 0 ? { gd: 1 } : {}),
+      ...(a.scars > 0 ? { sc: a.scars } : {}),
     })),
     shots: sim.shots.map(s => ({
       i: s.id,

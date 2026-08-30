@@ -29,6 +29,7 @@ export interface Agent {
   stateT: number;            // seconds in this state
   hp: number;
   maxHp: number;
+  scars: number;             // wounds no rest closes — the price of the reign
   hurtT: number;
   strikeT: number;           // -1 idle, else seconds into the swing
   struck: boolean;
@@ -147,6 +148,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     // a braver thing is usually a bigger thing, and takes more killing
     hp: Math.round(3 + temper.bravery * 3),
     maxHp: Math.round(3 + temper.bravery * 3),
+    scars: 0,
     hurtT: 0,
     strikeT: -1,
     struck: false,
@@ -637,9 +639,11 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
       // it takes something off the body. The graft is on the agent's own copy
       // of the genome, so it shows on the next frame — you watch it change.
       const took = takeSpoil(by.genome, a.genome, by.deeds);
-      // whatever it has taken has made it harder to put down
+      // whatever it has taken has made it harder to put down — though the
+      // blood-won surge stops at the scar line like every other healing
       by.maxHp = Math.min(12, by.maxHp + 1);
-      by.hp = Math.min(by.maxHp, by.hp + 1);
+      by.scars = scarsOf(sim, by);
+      by.hp = Math.min(Math.max(by.hp, by.maxHp - by.scars), by.hp + 1);
       by.bulk = heightOf(by.genome);
       if (took) {
         sim.events.push({
@@ -661,6 +665,20 @@ function setState(a: Agent, s: AgentState): void {
   a.stateT = 0;
 }
 
+/**
+ * The open wounds of a reign. The first hour and the first kill are free;
+ * after that, every second kill and every hour held is one hp that healing
+ * can never reach again. Capped so even the oldest lord keeps over half its
+ * bar — worn down, not hollowed out.
+ */
+export function scarsOf(sim: VoidSim, a: Agent): number {
+  const hours = Math.max(0, (sim.t - a.deeds.born) / 3600 - 1);
+  return Math.min(
+    Math.floor(a.maxHp * 0.45),
+    Math.floor(a.deeds.kills / 2 + hours),
+  );
+}
+
 export function stepVoid(sim: VoidSim, dt: number): void {
   sim.events.length = 0;
   sim.t += dt;
@@ -676,9 +694,15 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     // Nothing healed, ever. Every creature was on a one-way trip from spawn to
     // death, which is why the pit was all churn and no history: it does not
     // matter what a thing has done if it cannot live long enough to have done
-    // anything. Left alone, it gets its wind back.
+    // anything. Left alone, it gets its wind back — but only so much of it.
+    // The reign keeps a ledger: every trophy and every hour on the throne is
+    // a wound rest never closes, so an old lord can no longer stand there
+    // resetting to full between challengers. Each one that falls leaves a
+    // mark that stays, and the crown is taken by accumulation — the only way
+    // a newborn was ever going to take it.
+    a.scars = scarsOf(sim, a);
     if (a.state === 'wander' || a.state === 'think') a.calm += dt; else a.calm = 0;
-    if (a.calm > 7 && a.hp < a.maxHp && a.deadT < 0) {
+    if (a.calm > 7 && a.hp < a.maxHp - a.scars && a.deadT < 0) {
       a.hp++;
       a.calm = 3.5;   // the next one comes quicker, but never for free
     }
@@ -763,8 +787,8 @@ export function stepVoid(sim: VoidSim, dt: number): void {
           a.lookAt = a.heading + rnd(-1.2, 1.2);
           a.scanT = rnd(2.5, 7);
         }
-        // it gets its wind back faster lying down
-        if (a.hp < a.maxHp && a.stateT > 6 && Math.random() < dt * 0.12) a.hp++;
+        // it gets its wind back faster lying down — never past its scars
+        if (a.hp < a.maxHp - a.scars && a.stateT > 6 && Math.random() < dt * 0.12) a.hp++;
         if (a.stateT > rnd(14, 40)) setState(a, 'wander');
         break;
       }
