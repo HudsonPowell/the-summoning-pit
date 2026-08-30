@@ -1462,3 +1462,12 @@ The page has to give up its own gestures before the game can have them.
   hip sway leaking into feet and needs stateful plant capture.
 - The sanitiser's anchor whitelist must grow with gear.ts — 'waist' was
   silently re-anchored to 'torso' until it was added.
+
+## Ten at once (2026-08-30)
+- The key handshake must fire on EVERY connect, not just boot — a silent
+  reconnect that never re-identifies makes the server treat a watching
+  owner as absent (fates fired for deaths the owner watched).
+- Arrival grace goes in pickTarget, not spawn: ten seconds of being
+  nobody's target, while staying free to start its own fight.
+- The og card and touch icon are rendered by the pit's own PixelRenderer
+  (farm/og_card.ts) — one hand draws everything.

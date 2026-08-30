@@ -14,7 +14,7 @@ import { Director, smoothDamp, smoothDampAngle } from './director';
 import { Pit, Bank } from './voice';
 import { WireTitle } from './wiretitle';
 import { MuteIcon } from './icon';
-import { CROWN } from '../gear';
+import { CROWN, GearPiece } from '../gear';
 import { LiveVoid } from './live';
 
 const KEY = 'void-look';
@@ -326,6 +326,24 @@ function hushWhisper(): void {
  * was busy (a hero in play) while the window passed simply never plays it.
  */
 const INTRO_LINES = ['One pit, all of us.', 'Pit lord survives.', 'summon…'];
+
+// what typing looks like, shown to whoever has not typed yet: a concrete
+// example beats any instruction. Cycles quietly after the introduction.
+const EXAMPLES = [
+  'a one-eyed marsh troll with a rusted cleaver',
+  'a frost-breathing river wyrm',
+  'a knight in tattered plate with a tower shield',
+  'a bone spider, many-legged and small',
+  'a wandering monk with a quarterstaff and satchel',
+  'a fire-breathing hound in a horned helm',
+  'a lean archer with a longbow and cloak',
+];
+function exampleText(now: number): string {
+  // 6s of the verb, then 4s of one example, round and round
+  const cycle = (now % 10);
+  if (cycle < 6) return 'summon…';
+  return EXAMPLES[Math.floor(now / 10) % EXAMPLES.length];
+}
 const introClock = { t0: performance.now() / 1000 + 1.2, on: true };
 function introText(now: number): string | null {
   if (!introClock.on) return null;
@@ -360,13 +378,59 @@ function introText(now: number): string | null {
 // must LAST before it is called a death — a snapshot boundary can lose the
 // whole cast for a frame, and that is not a funeral.
 let heldMine: { name: string; kills: number; since: number; goneAt: number } | null = null;
+let myKiller = '';   // who felled yours, from the kill event — revenge needs a name
+let pactHinted = false;
 
 const SUMMON_MURMURS = ['the pit listens…', 'something forms…', 'it is coming…'];
+
+/**
+ * While the pit hatches, a thin wisp turns over the centre of the floor —
+ * the wait is watched, not endured. Three pale strands orbiting and rising,
+ * built from the same capsules as everything else.
+ */
+function formingWisp(t: number): Capsule[] {
+  const caps: Capsule[] = [];
+  for (let k = 0; k < 3; k++) {
+    const ph = t * (0.9 + k * 0.17) + k * 2.1;
+    const rad = 0.34 + Math.sin(t * 0.7 + k) * 0.08;
+    const rise = ((t * 0.35 + k * 0.33) % 1);
+    const y = 0.08 + rise * 1.1;
+    const fade = Math.sin(Math.PI * rise) * 0.85;
+    const a = v3(Math.cos(ph) * rad, y, Math.sin(ph) * rad);
+    const b = v3(Math.cos(ph + 0.9) * rad * 0.8, y + 0.16, Math.sin(ph + 0.9) * rad * 0.8);
+    caps.push({ a, b, r: 0.045 + 0.02 * fade, color: [120 * fade, 150 * fade, 148 * fade], part: 'wisp' });
+  }
+  return caps;
+}
+
+/**
+ * A reign should LOOK like a reign: the crown's points grow with the hours
+ * held, so a visitor arriving to a quiet pit still reads the story.
+ */
+function crownFor(ageSecs: number): GearPiece {
+  const growth = 1 + Math.min(0.85, (ageSecs / 3600) * 0.35);
+  if (growth < 1.02) return CROWN;
+  return {
+    ...CROWN,
+    parts: CROWN.parts.map((part, i) => i < 2 ? part : ({
+      ...part,
+      b: [part.b[0] * growth, part.b[1] * growth, part.b[2] * growth] as [number, number, number],
+    })),
+  };
+}
 
 function summonUI(sim: VoidSim, net: LiveVoid | null): void {
   const box = document.getElementById('summonBox') as HTMLInputElement | null;
   const status = document.getElementById('summonStatus');
   if (!box || !status) return;
+
+  // company, counted quietly: only when someone else is actually here
+  const eyes = document.getElementById('watchTag');
+  if (eyes) {
+    const n = net?.watchers ?? 0;
+    const line = n >= 2 ? `${n} watching` : '';
+    if (eyes.textContent !== line) eyes.textContent = line;
+  }
 
   const mine = sim.agents.find(a => a.by === ME && a.deadT < 0) ?? null;
   if (mine) yours = mine;
@@ -379,14 +443,21 @@ function summonUI(sim: VoidSim, net: LiveVoid | null): void {
       if (!heldMine || heldMine.name !== mine.ch.name) heldMine = { name: mine.ch.name, kills: 0, since: now, goneAt: 0 };
       heldMine.kills = mine.deeds.kills;
       heldMine.goneAt = 0;
+      // once per sitting, the pit mentions pacts — after yours has stood a while
+      if (!pactHinted && now - heldMine.since > 45 && net) {
+        pactHinted = true;
+        whisper('allies exist — tap this line to copy a pact link', 8);
+      }
     } else if (heldMine && !summoning) {
       if (!heldMine.goneAt) heldMine.goneAt = now;
       if (now - heldMine.goneAt > 1) {
         const stood = heldMine.goneAt - heldMine.since;
         const age = stood >= 90 ? `${Math.round(stood / 60)}m` : `${stood | 0}s`;
         const glory = heldMine.kills === 1 ? '1 kill' : `${heldMine.kills} kills`;
-        whisper(`${heldMine.name} fell — ${glory}, stood ${age}`, 30, true);
+        const by = myKiller ? ` to ${myKiller}` : '';
+        whisper(`${heldMine.name} fell${by} — ${glory}, stood ${age}`, 30, true);
         heldMine = null;
+        myKiller = '';
       }
     }
   }
@@ -409,10 +480,11 @@ function summonUI(sim: VoidSim, net: LiveVoid | null): void {
     const murmur = SUMMON_MURMURS[Math.floor((now - summonAt) / 2.8) % SUMMON_MURMURS.length];
     if (box.placeholder !== murmur) box.placeholder = murmur;
   }
-  // on load the box types its own introduction, ending on the verb
+  // on load the box types its own introduction, ending on the verb; after
+  // that the placeholder occasionally shows what typing looks like
   if (state === 'active') {
-    const line = introText(now);
-    if (line !== null && box.placeholder !== line) box.placeholder = line;
+    const line = introText(now) ?? (document.activeElement === box ? 'summon…' : exampleText(now));
+    if (box.placeholder !== line) box.placeholder = line;
   }
 
   let lordText = '';
@@ -479,6 +551,18 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
     }
   }
   (buildSummon as any).finish = done;
+
+  // Your pact link carries only your OWNER id — a one-way hash, safe to hand
+  // out. Tap the status line while yours stands and it is on the clipboard.
+  const statusEl = document.getElementById('summonStatus');
+  statusEl?.addEventListener('click', () => {
+    if (!ME || ME === 'local' || !yours || yours.deadT >= 0) return;
+    const link = `${location.origin}/?pact=${ME}`;
+    navigator.clipboard?.writeText(link).then(
+      () => whisper('pact link copied — send it to a friend', 6),
+      () => whisper(link, 10),
+    );
+  });
 
   box.addEventListener('focus', () => { hushWhisper(); introClock.on = false; });
   box.addEventListener('keydown', e => {
@@ -673,7 +757,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       weapon: a.ch.weapon,
       offhand: a.ch.offhand,
       // the crown belongs to the title, not to the creature
-      gear: a.id === lordId ? [...(a.ch.gear ?? []), CROWN] : a.ch.gear,
+      gear: a.id === lordId ? [...(a.ch.gear ?? []), crownFor(t - a.deeds.born)] : a.ch.gear,
       turn: a.turnRate,
       // the head has already been through its own spring — it arrives late
       // and goes past, rather than snapping onto the target
@@ -1056,6 +1140,10 @@ async function boot() {
       (buildSummon as any).finish?.();
     };
     live.onSworn = () => { /* pacts are silent by design */ };
+    live.onFate = line => whisper(line, 12);
+    // every connect, not just the first: a reconnected socket that never
+    // re-identifies looks like an absent owner to the server
+    live.onOpen = () => live.send({ t: 'key', key: myKey || undefined });
     live.send({ t: 'key', key: myKey || undefined });
     // a pact link is spent the moment it is opened, and leaves no trace in
     // the address bar — see keepKey
@@ -1080,8 +1168,13 @@ async function boot() {
     if (live) live.update(dt); else stepVoid(sim, dt);
     pushFeed(sim.events);
     for (const e of sim.events) {
-      if (e.kind === 'kill') director.punch(1);
-      else if (e.kind === 'hit') director.punch(0.45);
+      if (e.kind === 'kill') {
+        director.punch(1);
+        // remember who felled YOURS, for the fall line
+        if (e.target && yours && e.target.id === yours.id && e.actor?.name) {
+          myKiller = e.actor.name.split(' ')[0];
+        }
+      } else if (e.kind === 'hit') director.punch(0.45);
       speak(sim, e);
     }
     // DRAIN LAST. Clearing before this loop meant every event was thrown away
@@ -1128,6 +1221,7 @@ async function boot() {
     findLord(sim);
     summonUI(sim, live);
     const caps: Capsule[] = [];
+    if (summoning) caps.push(...formingWisp(sim.t));
     if (title && !title.done) caps.push(...title.caps(dt, cam.yaw));
     else title = null;
     // scenery first: it never moves, so it is the same list every frame

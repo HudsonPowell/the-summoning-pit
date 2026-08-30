@@ -200,6 +200,7 @@ function snapshot() {
   return {
     t: 'snap',
     time: r2(sim.t),
+    w: wssRef ? wssRef.clients.size : 0,
     agents: sim.agents.map(a => ({
       i: a.id,
       c: castId(a.ch),
@@ -304,6 +305,16 @@ function broadcast(msg: unknown): void {
  */
 const liveKeys = new Map<string, WebSocket>();
 
+// what happened to an owner's creature while they were away, told once on
+// their next arrival. Names only — never keys, never prompts.
+const fates = new Map<string, { line: string; at: number }>();
+function ownerOnline(owner: string): boolean {
+  for (const [k, sock] of liveKeys) {
+    if (ownerOf(k) === owner && sock.readyState === WebSocket.OPEN) return true;
+  }
+  return false;
+}
+
 wss.on('connection', ws => {
   ws.send(JSON.stringify(hello()));
 
@@ -330,6 +341,14 @@ wss.on('connection', ws => {
       liveKeys.set(key, ws);
       (ws as any).__key = key;
       ws.send(JSON.stringify({ t: 'key', key, owner: ownerOf(key) }));
+      const fate = fates.get(ownerOf(key));
+      if (fate) {
+        fates.delete(ownerOf(key));
+        // a week-old fate is history, not news
+        if (Date.now() - fate.at < 7 * 86400_000) {
+          ws.send(JSON.stringify({ t: 'fate', line: fate.line }));
+        }
+      }
       return;
     }
 
@@ -536,6 +555,15 @@ setInterval(() => {
         const stood = sim.t - dead.deeds.born;
         if (stood > ledger.records.longestStand.secs) {
           ledger.records.longestStand = { name: dead.ch.name, secs: Math.round(stood) };
+        }
+        // an absent owner hears about it when they come back
+        if (dead.by && !ownerOnline(dead.by)) {
+          const age = stood >= 90 ? `${Math.round(stood / 60)}m` : `${stood | 0}s`;
+          const killer = e.actor?.name ? ` to ${e.actor.name.split(' ')[0]}` : '';
+          fates.set(dead.by, {
+            line: `while you were gone: ${dead.ch.name.split(' ')[0]} fell${killer} after ${age}`,
+            at: Date.now(),
+          });
         }
       }
       const victor = e.actor ? sim.agents.find(a => a.id === e.actor!.id) : undefined;

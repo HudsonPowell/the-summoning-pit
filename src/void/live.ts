@@ -32,7 +32,6 @@ export class LiveVoid {
 
   /** Seconds until hosted summoning resumes; 0 when it is running. */
   pauseFor(): number { return Math.max(0, this.pauseUntil - performance.now() / 1000); }
-  watchers = 0;
   private ws?: WebSocket;
   private cast: Character[] = [];
 
@@ -41,6 +40,11 @@ export class LiveVoid {
   onYours?: (id: number, name: string) => void;
   onNope?: (why: string) => void;
   onSworn?: (to: string, stance: string) => void;
+  onFate?: (line: string) => void;
+  /** Fired on every (re)connect — the key handshake must happen each time,
+      or after a silent reconnect the server thinks the owner left. */
+  onOpen?: () => void;
+  watchers = 0;
   private prev?: Snap;
   private next?: Snap;
   private clock = 0;
@@ -63,6 +67,7 @@ export class LiveVoid {
     ws.onopen = () => {
       this.connected = true;
       this.everConnected = true;
+      this.onOpen?.();
       // anything said while the socket was still opening is said now — the
       // first thing the client ever sends is its key, and dropping that
       // silently means it never gets one
@@ -109,6 +114,7 @@ export class LiveVoid {
     if (m.t === 'yours') { this.onYours?.(m.id, m.name); return; }
     if (m.t === 'nope')  { this.onNope?.(m.why); return; }
     if (m.t === 'sworn') { this.onSworn?.(m.to, m.stance); return; }
+    if (m.t === 'fate')  { this.onFate?.(m.line); return; }
     if (m.t === 'snap') { this.take(m); return; }
     if (m.t === 'ev') {
       for (const ev of m.list as VoidEvent[]) this.applyEvent(ev);
@@ -117,6 +123,7 @@ export class LiveVoid {
   }
 
   private take(m: any): void {
+    if (typeof m.w === 'number') this.watchers = m.w;
     this.prev = this.next;
     this.next = { at: performance.now() / 1000, time: m.time, agents: m.agents, shots: m.shots, relics: m.relics, flora: m.flora };
     if (!this.prev) this.prev = this.next;

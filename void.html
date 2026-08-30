@@ -6,6 +6,14 @@
        game's own pinch handler never hears a thing -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>The Summoning Pit</title>
+  <meta name="description" content="One pit, all of us. Summon. Pit lord survives." />
+  <meta property="og:title" content="The Summoning Pit" />
+  <meta property="og:description" content="One pit, all of us. Summon. Pit lord survives." />
+  <meta property="og:image" content="https://pit-production-4fae.up.railway.app/og.png" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon-180.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Unica One: the nearest OPEN cousin of Modula Sans (which is licensed
@@ -45,6 +53,14 @@
       font-size: 9px; letter-spacing: .08em; color: #3d434b;
       user-select: none; pointer-events: none;
     }
+    #watchTag {
+      position: absolute; bottom: 8px; left: 10px; z-index: 6;
+      font-size: 9px; letter-spacing: .08em; color: #4a525b;
+      user-select: none; pointer-events: none;
+    }
+    /* the status line is a button now: tap it with a hero standing and your
+       pact link is on the clipboard */
+    #summonStatus { cursor: pointer; }
     #muteIcon {
       position: absolute; top: 16px; right: 16px; z-index: 6;
       width: 46px; height: 46px; cursor: pointer;
@@ -146,6 +162,7 @@
       <canvas id="view"></canvas>
       <canvas id="muteIcon" title="sound"></canvas>
       <div id="buildTag"></div>
+    <div id="watchTag"></div>
       <div id="summonBar"><input id="summonBox" type="text" placeholder="summon…" autocomplete="off" spellcheck="false"><div id="summonStatus"></div></div>
     </div>
     <aside id="panel"><div id="panelInner"></div></aside>

@@ -305,6 +305,11 @@ function pickTarget(sim: VoidSim, a: Agent, maxR: number): Agent | null {
   let bestScore = 0;
   for (const o of sim.agents) {
     if (o === a || o.deadT >= 0) continue;
+    // A fresh arrival gets a breath. A newcomer's creature died inside a
+    // minute to whatever was already standing, and the summoner never even
+    // got a proud look at it. Ten seconds of being nobody's target — it can
+    // still start its own fight if that is its nature.
+    if (sim.t - o.deeds.born < 10) continue;
     const d = Math.hypot(o.x - a.x, o.z - a.z);
     if (d > maxR) continue;
 
