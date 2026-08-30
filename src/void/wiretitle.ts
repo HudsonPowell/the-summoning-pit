@@ -63,6 +63,16 @@ function forgeInks(r: () => number): [number, number, number][] {
 interface Line { wire: WireText; beads: number }
 
 /**
+ * How a word arrives or leaves. Rolling only the SEED gave the same ceremony
+ * with the letters relabelled; the pit picks a different manner each time, and
+ * picks separately for the way in and the way out — so a word can pour in left
+ * to right and fall away from the middle outward, and the next load will do
+ * neither.
+ */
+type Manner = 'scatter' | 'sweep' | 'backsweep' | 'outward' | 'inward' | 'cascade';
+const MANNERS: Manner[] = ['scatter', 'sweep', 'backsweep', 'outward', 'inward', 'cascade'];
+
+/**
  * A glyph whose base ink sits on the floor of the palette disappears into the
  * pit floor — the lowercase p did it on every load, because the chunk hash was
  * built from constants and always drew the same dark slots. Accent chunks may
@@ -80,8 +90,10 @@ export class WireTitle {
   private t = 0;
   private out: Capsule[] = [];
   private deathAt = new Map<string, number>();     // per line:glyph, 0..FALL_SPREAD
+  private arriveAt = new Map<string, number>();    // the way IN, rolled apart
   private salt = 0;                                // re-rolls the chunk hash each load
   private frames: Float32Array[] = [];             // the recorded fall
+  private hold = HOLD;
   private gustAt = 1.5;
   private inks: [number, number, number][];
   private r = rng(Date.now() | 0);
@@ -125,16 +137,79 @@ export class WireTitle {
       let beads = 0;
       for (const p of wire.pieces) beads += p.rod.n;
       this.lines.push({ wire, beads });
-
-      const glyphs = new Set(wire.pieces.map(p => p.glyph));
-      const order = [...glyphs].sort(() => this.r() - 0.5);
-      order.forEach((g, gi) => {
-        this.deathAt.set(`${i}:${g}`,
-          (gi / Math.max(1, order.length - 1)) * FALL_SPREAD + this.r() * 0.25);
-      });
     });
 
+    // Two rolls, taken independently: the word need not leave the way it came.
+    // The recording runs backwards to arrive, so the arrival roll is inverted
+    // — a letter that must land FIRST is the one that falls LAST.
+    this.arriveAt = this.roll(this.pickManner(), true);
+    this.deathAt = this.roll(this.pickManner(), false);
+    this.hold = HOLD + this.r() * 0.7;
+
     this.record();
+  }
+
+  private pickManner(): Manner {
+    return MANNERS[Math.floor(this.r() * MANNERS.length) % MANNERS.length];
+  }
+
+  /**
+   * Give every glyph its moment, in the given manner. The gaps between them
+   * are drawn clumpy on purpose (r()*r() is small most of the time, wide
+   * occasionally): evenly spaced moments are a metronome, and a metronome is
+   * what makes a thing read as keyframed however random its order.
+   */
+  private roll(manner: Manner, invert: boolean): Map<string, number> {
+    const items: { key: string; u: number; line: number }[] = [];
+    this.lines.forEach((ln, li) => {
+      const acc = new Map<number, { sum: number; n: number }>();
+      for (const p of ln.wire.pieces) {
+        const a = acc.get(p.glyph) ?? { sum: 0, n: 0 };
+        a.sum += p.u; a.n++;
+        acc.set(p.glyph, a);
+      }
+      for (const [g, a] of acc) items.push({ key: `${li}:${g}`, u: a.sum / a.n, line: li });
+    });
+    const out = new Map<string, number>();
+    const n = items.length;
+    if (!n) return out;
+
+    const span = FALL_SPREAD * (0.7 + this.r() * 0.3);
+    if (manner === 'scatter') {
+      // no order at all: every letter takes its own moment out of the air
+      for (const it of items) out.set(it.key, invert ? span - this.r() * span : this.r() * span);
+      return out;
+    }
+
+    // Rows read top-down, so a sweep leans on the line it is crossing. Every
+    // rank carries a little noise: a perfectly monotonic sweep is a machine
+    // running down the word, and the eye names it instantly. With the noise,
+    // neighbours trade places here and there and the sweep stays a gesture.
+    const wobble = 0.1 + this.r() * 0.22;
+    const rank = (it: { u: number; line: number }): number => {
+      const n = (this.r() - 0.5) * wobble;
+      switch (manner) {
+        case 'sweep': return it.line * 1.4 + it.u + n;
+        case 'backsweep': return it.line * 1.4 + (1 - it.u) + n;
+        case 'outward': return Math.abs(it.u - 0.5) + n;
+        case 'inward': return -Math.abs(it.u - 0.5) + n;
+        default: return it.line * 4 + this.r();   // cascade: row by row, loose within
+      }
+    };
+    const ranked = items
+      .map(it => ({ it, k: rank(it) }))
+      .sort((a, b) => a.k - b.k)
+      .map(x => x.it);
+
+    const gaps = ranked.map((_, i) => (i === 0 ? 0 : 0.25 + this.r() * this.r() * 2.4));
+    const total = gaps.reduce((a, g) => a + g, 0) || 1;
+    let acc = 0;
+    ranked.forEach((it, i) => {
+      acc += gaps[i];
+      const at = (acc / total) * span;
+      out.set(it.key, invert ? span - at : at);
+    });
+    return out;
   }
 
   /**
@@ -157,9 +232,11 @@ export class WireTitle {
         }
         // step AFTER snapshotting, so frame 0 is the settled word
         for (const p of ln.wire.pieces) {
-          const dying = t >= (this.deathAt.get(`${li}:${p.glyph}`) ?? 0);
+          // the recording is the ARRIVAL's raw material, so it falls to that roll
+          const dying = t >= (this.arriveAt.get(`${li}:${p.glyph}`) ?? 0);
           if (!dying) continue;
-          p.rod.step({ dt: REC_DT, gravity: -2.4 - hash01(p.glyph * 13 + li) * 1.2,
+          // salted, so the weight of each letter's fall changes with the load too
+          p.rod.step({ dt: REC_DT, gravity: -2.4 - hash01(p.glyph * 13 + li + this.salt) * 1.2,
             damp: 0.96, home: 0, bend: 0.1, iters: 5, absorb: 0.7 });
         }
       });
@@ -184,7 +261,7 @@ export class WireTitle {
   caps(dt: number, camYaw: number): Capsule[] {
     this.t += dt;
     const t = this.t;
-    const dieBase = ARRIVE + HOLD;
+    const dieBase = ARRIVE + this.hold;
     if (t > dieBase + FALL_SPREAD + FALL_EACH + 0.4) {
       this.done = true; this.out.length = 0; return this.out;
     }
@@ -226,13 +303,14 @@ export class WireTitle {
         if (cap.a.y < 0.015 && cap.b.y < 0.015) continue;
         const g = cap.part.startsWith('wire') ? Number(cap.part.slice(4)) : -1;
         const gi = Math.max(0, g);
-        const stagger = this.deathAt.get(`${li}:${gi}`) ?? FALL_SPREAD * 0.5;
-        // one clock for both ends: arriving, fade runs the death backwards
+        // each end keeps its own clock, because each end has its own order
         let fade: number;
         if (t < ARRIVE) {
+          const stagger = this.arriveAt.get(`${li}:${gi}`) ?? FALL_SPREAD * 0.5;
           const back = ARRIVE - t;                 // where we are in the fall
           fade = 1 - Math.max(0, Math.min(1, (back - stagger) / FALL_EACH)) ** 2;
         } else {
+          const stagger = this.deathAt.get(`${li}:${gi}`) ?? FALL_SPREAD * 0.5;
           const fall = Math.max(0, Math.min(1, (t - dieBase - stagger) / FALL_EACH));
           fade = 1 - fall * fall;
         }
