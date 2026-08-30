@@ -109,16 +109,16 @@
       text-align: center;
       color: #f2f2f2;
       font-family: "Modula Sans", "Michroma", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      /* 16px: anything smaller and iOS zooms the page every time the field is
-         focused, which is most of what made the keyboard feel broken */
-      font-size: 16px; font-weight: 400; letter-spacing: .02em;
+      /* 13px at rest; 16px the moment it is FOCUSED, which is when iOS makes
+         its zoom decision — smaller than 16 at focus time zooms the page */
+      font-size: 13px; font-weight: 400; letter-spacing: .04em;
       text-transform: uppercase;
       transition: background .25s, opacity .3s;
     }
     /* the field IS the state: dim and untouchable while a hero is in play */
     #summonBar input:disabled { opacity: .45; cursor: default; }
     #summonStatus.lord { color: #b8975a; letter-spacing: .18em; }
-    #summonBar input:focus { outline: none; }
+    #summonBar input:focus { outline: none; font-size: 16px; }
     #summonBar input::placeholder { color: #8a8a8a; }
     #summonStatus {
       margin-top: 6px; min-height: 12px; text-align: center;
