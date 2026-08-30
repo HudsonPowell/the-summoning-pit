@@ -90,6 +90,34 @@ const sim: VoidSim = createVoid(roster, POPULATION);
 /** Wall-clock the pit has been running, across every restart it has had. */
 let wallBase = Date.now();
 
+// --- the ledger: what the pit has seen, for /stats --------------------------
+// Counts only. No prompts (never stored anywhere), no keys — owner ids are
+// already one-way hashes, and only the day's distinct COUNT survives the day.
+interface DayRow { summons: number; kills: number; loads: number; owners: string[] }
+const ledger = {
+  summons: 0,
+  kills: 0,
+  loads: 0,
+  owners: new Set<string>(),
+  byDay: new Map<string, DayRow>(),
+  records: {
+    longestStand: { name: '', secs: 0 },
+    mostKills: { name: '', kills: 0 },
+  },
+};
+function dayKey(): string { return new Date().toISOString().slice(0, 10); }
+function dayRow(): DayRow {
+  let row = ledger.byDay.get(dayKey());
+  if (!row) {
+    row = { summons: 0, kills: 0, loads: 0, owners: [] };
+    ledger.byDay.set(dayKey(), row);
+    // the ledger keeps a month, not a history
+    for (const k of [...ledger.byDay.keys()].sort().slice(0, -31)) ledger.byDay.delete(k);
+  }
+  return row;
+}
+
+
 function restore(): void {
   const saved = loadPit(STATE_FILE);
   if (!saved) { console.log('[pit] a fresh pit'); return; }
@@ -111,6 +139,15 @@ function restore(): void {
   for (const p of saved.pacts) declare(sim.pacts, p.from, p.to, p.stance);
   if (Array.isArray(saved.relics)) sim.relics = saved.relics as typeof sim.relics;
   if (Array.isArray(saved.flora)) sim.flora = saved.flora as typeof sim.flora;
+  const led = (saved as any).ledger;
+  if (led) {
+    ledger.summons = led.summons ?? 0;
+    ledger.kills = led.kills ?? 0;
+    ledger.loads = led.loads ?? 0;
+    for (const o of led.owners ?? []) ledger.owners.add(o);
+    for (const [k, v] of led.byDay ?? []) ledger.byDay.set(k, v);
+    if (led.records) ledger.records = led.records;
+  }
   console.log(`[pit] reopened with ${sim.agents.length} standing, clock at ${(sim.t / 60).toFixed(0)}m`);
 }
 
@@ -131,6 +168,11 @@ function snapshotState(): SavedPit {
     pacts,
     relics: sim.relics,
     flora: sim.flora,
+    ledger: {
+      summons: ledger.summons, kills: ledger.kills, loads: ledger.loads,
+      owners: [...ledger.owners], byDay: [...ledger.byDay.entries()],
+      records: ledger.records,
+    },
   };
 }
 
@@ -216,6 +258,25 @@ const http = createServer((req, res) => {
     }));
     return;
   }
+  const path = (req.url ?? '').split('?')[0];
+  if (path === '/stats') {
+    const lord = sim.agents.filter(a => a.deadT < 0)
+      .sort((p, q) => q.deeds.kills - p.deeds.kills || p.deeds.born - q.deeds.born)[0];
+    const days = [...ledger.byDay.entries()].sort().slice(-7)
+      .map(([day, r]) => ({ day, loads: r.loads, summons: r.summons, summoners: r.owners.length, kills: r.kills }));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      openForDays: Math.round((Date.now() - wallBase) / 8640000) / 10,
+      watching: wss.clients.size,
+      standing: sim.agents.filter(a => a.deadT < 0).length,
+      lord: lord ? { name: lord.ch.name, kills: lord.deeds.kills, ageMin: Math.round((sim.t - lord.deeds.born) / 60) } : null,
+      totals: { loads: ledger.loads, summons: ledger.summons, summoners: ledger.owners.size, kills: ledger.kills },
+      records: ledger.records,
+      days,
+    }, null, 2));
+    return;
+  }
+  if (path === '/' || path === '/void.html') { ledger.loads++; dayRow().loads++; }
   if (serveStatic(CLIENT_DIR, req, res)) return;
   res.writeHead(404).end();
 });
@@ -430,6 +491,11 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   castId(ch);
   const a = spawnChar(sim, ch, owner);
   lastSummon.set(owner, sim.t);
+  ledger.summons++;
+  ledger.owners.add(owner);
+  const day = dayRow();
+  day.summons++;
+  if (!day.owners.includes(owner)) day.owners.push(owner);
   console.log(`[pit] ${owner} summoned ${g.name}`);
   ws.send(JSON.stringify({ t: 'yours', id: a.id, name: g.name, owner }));
   broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
@@ -463,7 +529,19 @@ setInterval(() => {
       // A hero that barely arrived costs its owner a wait, so a bad summon
       // cannot be re-rolled forever at a model call a time.
       if (e.kind !== 'kill' || !e.target) continue;
+      ledger.kills++;
+      dayRow().kills++;
       const dead = sim.agents.find(a => a.id === e.target!.id);
+      if (dead) {
+        const stood = sim.t - dead.deeds.born;
+        if (stood > ledger.records.longestStand.secs) {
+          ledger.records.longestStand = { name: dead.ch.name, secs: Math.round(stood) };
+        }
+      }
+      const victor = e.actor ? sim.agents.find(a => a.id === e.actor!.id) : undefined;
+      if (victor && victor.deeds.kills > ledger.records.mostKills.kills) {
+        ledger.records.mostKills = { name: victor.ch.name, kills: victor.deeds.kills };
+      }
       if (!dead?.by) continue;
       if (sim.t - dead.deeds.born < SHORT_LIFE) {
         penaltyUntil.set(dead.by, sim.t + SHORT_PENALTY);

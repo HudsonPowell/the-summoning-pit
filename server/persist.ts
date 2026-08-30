@@ -28,6 +28,7 @@ export interface SavedPit {
   pacts: { from: string; to: string; stance: Stance }[];
   relics?: unknown[];   // the floor's memory; older saves simply have none
   flora?: unknown[];
+  ledger?: unknown;     // /stats counters; older saves simply have none
 }
 
 export function load(path: string): SavedPit | null {
