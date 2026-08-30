@@ -202,6 +202,7 @@ export class LiveVoid {
       if (!a) continue;
       const p = prevById.get(row.i) ?? row;
 
+      const wasX = a.x, wasZ = a.z;
       a.x = p.x + (row.x - p.x) * u;
       a.z = p.z + (row.z - p.z) * u;
       // headings wrap, so interpolate the short way round
@@ -228,9 +229,24 @@ export class LiveVoid {
       a.by = row.by;
       a.target = row.tg ? this.byId.get(row.tg) ?? null : null;
 
-      // the parts the wire never sends, advanced locally so they stay smooth
+      // the parts the wire never sends, advanced locally so they stay smooth.
+      // The legs cycle on DISTANCE, exactly as the sim's own do — the wire
+      // client kept them on a clock long after the sim learned better, so
+      // every watcher saw strafing and backing-off as skating. One cycle is
+      // one stride travelled, whatever the speed; backing up runs it in
+      // reverse, and the feet lift whenever the body actually goes anywhere.
       const eff = effectiveGait(a.genome.gait, { tired: 0, angry: a.state === 'fight' ? 0.7 : 0 });
-      a.phase = (a.phase + eff.cadence * a.move * dt) % 1;
+      const ddx = a.x - wasX, ddz = a.z - wasZ;
+      const fwd = ddx * Math.cos(a.heading) + ddz * Math.sin(a.heading);
+      const lat = -ddx * Math.sin(a.heading) + ddz * Math.cos(a.heading);
+      const stride = Math.max(0.08, eff.stride);
+      // a first appearance or a respawn is a teleport, not a sprint
+      const adv = Math.max(-0.5, Math.min(0.5, (fwd + Math.abs(lat) * 0.5) / stride));
+      a.phase = (a.phase + adv + 1) % 1;
+      if (dt > 1e-4) {
+        const spd = Math.hypot(ddx, ddz) / dt;
+        a.move = Math.max(a.move, Math.min(1, spd / Math.max(0.2, stride * eff.cadence)));
+      }
       a.idleT += dt;
       // settling and standing back up, at the sim's own rates — without this
       // a lone lord SAID it was resting while every watcher saw it bolt

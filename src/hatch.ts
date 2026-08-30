@@ -335,7 +335,7 @@ export async function askOpenAI(
       body: JSON.stringify({
         model,
         temperature,
-        max_tokens: 2000,
+        max_tokens: 3400,
         response_format: format,
         messages: [{ role: 'user', content: buildPrompt(desc) }],
       }),
@@ -776,8 +776,13 @@ function validHeld(raw: any, desc: string): WeaponSpec | undefined {
   if (!raw || !Array.isArray(raw.parts) || !raw.parts.length) return undefined;
   // the fallback NAME must never be a slice of the prompt — a weapon name
   // travels the wire and sits in the save. A matched noun is a safe token.
+  // The MODEL's name gets the same law: some models echo the whole prompt
+  // back as the name, which would carry it everywhere the name goes.
   const fallbackName = desc.toLowerCase().match(IMPLEMENT_WORD)?.[0] ?? 'relic';
-  const named = typeof raw.name === 'string' && raw.name.trim() ? raw.name : fallbackName;
+  let named = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : fallbackName;
+  const echoes = named.length > 26
+    || (named.split(/\s+/).length >= 3 && desc.toLowerCase().includes(named.toLowerCase()));
+  if (echoes) named = fallbackName;
   const spec = validateWeapon({ ...raw, name: named }, named);
   if (!spec.parts.length) return undefined;
   const style = typeof raw.style === 'string' ? raw.style : styleFromName(spec.name);
