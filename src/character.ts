@@ -257,7 +257,11 @@ export function styleFor(
   const w = (weaponName ?? '').toLowerCase();
   // a breather leads with the bite and finishes with the flame
   if (breath) {
-    const tint = breath === 'frost' ? '#9fd8ff' : breath === 'venom' ? '#9fe07a' : '#ff9a3d';
+    const tint = breath === 'frost' ? '#9fd8ff'
+      : breath === 'venom' ? '#9fe07a'
+      : breath === 'lightning' ? '#f2f0b0'
+      : breath === 'shadow' ? '#8a6fb8'
+      : '#ff9a3d';
     const heavy: StrikeSpec = {
       ...STRIKE_BREATH,
       ranged: { ...STRIKE_BREATH.ranged!, color: tint },

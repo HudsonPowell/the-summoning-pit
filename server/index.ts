@@ -484,7 +484,9 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
     lastSummon.set(owner, sim.t);
     hatching.add(owner);
     try {
-      raw = await hatchGenome(m.desc.slice(0, 200));
+      // identical words should not hatch identical bodies twice: a little
+      // temperature jitter keeps repeat summons diverging
+      raw = await hatchGenome(m.desc.slice(0, 200), undefined, undefined, undefined, 0.75 + Math.random() * 0.3);
       if (pausedUntil) setPaused(false);   // the probe got through: credit lives
     } catch (e) {
       lastSummon.set(owner, -1e9);

@@ -38,8 +38,10 @@ export function massOf(sk: Skeleton): number {
  * bigger than everyone. Being big is a CHOICE, not a win: girth costs speed
  * (see src/temper.ts), so a heavy creature is a slow one.
  */
-export const MASS_MIN = 0.03;
-export const MASS_MAX = 0.14;
+// widened so 'towering' and 'tiny' read at a glance — fairness still holds
+// because hp scales with bulk and temperament derives from shape
+export const MASS_MIN = 0.025;
+export const MASS_MAX = 0.17;
 
 /**
  * Scale a creature down until it fits. Volume goes with the cube of a linear

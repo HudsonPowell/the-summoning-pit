@@ -455,7 +455,7 @@ export function solvePose(
   }
 
   // --- wave: claims tails -------------------------------------------------
-  for (const chain of sk.chains.filter(c => c.role === 'tail')) {
+  for (const chain of sk.chains.filter(c => c.role === 'tail' || c.role === 'tentacle')) {
     for (const side of sidesOf(chain)) {
       let p = add(attachPoint(chain, side), scale(fwdAt(chain.at), -girthAt(sk, 0) * 0.6));
       const droop = 0.25 + slumpCo * 0.5 + co * 0.6;
@@ -479,7 +479,7 @@ export function solvePose(
   }
 
   // --- static furniture: horns, fins, plates ------------------------------
-  for (const chain of sk.chains.filter(c => c.role === 'horn' || c.role === 'fin')) {
+  for (const chain of sk.chains.filter(c => c.role === 'horn' || c.role === 'fin' || c.role === 'spike')) {
     for (const side of sidesOf(chain)) {
       let p = attachPoint(chain, side, chain.role === 'fin' ? 0 : 0.02);
       const fwd = fwdAt(chain.at);

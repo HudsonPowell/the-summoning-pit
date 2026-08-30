@@ -8,7 +8,7 @@
 // chains at 1.0). Nothing in the solver counts limbs to decide what it is
 // looking at — layers claim chains by role, as they always have.
 
-export type ChainRole = 'leg' | 'arm' | 'wing' | 'tail' | 'head' | 'horn' | 'fin';
+export type ChainRole = 'leg' | 'arm' | 'wing' | 'tail' | 'head' | 'horn' | 'fin' | 'spike' | 'tentacle';
 export type Locomotion = 'walk' | 'slither' | 'fly' | 'hop';
 
 export interface ChainSpec {
@@ -85,7 +85,7 @@ export interface Genome {
   /** How it behaves. Derived from the body when absent — see src/temper.ts. */
   temper?: { aggression: number; bravery: number; speed: number };
   /** What comes out of its mouth, if anything. Set from the words. */
-  breath?: 'fire' | 'frost' | 'venom';
+  breath?: 'fire' | 'frost' | 'venom' | 'lightning' | 'shadow';
   /** Anything the words asked for that could not be supplied. Diagnostic. */
   missing?: string[];
   /** What it is wearing — helm, plate, cloak. See src/gear.ts. */
@@ -193,6 +193,72 @@ export function imp(): Genome {
       armSwing: 0.5, lean: 0.1, flapAmp: 0.7, tailWave: 0.55,
     },
     palette: { torso: '#b5484d', limbs: '#8a3038', head: '#d98b6a', accent: '#e2b33c' },
+  };
+}
+
+/** A walking OBJECT: the exemplar that stops "house" hatching as a dog. */
+export function walkingShrine(): Genome {
+  return {
+    name: 'walking shrine',
+    skeleton: {
+      upright: false,
+      body: [0.3, 0.3, 0.28],
+      girth: [0.22, 0.24, 0.22],
+      locomotion: 'walk',
+      chains: [
+        { role: 'leg', at: 0.15, seg: [0.16, 0.14], r: 0.05, spread: 0.2 },
+        { role: 'leg', at: 0.85, seg: [0.16, 0.14], r: 0.05, spread: 0.2 },
+        { role: 'horn', at: 0.5, seg: [0.28], r: 0.05, spread: 0, angle: 1.5 },
+        { role: 'fin', at: 0.3, seg: [0.16], r: 0.03, spread: 0.1, angle: 1.2 },
+        head(1, [0.06, 0.1], 0.1),
+      ],
+    },
+    gait: { ...BASE_GAIT, cadence: 0.55, stride: 0.4, lift: 0.05, bounce: 0.01, sway: 0.05 },
+    palette: { torso: '#7a6a52', limbs: '#4e4438', head: '#8a7a5e', accent: '#b8412f' },
+  };
+}
+
+/** Tentacled floater: no legs, no ground — the pit's strangest honest body. */
+export function drifter(): Genome {
+  return {
+    name: 'drifter',
+    skeleton: {
+      upright: false,
+      body: [0.2, 0.24],
+      girth: [0.18, 0.15],
+      locomotion: 'fly',
+      chains: [
+        { role: 'wing', at: 0.6, seg: [0.3, 0.3], r: 0.02, spread: 0.12 },
+        { role: 'tentacle', at: 0.1, seg: [0.24, 0.22, 0.2], r: 0.035, spread: 0.08 },
+        { role: 'tentacle', at: 0.25, seg: [0.22, 0.2, 0.18], r: 0.03, spread: 0.12 },
+        { role: 'tail', at: 0, seg: [0.2, 0.18], r: 0.025, spread: 0 },
+        head(1, [0.04, 0.12], 0.12),
+      ],
+    },
+    gait: { ...BASE_GAIT, cadence: 0.8, stride: 0.5, flapAmp: 1.1, bodyWave: 0.6, tailWave: 0.8 },
+    palette: { torso: '#5d6b8a', limbs: '#46527a', head: '#7a86a8', accent: '#c9a0ff' },
+  };
+}
+
+/** A spiked serpent WITH arms — mixtures are legal and the model should know. */
+export function lasher(): Genome {
+  return {
+    name: 'lasher',
+    skeleton: {
+      upright: false,
+      body: [0.24, 0.22, 0.2, 0.18, 0.16],
+      girth: [0.05, 0.11, 0.1, 0.07, 0.05],
+      locomotion: 'slither',
+      chains: [
+        { role: 'arm', at: 0.85, seg: [0.2, 0.18], r: 0.035, spread: 0.1 },
+        { role: 'spike', at: 0.5, seg: [0.1], r: 0.02, spread: 0.04, angle: 1.2 },
+        { role: 'spike', at: 0.65, seg: [0.12], r: 0.022, spread: 0.04, angle: 1.2 },
+        { role: 'spike', at: 0.35, seg: [0.09], r: 0.018, spread: 0.04, angle: 1.2 },
+        head(1, [0.08, 0.16], 0.1),
+      ],
+    },
+    gait: { ...BASE_GAIT, cadence: 1.0, stride: 0.8, bodyWave: 1.0, armSwing: 0.3 },
+    palette: { torso: '#4e6b4a', limbs: '#3c543a', head: '#6b8a62', accent: '#e2b33c' },
   };
 }
 

@@ -12,7 +12,7 @@ const num = (v: unknown, lo: number, hi: number, fb: number): number =>
 const hex = (c: unknown, fb: string) =>
   typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fb;
 
-const ROLES = new Set(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin']);
+const ROLES = new Set(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin', 'spike', 'tentacle']);
 
 export function sanitiseGenome(raw: unknown): Genome | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -94,7 +94,7 @@ export function sanitiseGenome(raw: unknown): Genome | null {
 
   // breath is an enum, not a string off the wire
   const breath = (g as any).breath;
-  if (breath !== 'fire' && breath !== 'frost' && breath !== 'venom') delete (g as any).breath;
+  if (!['fire', 'frost', 'venom', 'lightning', 'shadow'].includes(breath)) delete (g as any).breath;
 
   // Temperament is NOT taken from the wire. It was clamped to 0..1 and
   // otherwise believed, which meant anyone could claim aggression 1, bravery 1

@@ -7,6 +7,7 @@
 // The clamps are the type-checker; the solver is the physics check.
 
 import {
+  walkingShrine, drifter, lasher,
   defaultBiped, imp, hound, troll, ogre, hippo, serpent, raptor, spider, hydra,
   Genome, Skeleton, Gait, ChainSpec, ChainRole, Locomotion, Palette, girthAt,
 } from './genome';
@@ -55,6 +56,23 @@ Ideas the vocabulary can express, so use it: barrel-bodied beasts, long
 serpents with no legs at all, many-legged scuttlers, two-headed things, horns
 and back fins, one oversized arm, stubby legs under a huge body, long necks.
 
+If the words name an OBJECT or an IDEA — a house, a gun, a clock, a ball —
+do not default to an animal. Build a creature that IS the thing: a house is a
+boxy barrel body (near-equal girth values) with a chimney horn and stubby
+legs; a gun is a long rigid body with a single huge arm; a ball is a round
+body (one fat girth) that hops. Exaggerate the one feature that says what it
+is. Use "spike" chains for studs and thorns, "tentacle" chains for anything
+that trails, drapes or drips off the body.
+
+MOVEMENT IS CHARACTER: a heavy thing lumbers (cadence 0.4-0.6, stride long,
+bounce low), a small vicious thing skitters (cadence 1.8+, stride short), a
+predator prowls (slow cadence, high sway), a nervous thing bounces. Pick gait
+numbers that act the words out — never default to the middle.
+
+COLOUR: four inks that fight each other a little read better than four
+shades of one. Give ONE feature the accent ink (3) so it pops — the horns,
+the tentacles, one arm — not everything.
+
 held: if the words name ANYTHING carried in a hand — a weapon, a tool, an
   instrument, however strange — DESIGN IT from 1-6 capsules. You are the
   smith: nunchucks are two sticks and a thin chain link, a net is a wide
@@ -91,6 +109,10 @@ const LIBRARY: Exemplar[] = [
   { make: raptor, keys: ['bird', 'wing', 'fly', 'flying', 'eagle', 'raven', 'crow', 'hawk', 'winged', 'harpy', 'moth'] },
   { make: spider, keys: ['spider', 'insect', 'bug', 'crab', 'scuttle', 'arachnid', 'many legs', 'six legs', 'eight', 'beetle', 'ant'] },
   { make: hydra, keys: ['hydra', 'two heads', 'two-headed', 'multi-headed', 'heads', 'chimera'] },
+  // the exemplars that stop every odd word hatching as a dog
+  { make: walkingShrine, keys: ['house', 'shrine', 'tower', 'box', 'chest', 'table', 'chair', 'building', 'wagon', 'tank', 'machine', 'engine', 'furnace', 'clock', 'lantern', 'object', 'gun', 'cannon'] },
+  { make: drifter, keys: ['ghost', 'wraith', 'jelly', 'squid', 'octopus', 'floating', 'spirit', 'balloon', 'cloud', 'phantom', 'tentacle', 'medusa', 'ball', 'orb', 'eye'] },
+  { make: lasher, keys: ['spike', 'spiked', 'thorn', 'barbed', 'bristl', 'urchin', 'cactus', 'lash'] },
 ];
 
 /** Pick the exemplars nearest the words, always with something contrasting. */
@@ -143,7 +165,7 @@ export const GENOME_SCHEMA = {
             type: 'object',
             required: ['role', 'at', 'seg', 'r', 'spread'],
             properties: {
-              role: { type: 'string', enum: ['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin'] },
+              role: { type: 'string', enum: ['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin', 'spike', 'tentacle'] },
               at: num(0, 1),
               seg: { type: 'array', minItems: 1, maxItems: 4, items: num(0.03, 0.9) },
               r: num(0.01, 0.15),
@@ -412,7 +434,7 @@ export function validateGenome(raw: any, desc: string): Genome {
     arm: MANY_ARMED.test(desc) ? 3 : 1,
     wing: 1, tail: 1,
     head: MANY_HEADED.test(desc) ? 2 : 1,
-    horn: 2, fin: 2,
+    horn: 2, fin: 2, spike: 4, tentacle: 3,
   };
   const used: Partial<Record<ChainRole, number>> = {};
   chains = chains.filter(c => {
@@ -610,6 +632,21 @@ export function validateGenome(raw: any, desc: string): Genome {
   // four colours that are actually four colours
   const genome: Genome = { name: titleFor(skeleton), skeleton, gait, palette: separate(palette) };
 
+  // BREATH is written in the words, five elements strong. This was thought
+  // to exist already; it never did — every fire-breathing dragon summoned so
+  // far bit and clawed like everything else.
+  const db = desc.toLowerCase();
+  if (/fire[- ]?breath|breathes? (fire|flame)|flame[- ]?breath|spits? fire/.test(db)) genome.breath = 'fire';
+  else if (/frost[- ]?breath|ice[- ]?breath|breathes? (frost|ice)|spits? ice/.test(db)) genome.breath = 'frost';
+  else if (/venom[- ]?breath|poison[- ]?breath|breathes? (venom|poison)|spits? (venom|poison|acid)/.test(db)) genome.breath = 'venom';
+  else if (/lightning[- ]?breath|storm[- ]?breath|breathes? lightning|spits? lightning/.test(db)) genome.breath = 'lightning';
+  else if (/shadow[- ]?breath|breathes? (shadow|darkness|void)|black[- ]?breath/.test(db)) genome.breath = 'shadow';
+
+  // MATERIAL WORDS PAINT THE BODY. "an obsidian golem" that hatches beige has
+  // ignored the one adjective that mattered; the named material tints every
+  // ink toward its own colour, and the model's palette survives underneath.
+  materialise(genome, desc);
+
   // The words name the weapon, and the armoury builds a real one — a crossbow
   // with limbs, a scimitar that curves, a shield in the off hand. This used to
   // be a table of lengths and radii, which is why every armed hero was holding
@@ -685,6 +722,42 @@ function validHeld(raw: any, desc: string): WeaponSpec | undefined {
   return style ? { ...priced, style } : priced;
 }
 
+const MATERIALS: [RegExp, string, number][] = [
+  [/obsidian|onyx|jet[- ]black|coal/, '#1c1a22', 0.75],
+  [/\bgold(en)?\b|gilded|brass/, '#c9a44a', 0.6],
+  [/\bsilver|chrome|steel|iron\b|metal/, '#9aa1ab', 0.55],
+  [/\bbone|skeletal|ivory/, '#ddd4c0', 0.65],
+  [/\bjade\b|emerald/, '#4e8a62', 0.6],
+  [/\bruby|blood[- ]?red|crimson/, '#8a2f34', 0.6],
+  [/rust(y|ed)?\b|corroded/, '#8a5a34', 0.6],
+  [/\bpearl|porcelain|alabaster|marble/, '#e8e4dc', 0.6],
+  [/\bamethyst|violet|purple/, '#7a5a9a', 0.55],
+  [/\bglass|crystal(line)?|ice\b|icy|frozen/, '#bfe6f5', 0.5],
+  [/\bcharcoal|ash(en)?\b|soot/, '#4a4a4c', 0.6],
+  [/\bmoss(y)?|lichen|swamp/, '#5d6b48', 0.55],
+];
+
+function materialise(genome: Genome, desc: string): void {
+  const d = desc.toLowerCase();
+  for (const [re, tint, amt] of MATERIALS) {
+    if (!re.test(d)) continue;
+    const mix = (hexIn: string) => {
+      const a = parseInt(hexIn.slice(1), 16), b = parseInt(tint.slice(1), 16);
+      const ch = (sh: number) => {
+        const va = (a >> sh) & 255, vb = (b >> sh) & 255;
+        return Math.round(va + (vb - va) * amt);
+      };
+      return '#' + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0');
+    };
+    const pal = genome.palette;
+    pal.torso = mix(pal.torso);
+    pal.limbs = mix(pal.limbs);
+    pal.head = mix(pal.head);
+    // the accent stays loud — a gold statue still gets its one wrong colour
+    return;
+  }
+}
+
 export async function hatchGenome(
   desc: string,
   model = HATCH_MODEL,
@@ -698,6 +771,18 @@ export async function hatchGenome(
     ? await askOpenAI(desc, model ?? HATCH_MODEL, HATCH_API_URL, HATCH_API_KEY, temperature)
     : await askOllama(desc, model, url, onProgress, temperature);
   const genome = validateGenome(parseLoose(text), desc);
+
+  // Size words stretch the body BEFORE the budget fits it: the band clamps
+  // mass for fairness, but "towering" should land at the top of the band and
+  // "tiny" at the bottom, not everyone in the comfortable middle.
+  const dl = desc.toLowerCase();
+  const sizeK = /towering|colossal|gigantic|enormous|massive|huge|giant/.test(dl) ? 1.35
+    : /\btiny|\bsmall|little|mini(ature)?|wee\b/.test(dl) ? 0.7 : 1;
+  if (sizeK !== 1) {
+    const sk2 = genome.skeleton;
+    sk2.body = sk2.body.map(v => v * sizeK);
+    sk2.girth = sk2.girth.map(v => v * sizeK);
+  }
 
   // The smith's second chance. The words plainly name a carried thing, the
   // armoury has no word for it, and the genome pass did not design one — so
