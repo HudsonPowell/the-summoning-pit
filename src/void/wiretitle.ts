@@ -87,12 +87,12 @@ export class WireTitle {
   private r = rng(Date.now() | 0);
   done = false;
 
-  constructor(text = 'the summoning pit', maxWidth = 12, baseline = 1.15) {
+  constructor(text = 'the summoning pit', maxWidth = 12, baseline = 1.15, sizeCap = 0.62) {
     const words = text.split(/\s+/);
     // A word cannot wrap. On a phone-narrow frame the longest word sets the
     // size, with a little air either side, or 'summoning' grazes the bezels.
     const widestEm = Math.max(...words.map(w => new WireText(w, { size: 1 }).width));
-    const size = Math.min(0.62, (maxWidth * 0.84) / widestEm);
+    const size = Math.min(sizeCap, (maxWidth * 0.84) / widestEm);
     const inks = forgeInks(this.r);
     this.salt = Math.floor(this.r() * 4096);
     this.inks = inks;

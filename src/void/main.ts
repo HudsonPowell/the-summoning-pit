@@ -208,8 +208,9 @@ async function loadRoster(): Promise<Character[]> {
  */
 const KEY_STORE = 'pit-key2';
 let myKey = localStorage.getItem(KEY_STORE) ?? '';
-// no key yet = never been here: the pit introduces itself, once, in whispers
+// no key yet = never been here: the pit introduces itself, once
 const FIRST_VISIT = !myKey;
+let saidIntro = false;
 let ME = 'local';
 
 /**
@@ -333,8 +334,6 @@ function hushWhisper(): void {
  * by becoming the interface. Timed from load on a wall clock, so a box that
  * was busy (a hero in play) while the window passed simply never plays it.
  */
-const INTRO_LINES = ['One pit, all of us.', 'Pit lord survives.', 'summon…'];
-
 // what typing looks like, shown to whoever has not typed yet: a concrete
 // example beats any instruction. Cycles quietly after the introduction.
 const EXAMPLES = [
@@ -352,35 +351,6 @@ function exampleText(now: number): string {
   if (cycle < 6) return 'summon…';
   return EXAMPLES[Math.floor(now / 10) % EXAMPLES.length];
 }
-const introClock = { t0: performance.now() / 1000 + 1.2, on: true };
-function introText(now: number): string | null {
-  if (!introClock.on) return null;
-  const TYPE = 0.05, HOLD = 1.5, ERASE = 0.02, GAP = 0.35;
-  let t = now - introClock.t0;
-  if (t < 0) return '';
-  for (let i = 0; i < INTRO_LINES.length; i++) {
-    const line = INTRO_LINES[i];
-    const typeD = line.length * TYPE;
-    if (i === INTRO_LINES.length - 1) {
-      // the verb stays — and the LAST write is guaranteed, because a stalled
-      // frame (backgrounded tab) can skip clean over the typing window
-      if (t >= typeD) { introClock.on = false; }
-      return t < typeD ? line.slice(0, Math.ceil(t / TYPE)) : line;
-    }
-    if (t < typeD) return line.slice(0, Math.ceil(t / TYPE));
-    t -= typeD;
-    if (t < HOLD) return line;
-    t -= HOLD;
-    const eraseD = line.length * ERASE;
-    if (t < eraseD) return line.slice(0, line.length - Math.ceil(t / ERASE));
-    t -= eraseD;
-    if (t < GAP) return '';
-    t -= GAP;
-  }
-  introClock.on = false;
-  return null;
-}
-
 // the fall of YOUR creature is the loop's biggest beat; carry enough of it
 // to say something when the agent is suddenly not there any more. The absence
 // must LAST before it is called a death — a snapshot boundary can lose the
@@ -470,10 +440,10 @@ function summonUI(sim: VoidSim, net: LiveVoid | null): void {
     const murmur = SUMMON_MURMURS[Math.floor((now - summonAt) / 2.8) % SUMMON_MURMURS.length];
     if (box.placeholder !== murmur) box.placeholder = murmur;
   }
-  // on load the box types its own introduction, ending on the verb; after
-  // that the placeholder occasionally shows what typing looks like
+  // the placeholder is the verb, with the occasional worked example — the
+  // introduction lives in the pit itself now, in wire type
   if (state === 'active') {
-    const line = introText(now) ?? (document.activeElement === box ? 'summon…' : exampleText(now));
+    const line = document.activeElement === box ? 'summon…' : exampleText(now);
     if (box.placeholder !== line) box.placeholder = line;
   }
 
@@ -554,7 +524,7 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
     );
   });
 
-  box.addEventListener('focus', () => { hushWhisper(); introClock.on = false; });
+  box.addEventListener('focus', hushWhisper);
   box.addEventListener('keydown', e => {
     e.stopPropagation();
     if (e.key === 'Enter') summon();
@@ -1294,7 +1264,17 @@ async function boot() {
     summonUI(sim, live);
     const caps: Capsule[] = [];
     if (title && !title.done) caps.push(...title.caps(dt, cam.yaw));
-    else title = null;
+    else if (title) {
+      // the title has died. A first visitor gets the introduction NEXT, in
+      // the same wire hand, standing where the title stood — the pit says
+      // its three lines itself instead of borrowing the summon box.
+      title = null;
+      if (FIRST_VISIT && !saidIntro) {
+        saidIntro = true;
+        const frameW = (view.size.W * 4.4) / (0.46 * view.size.H);
+        title = new WireTitle('one pit, all of us. pit lord survives.', frameW * 0.5, 1.4, 0.44);
+      }
+    }
     // scenery first: it never moves, so it is the same list every frame
     for (const pr of sim.props) caps.push(...pr.caps);
     for (const r of sim.relics) caps.push(...relicCapsules(r));
