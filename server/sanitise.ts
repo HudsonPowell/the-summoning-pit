@@ -73,6 +73,26 @@ export function sanitiseGenome(raw: unknown): Genome | null {
       if (typeof w.name === 'string') w.name = w.name.slice(0, 24);
       // how it is used is an enum, not a string off the wire
       if (typeof w.style !== 'string' || !STYLE_OK.includes(w.style)) delete w.style;
+      // the tune is numbers in bands, nothing else
+      if (w.attack && typeof w.attack === 'object') {
+        const t = w.attack;
+        w.attack = {
+          ...(typeof t.speed === 'number' ? { speed: num(t.speed, 0.6, 1.6, 1) } : {}),
+          ...(typeof t.reach === 'number' ? { reach: num(t.reach, 0.7, 1.4, 1) } : {}),
+          ...(['high', 'low', 'wide', 'straight'].includes(t.arc) ? { arc: t.arc } : {}),
+          ...(t.shot && typeof t.shot === 'object' ? {
+            shot: {
+              ...(typeof t.shot.speed === 'number' ? { speed: num(t.shot.speed, 4, 22, 9) } : {}),
+              ...(typeof t.shot.size === 'number' ? { size: num(t.shot.size, 0.04, 0.2, 0.1) } : {}),
+              ...(typeof t.shot.color === 'string' ? { color: hex(t.shot.color, '#8fd6ff') } : {}),
+              ...(typeof t.shot.arcing === 'boolean' ? { arcing: t.shot.arcing } : {}),
+              ...(typeof t.shot.boom === 'number' ? { boom: num(t.shot.boom, 0, 1.6, 0) } : {}),
+            },
+          } : {}),
+        };
+      } else {
+        delete w.attack;
+      }
     }
   }
   // Gear is decorative but it is still geometry off a socket

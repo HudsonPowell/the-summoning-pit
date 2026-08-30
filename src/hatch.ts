@@ -87,6 +87,12 @@ held: if the words name ANYTHING carried in a hand — a weapon, a tool, an
   thing itself (it sticks in the ground and must be fetched back).
 offhand: a second held thing — a shield, torch, or twin of the first — same
   rules. Omit held/offhand entirely for creatures with nothing in hand.
+held.attack: HOW it fights, if the words imply it. speed: 0.6 ponderous to
+  1.6 flurry. reach: 0.7 close-in to 1.4 sweeping. arc: "high" (overhead),
+  "low" (at the legs), "wide" (great sweeps), "straight" (thrusts). For
+  ranged styles, shot: { speed, size, color, arcing, boom } shapes the
+  projectile itself — boom makes it explode where it lands. Fast far
+  attacks are priced back to fair automatically, so be bold.
 
 gait: cadence 0.2-2.2 (small things quick, heavy things slow), stride 0.2-2.4,
 lean/slump = hunch, armSwing, headPitch, flapAmp = wingbeat, tailWave,
@@ -201,6 +207,22 @@ export const GENOME_SCHEMA = {
       properties: {
         name: { type: 'string' },
         style: { type: 'string', enum: ['swipe', 'slam', 'thrust', 'lash', 'shoot', 'cast', 'fireball', 'frost', 'zap', 'throw'] },
+        attack: {
+          type: 'object',
+          properties: {
+            speed: num(0.6, 1.6),
+            reach: num(0.7, 1.4),
+            arc: { type: 'string', enum: ['high', 'low', 'wide', 'straight'] },
+            shot: {
+              type: 'object',
+              properties: {
+                speed: num(4, 22), size: num(0.04, 0.2),
+                color: { type: 'string' }, arcing: { type: 'boolean' },
+                boom: num(0, 1.6),
+              },
+            },
+          },
+        },
         parts: {
           type: 'array', minItems: 1, maxItems: 6,
           items: {
@@ -719,7 +741,8 @@ function validHeld(raw: any, desc: string): WeaponSpec | undefined {
   if (!spec.parts.length) return undefined;
   const style = typeof raw.style === 'string' ? raw.style : styleFromName(spec.name);
   const priced = priceWeapon(dressWeapon(spec, desc));
-  return style ? { ...priced, style } : priced;
+  const attack = raw.attack && typeof raw.attack === 'object' ? raw.attack : undefined;
+  return { ...priced, ...(style ? { style } : {}), ...(attack ? { attack } : {}) };
 }
 
 const MATERIALS: [RegExp, string, number][] = [

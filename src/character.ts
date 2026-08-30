@@ -69,6 +69,20 @@ export interface StrikeSpec {
   /** Set once the feint has turned — the guard it beat needs to know. */
   feinted?: boolean;
 }
+
+/**
+ * PHASE 2 of 'model composes, engine budgets': the designer of a weapon may
+ * also say HOW it fights — tempo, reach, the shape of the arc, and for
+ * ranged things the projectile itself. Every knob is clamped, and the whole
+ * attack is PRICED: a fast far-reaching flurry pays for itself in stretched
+ * duration. The model gets agency; it cannot buy power.
+ */
+export interface AttackTune {
+  speed?: number;                 // 0.6 ponderous .. 1.6 flurry
+  reach?: number;                 // 0.7 close-in  .. 1.4 sweeping
+  arc?: 'high' | 'low' | 'wide' | 'straight';
+  shot?: { speed?: number; size?: number; color?: string; arcing?: boolean; boom?: number };
+}
 export interface StrikeBehavior {
   type: 'strike';
   strike: StrikeSpec;
@@ -87,6 +101,8 @@ export interface WeaponPart {
 }
 export interface WeaponSpec {
   name: string;
+  /** How it fights, chosen by whoever designed it — clamped and priced. */
+  attack?: AttackTune;
   /** How it is USED — picked by the model that designed it. One of
    *  STRIKE_STYLES' keys; anything else falls back to the name heuristics. */
   style?: string;
@@ -273,6 +289,48 @@ function styleByChoice(
  * were chosen by hand and OUTRANK the model's style pick, because a 70B will
  * cheerfully mark a staff 'swipe'.
  */
+/** Apply a designer's tune to a strike pair, inside the fairness budget. */
+export function tuneStrike(
+  pair: { light: StrikeSpec; heavy: StrikeSpec }, tune: AttackTune,
+): { light: StrikeSpec; heavy: StrikeSpec } {
+  const speed = Math.max(0.6, Math.min(1.6, tune.speed ?? 1));
+  const reach = Math.max(0.7, Math.min(1.4, tune.reach ?? 1));
+  const one = (s: StrikeSpec): StrikeSpec => {
+    let duration = s.duration / speed;
+    // THE PRICE: tempo times reach is capped — a fast, far attack stretches
+    // its own duration back out until it is fair. The cap sits ~20% above
+    // the hottest BASE style, so a tune buys character, not double DPS.
+    const cost = (1 / duration) * (0.55 + 0.45 * reach);
+    const CAP = 3.2;
+    if (cost > CAP) duration = (0.55 + 0.45 * reach) / CAP;
+    duration = Math.max(0.22, duration);
+    const posts = s.posts.map(p => [...p]) as StrikeSpec['posts'];
+    if (tune.arc === 'high') { posts[0][1] += 0.35; posts[1][1] += 0.2; }
+    if (tune.arc === 'low') { posts[0][1] -= 0.25; posts[1][1] -= 0.25; posts[2][1] -= 0.15; }
+    if (tune.arc === 'wide') { posts[0][2] += 0.3; posts[2][2] -= 0.3; }
+    if (tune.arc === 'straight') { posts[0][2] *= 0.3; posts[1][2] *= 0.3; posts[2][2] *= 0.3; }
+    let ranged = s.ranged;
+    if (ranged && tune.shot) {
+      const sh = tune.shot;
+      let speed2 = Math.max(4, Math.min(22, sh.speed ?? ranged.speed));
+      const size = Math.max(0.04, Math.min(0.2, sh.size ?? ranged.size));
+      const boom = ranged.boom !== undefined || (sh.boom ?? 0) > 0
+        ? Math.max(0, Math.min(1.6, sh.boom ?? ranged.boom ?? 0)) : undefined;
+      // projectile price: velocity times presence times blast
+      const shotCost = speed2 * (1 + size * 3) * (1 + (boom ?? 0) * 0.8);
+      if (shotCost > 36) speed2 = 36 / ((1 + size * 3) * (1 + (boom ?? 0) * 0.8));
+      ranged = {
+        ...ranged, speed: speed2, size,
+        arcing: sh.arcing ?? ranged.arcing,
+        color: typeof sh.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(sh.color) ? sh.color : ranged.color,
+        ...(boom !== undefined && boom > 0.2 ? { boom } : {}),
+      };
+    }
+    return { ...s, duration, posts, reachMax: s.reachMax * reach, lunge: (s.lunge ?? 0) * reach, ranged };
+  };
+  return { light: one(pair.light), heavy: one(pair.heavy) };
+}
+
 export function styleForStrict(weaponName: string): { light: StrikeSpec; heavy: StrikeSpec } | null {
   const w = weaponName.toLowerCase();
   if (/javelin|harpoon|throwing spear|throwing axe|throwing knife|boomerang/.test(w)) {
@@ -364,9 +422,15 @@ export function defaultBehaviors(walk: Gait, style?: { light: StrikeSpec; heavy:
 export function migrateWeapon(w: any): WeaponSpec | undefined {
   if (!w) return undefined;
   if (Array.isArray(w.parts)) {
-    // style is the designer's word on HOW it is used — dropping it here is
-    // why no model-styled weapon ever fired a shot
-    return { name: w.name ?? 'weapon', parts: w.parts, ...(w.style ? { style: w.style } : {}) };
+    // style and attack are the designer's word on HOW it is used — migrate
+    // must carry EVERYTHING it does not understand the loss of. (Style was
+    // dropped here once and no model-styled weapon ever fired a shot;
+    // attack was dropped here once and no tune ever applied.)
+    return {
+      name: w.name ?? 'weapon', parts: w.parts,
+      ...(w.style ? { style: w.style } : {}),
+      ...(w.attack ? { attack: w.attack } : {}),
+    };
   }
   return {
     name: 'blade',
@@ -384,10 +448,15 @@ export function makeCharacter(genome: Genome, kind: 'hero' | 'beast' = 'beast'):
     name: genome.name,
     kind,
     genome,
-    behaviors: defaultBehaviors(genome.gait,
-      (!genome.breath && hasArms && weapon?.name ? styleForStrict(weapon.name) : null)
-      ?? styleByChoice(weapon, hasArms, hasTail, genome.breath)
-      ?? styleFor(weapon?.name ?? genome.name, hasArms, hasTail, genome.breath)),
+    behaviors: defaultBehaviors(genome.gait, (() => {
+      let pair =
+        (!genome.breath && hasArms && weapon?.name ? styleForStrict(weapon.name) : null)
+        ?? styleByChoice(weapon, hasArms, hasTail, genome.breath)
+        ?? styleFor(weapon?.name ?? genome.name, hasArms, hasTail, genome.breath);
+      // the designer's tempo, reach, arc and projectile — priced, then obeyed
+      if (weapon?.attack && !genome.breath && hasArms) pair = tuneStrike(pair, weapon.attack);
+      return pair;
+    })()),
     weapon: migrateWeapon(genome.weapon),
     offhand: migrateWeapon(genome.offhand),
     gear: genome.gear,
