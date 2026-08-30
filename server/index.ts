@@ -248,6 +248,16 @@ function hello() {
 const CLIENT_DIR = process.env.PIT_CLIENT ?? 'dist';
 
 const http = createServer((req, res) => {
+  // The pit has a NAME now. Anyone arriving by the old railway address is
+  // sent to it — permanently, path intact. /health stays put so monitors
+  // pointed at either address keep answering, and live WebSocket sessions
+  // never touch this handler, so open tabs are undisturbed.
+  const host = req.headers.host ?? '';
+  if (host === 'pit-production-4fae.up.railway.app' && (req.url ?? '').split('?')[0] !== '/health') {
+    res.writeHead(301, { location: `https://thesummoningpit.com${req.url ?? '/'}` });
+    res.end();
+    return;
+  }
   if ((req.url ?? '').split('?')[0] === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
