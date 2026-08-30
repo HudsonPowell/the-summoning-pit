@@ -249,6 +249,29 @@ function styleByChoice(
   return STYLE_PAIRS[weapon.style] ?? null;
 }
 
+/**
+ * The tuned name table alone — null when the name says nothing. These pairs
+ * were chosen by hand and OUTRANK the model's style pick, because a 70B will
+ * cheerfully mark a staff 'swipe'.
+ */
+export function styleForStrict(weaponName: string): { light: StrikeSpec; heavy: StrikeSpec } | null {
+  const w = weaponName.toLowerCase();
+  if (/javelin|harpoon|throwing spear|throwing axe|throwing knife|boomerang/.test(w)) {
+    return { light: STRIKE_THROW, heavy: STRIKE_THROW };
+  }
+  if (/crossbow|arbalest/.test(w)) {
+    return { light: { ...STRIKE_SHOOT, ranged: { ...STRIKE_SHOOT.ranged!, speed: 19, range: 11, color: '#d8cfc0' } }, heavy: STRIKE_SHOOT };
+  }
+  if (/bow\b|sling/.test(w)) return { light: STRIKE_SHOOT, heavy: STRIKE_SHOOT };
+  if (/staff|stave/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_FIREBALL };
+  if (/\bwand\b|rod\b|sceptre|scepter/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_ARCANE };
+  if (/\borb\b/.test(w)) return { light: STRIKE_FROST, heavy: STRIKE_FROST };
+  if (/\btome\b|grimoire|spellbook/.test(w)) return { light: STRIKE_ZAP, heavy: STRIKE_ZAP };
+  if (/whip|scourge/.test(w)) return { light: STRIKE_SWIPE, heavy: STRIKE_LASH };
+  if (/spear|pike|lance|trident|rapier|halberd/.test(w)) return { light: STRIKE_THRUST, heavy: STRIKE_SLAM };
+  return null;
+}
+
 export function styleFor(
   weaponName: string | undefined, hasArms: boolean, hasTail: boolean, breath?: string,
 ): {
@@ -321,7 +344,11 @@ export function defaultBehaviors(walk: Gait, style?: { light: StrikeSpec; heavy:
 /** Old single-capsule weapons become one-part specs. */
 export function migrateWeapon(w: any): WeaponSpec | undefined {
   if (!w) return undefined;
-  if (Array.isArray(w.parts)) return { name: w.name ?? 'weapon', parts: w.parts };
+  if (Array.isArray(w.parts)) {
+    // style is the designer's word on HOW it is used — dropping it here is
+    // why no model-styled weapon ever fired a shot
+    return { name: w.name ?? 'weapon', parts: w.parts, ...(w.style ? { style: w.style } : {}) };
+  }
   return {
     name: 'blade',
     parts: [
@@ -338,7 +365,10 @@ export function makeCharacter(genome: Genome, kind: 'hero' | 'beast' = 'beast'):
     name: genome.name,
     kind,
     genome,
-    behaviors: defaultBehaviors(genome.gait, styleByChoice(weapon, hasArms, hasTail, genome.breath) ?? styleFor(weapon?.name ?? genome.name, hasArms, hasTail, genome.breath)),
+    behaviors: defaultBehaviors(genome.gait,
+      (!genome.breath && hasArms && weapon?.name ? styleForStrict(weapon.name) : null)
+      ?? styleByChoice(weapon, hasArms, hasTail, genome.breath)
+      ?? styleFor(weapon?.name ?? genome.name, hasArms, hasTail, genome.breath)),
     weapon: migrateWeapon(genome.weapon),
     offhand: migrateWeapon(genome.offhand),
     gear: genome.gear,
