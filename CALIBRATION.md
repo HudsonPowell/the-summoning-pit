@@ -1507,3 +1507,19 @@ The page has to give up its own gestures before the game can have them.
   taste layer is CLIP's.
 - Union-find touch slack for posed capsules: `(r1+r2)*1.2 + 0.03` — all five exemplars
   read as one component at this slack.
+
+### Correction, same day: the judge is a hosted EYE, not local CLIP
+- Local CLIP is retired from the server. It filled the Railway volume to ENOSPC in
+  eight seconds (the volume is for pit MEMORY, never weights), and moved to the
+  container disk its native onnx runtime died SILENTLY (no log line at all) under the
+  platform sandbox — a crash loop with the boot banner as the only output. Silent
+  instant death at import time = native code vs sandbox; no try/catch sees it.
+- The judge is now `Qwen/Qwen3.8-Flash` via the hatch provider (src/taste.ts pickByEye):
+  two 224px renders as data URIs, "VERDICT: A or B" parsed from the SSE stream (the
+  model requires streaming and thinks before answering; temperature 0, max_tokens 400).
+  5/5 on the calibration pairs including the censer-pole pair CLIP tied on, then 4/4 on
+  fresh shuffled hatch pairs end-to-end. ~0.04p per judgment.
+- The CLIP axis findings above stand as calibration history; the pairwise-not-absolute
+  principle carried over to the eye.
+- Gotcha: Cloudflare 403 "error code: 1010" on api.together.xyz means the CLIENT was
+  fingerprint-blocked (python urllib) — use curl/fetch before blaming the API.

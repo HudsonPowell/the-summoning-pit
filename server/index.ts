@@ -8,7 +8,6 @@
 
 import { createServer } from 'node:http';
 import { readdirSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Character, migrateCharacter, makeCharacter } from '../src/character';
 import { defaultBiped } from '../src/genome';
@@ -16,7 +15,7 @@ import { createVoid, stepVoid, spawnChar, makeAgent, whoOf, VoidSim, VoidEvent, 
 import { declare } from '../src/void/pacts';
 import { titleFor } from '../src/naming';
 import { hatchGenome, OLLAMA_URL, HATCH_MODEL, HATCH_API_KEY } from '../src/hatch';
-import { warmTaste, tasteReady, tasteScores } from '../src/taste';
+import { pickBest, eyeReady } from '../src/taste';
 import { mintKey, ownerOf, looksLikeKey } from './keys';
 import { sanitiseGenome } from './sanitise';
 import { load as loadPit, save as savePit, SavedPit } from './persist';
@@ -46,14 +45,7 @@ async function hatchJudged(desc: string, temperature: () => number): Promise<unk
   const hatched = pair.filter(p => p.status === 'fulfilled').map(p => (p as PromiseFulfilledResult<any>).value);
   if (!hatched.length) throw (pair[0] as PromiseRejectedResult).reason;
   if (hatched.length === 1) return hatched[0];
-  try {
-    const scores = await tasteScores(hatched, desc);
-    const best = scores[1] > scores[0] ? 1 : 0;
-    console.log(`[taste] kept ${scores[best].toFixed(2)} over ${scores[1 - best].toFixed(2)}${tasteReady() ? '' : ' (anatomy only)'}`);
-    return hatched[best];
-  } catch {
-    return hatched[0];
-  }
+  return hatched[await pickBest(hatched, desc)];
 }
 const SAVE_EVERY = 5;                 // seconds
 const MAX_PER_OWNER = 1;              // one hero each — the pit is not a kennel
@@ -209,10 +201,11 @@ restore();
 if (SERVER_HATCH && !HATCH_API_KEY) {
   void warmModel(OLLAMA_URL, HATCH_MODEL);
 }
-// The volume is for the pit's MEMORY, never for model weights: caching CLIP
-// there filled it to ENOSPC in eight seconds and took the state file hostage.
-// Clean up any weights a previous boot left behind, then cache on the
-// container disk — ephemeral, re-downloaded per deploy, and roomy.
+// The volume is for the pit's MEMORY, never for model weights: local CLIP
+// once cached itself there and filled it to ENOSPC in eight seconds, taking
+// the state file hostage — and its native runtime then died silently under
+// the platform sandbox. The judge is HOSTED now (see src/taste.ts); all that
+// remains of that episode is sweeping any weights it left on the volume.
 {
   const vol = process.env.RAILWAY_VOLUME_MOUNT_PATH;
   if (vol) {
@@ -220,10 +213,6 @@ if (SERVER_HATCH && !HATCH_API_KEY) {
       rmSync(`${vol}/hf-cache`, { recursive: true, force: true });
     } catch { /* nothing there, or nothing we can do */ }
   }
-}
-// the judge downloads in the background too; the pit opens immediately
-if (TASTE && SERVER_HATCH && HATCH_API_KEY) {
-  warmTaste(`${tmpdir()}/pit-hf-cache`);
 }
 
 // --- who is here ------------------------------------------------------------
@@ -312,7 +301,7 @@ const http = createServer((req, res) => {
       openFor: Math.round((Date.now() - wallBase) / 1000),
       oldest: Math.round(Math.max(0, ...sim.agents.filter(a => a.deadT < 0).map(a => sim.t - a.deeds.born))),
       model: HATCH_API_KEY ? 'hosted' : warm.ready ? 'ready' : warm.error ? `error: ${warm.error}` : warm.progress || 'starting',
-      taste: !TASTE ? 'off' : tasteReady() ? 'seated' : 'anatomy',
+      taste: !TASTE ? 'off' : eyeReady() ? 'eye' : 'anatomy',
       paused: pauseFor(),
     }));
     return;

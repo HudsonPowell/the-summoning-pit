@@ -4,23 +4,26 @@
  * model that composes six parts of nothing walks a mess into the pit.
  *
  * Two layers, cheapest first:
- *  - geomScore: deterministic anatomy checks on the posed capsules. Is it one
+ *  - anatomyOf: deterministic checks on the posed capsules. Is it one
  *    connected thing, does it touch the floor, is it a figure and not a
  *    balloon with debris. Microseconds, no ML, catches disasters.
- *  - clipPick: the studio's judge trick — CLIP pairwise CONTRAST (absolute
- *    scores are junk; contrasts are where the signal lives) between rendered
- *    candidates. Adds taste on top of sanity. Loads lazily, fails soft.
+ *  - pickByEye: a HOSTED vision model compares the rendered candidates and
+ *    names the more coherent one. The pit already trusts its hatching
+ *    provider with the summoner's words, so the judge rides the same pipe —
+ *    no local weights, no native code, nothing to crash or fill a disk.
+ *    (Local CLIP was tried: it filled the Railway volume to ENOSPC, then its
+ *    native runtime died silently under the platform sandbox. Never again.)
  *
- * The summoner's words are used transiently in memory as a CLIP text axis and
- * nothing else — never stored, never logged, never on the wire.
+ * The summoner's words appear transiently in the judging prompt to the SAME
+ * provider that hatched them — never stored, never logged, never on the wire.
  *
- * SERVER-ONLY module: imports pngjs and (lazily) @huggingface/transformers.
- * The browser must never bundle this.
+ * SERVER-ONLY module: imports pngjs. The browser must never bundle this.
  */
 import { Genome, heightOf } from './genome';
 import { makeCharacter } from './character';
 import { solvePose, Capsule } from './pose';
 import { PixelRenderer, Camera } from './render';
+import { HATCH_API_KEY, HATCH_API_URL } from './ollama';
 
 type V = { x: number; y: number; z: number };
 const sub = (a: V, b: V): V => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
@@ -57,7 +60,7 @@ const capVol = (c: Capsule): number => {
 };
 
 export interface Anatomy {
-  score: number;        // 0..1 — below ~0.55 is a mess (see CALIBRATION.md)
+  score: number;        // 0..1 — relative only; the judge is a picker, not a gate
   connected: number;    // volume share of the largest connected component
   grounded: boolean;    // the main mass reaches the floor
   figure: number;       // 1 - (largest single capsule's volume share): 0 = one balloon
@@ -110,40 +113,13 @@ export function anatomyOf(genome: Genome): Anatomy {
   return { score, connected, grounded, figure };
 }
 
-// --- the taste layer: CLIP pairwise contrast on renders ---------------------
+// --- the eye: a hosted vision model compares the candidates -----------------
 
-let clip: any | 'loading' | 'dead' = null;
+/** The judge that looks. Env-swappable; must be serverless on the hatch host. */
+const EYE_MODEL = (typeof process !== 'undefined' && process.env?.PIT_EYE_MODEL) || 'Qwen/Qwen3.8-Flash';
 
-/** Start loading CLIP in the background. Safe to call more than once. */
-export function warmTaste(cacheDir?: string): void {
-  if (clip) return;
-  clip = 'loading';
-  // The download can die as an unhandled STREAM error (ENOSPC did, and took
-  // the whole pit down with it) — no try/catch sees those. While the judge
-  // is being seated, a process-level net catches whatever falls; it comes
-  // down the moment loading resolves either way.
-  const fell = (e: Error) => {
-    clip = 'dead';
-    console.log(`[taste] the judge fell on the stairs: ${e.message.slice(0, 80)}`);
-  };
-  if (typeof process !== 'undefined') process.on('uncaughtException', fell);
-  void (async () => {
-    try {
-      const tf: any = await import('@huggingface/transformers');
-      if (cacheDir) tf.env.cacheDir = cacheDir;
-      const p = await tf.pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
-      if (clip === 'loading') { clip = p; console.log('[taste] the judge is seated'); }
-    } catch (e) {
-      clip = 'dead';
-      console.log(`[taste] no judge today: ${(e as Error).message.slice(0, 80)}`);
-    } finally {
-      if (typeof process !== 'undefined') process.removeListener('uncaughtException', fell);
-    }
-  })();
-}
-
-export function tasteReady(): boolean {
-  return !!clip && clip !== 'loading' && clip !== 'dead';
+export function eyeReady(): boolean {
+  return !!HATCH_API_KEY;
 }
 
 const CELL = 224;
@@ -167,51 +143,81 @@ export function renderCandidate(genome: Genome): Uint8ClampedArray {
   return rbuf;
 }
 
-/** P(pos) against neg for one render — the pairwise contrast primitive. */
-async function contrast(img: any, pos: string, neg: string): Promise<number> {
-  const out = await clip(img, [pos, neg]);
-  return (out as { label: string; score: number }[]).find(o => o.label === pos)?.score ?? 0.5;
+async function pngDataUri(genome: Genome): Promise<string> {
+  const { PNG } = await import('pngjs');
+  const png = new PNG({ width: CELL, height: CELL });
+  png.data.set(renderCandidate(genome));
+  return 'data:image/png;base64,' + PNG.sync.write(png).toString('base64');
 }
 
-// Calibrated 2026-08-31 against exemplars + 70B goods + V4-Pro messes (see
-// CALIBRATION.md): STANDING is the axis that separates — worst good 0.98,
-// best mess 0.65. CREATURE backs it up (catches fragment clouds the standing
-// axis is lenient on). Feeding CLIP a RawImage from our buffer scored every
-// render identically — it judges a PNG FILE and nothing else.
-const STANDING: [string, string] = ['a living character standing on legs', 'random floating debris'];
-const CREATURE: [string, string] = ['a small creature or monster with a body and limbs', 'scattered disconnected abstract shapes'];
+/**
+ * Ask the eye which of two candidates reads better. The model streams (it is
+ * a thinking model and its host demands SSE); only the verdict is kept.
+ * Returns 0 or 1, or null when the eye is closed or unreadable.
+ */
+export async function pickByEye(genomes: [Genome, Genome], desc?: string): Promise<number | null> {
+  if (!eyeReady()) return null;
+  const [a, b] = await Promise.all([pngDataUri(genomes[0]), pngDataUri(genomes[1])]);
+  const brief = desc
+    ? `Two renders of a game creature summoned from the words "${desc.slice(0, 140)}", A then B.`
+    : 'Two renders of game creatures, A then B.';
+  const res = await fetch(`${HATCH_API_URL.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${HATCH_API_KEY}` },
+    body: JSON.stringify({
+      model: EYE_MODEL, max_tokens: 400, temperature: 0, stream: true,
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: `${brief} Which looks more like a single coherent creature with a readable body — not scattered shapes, debris, or a bare stick — and better fits the words? End your answer with exactly VERDICT: A or VERDICT: B.` },
+        { type: 'text', text: 'A:' },
+        { type: 'image_url', image_url: { url: a } },
+        { type: 'text', text: 'B:' },
+        { type: 'image_url', image_url: { url: b } },
+      ] }],
+    }),
+  });
+  if (!res.ok || !res.body) return null;
+  let text = '';
+  const reader = (res.body as any).getReader();
+  const dec = new TextDecoder();
+  let carry = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    carry += dec.decode(value, { stream: true });
+    const lines = carry.split('\n');
+    carry = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+      try {
+        text += JSON.parse(line.slice(6)).choices?.[0]?.delta?.content ?? '';
+      } catch { /* keep-alive or partial frame */ }
+    }
+  }
+  const m = /VERDICT:\s*([AB])/i.exec(text);
+  return m ? (m[1].toUpperCase() === 'A' ? 0 : 1) : null;
+}
 
 /**
- * Score candidates: anatomy always, CLIP when the judge is seated. `desc` is
- * held in memory for one text-embed and released — never stored or logged.
- * Returns per-candidate totals, higher is better.
+ * The full judgment: the eye picks when it can; anatomy breaks the fall.
+ * Never throws, never refuses — SOME candidate always walks in.
  */
-export async function tasteScores(genomes: Genome[], desc?: string): Promise<number[]> {
-  const anatomies = genomes.map(g => {
-    try { return anatomyOf(g); } catch { return { score: 0, connected: 0, grounded: false, figure: 0 }; }
-  });
-  const totals = anatomies.map(a2 => a2.score * 0.8);
-  if (!tasteReady()) return totals;
-  const { writeFileSync, unlinkSync, mkdtempSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const { PNG } = await import('pngjs');
-  const dir = mkdtempSync(join(tmpdir(), 'taste-'));
+export async function pickBest(genomes: Genome[], desc?: string): Promise<number> {
+  if (genomes.length < 2) return 0;
   try {
-    for (let i = 0; i < genomes.length; i++) {
-      const rgba = renderCandidate(genomes[i]);
-      const png = new PNG({ width: CELL, height: CELL });
-      png.data.set(rgba);
-      const file = join(dir, `${i}.png`);
-      writeFileSync(file, PNG.sync.write(png));
-      const standing = await contrast(file, ...STANDING);
-      const creature = await contrast(file, ...CREATURE);
-      const fits = desc ? await contrast(file, desc.slice(0, 140), CREATURE[1]) : 0.5;
-      totals[i] += standing * 0.5 + creature * 0.25 + fits * 0.25;
-      unlinkSync(file);
+    const eyed = await pickByEye([genomes[0], genomes[1]], desc);
+    if (eyed != null) {
+      console.log(`[taste] the eye chose ${eyed === 0 ? 'the first' : 'the second'}`);
+      return eyed;
     }
   } catch (e) {
-    console.log(`[taste] judge stumbled, anatomy stands: ${(e as Error).message.slice(0, 60)}`);
+    console.log(`[taste] the eye blinked: ${(e as Error).message.slice(0, 60)}`);
   }
-  return totals;
+  try {
+    const scores = genomes.map(g => anatomyOf(g).score);
+    const best = scores[1] > scores[0] ? 1 : 0;
+    console.log(`[taste] anatomy kept ${scores[best].toFixed(2)} over ${scores[1 - best].toFixed(2)}`);
+    return best;
+  } catch {
+    return 0;
+  }
 }

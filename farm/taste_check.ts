@@ -1,22 +1,10 @@
-// Calibrate the pit's taste: score known-good bodies, 70B hatches and
-// V4-Pro's abstract messes with both layers. The good and the bad must
-// separate or the judge is noise. Constants go to CALIBRATION.md.
+// Calibrate the pit's taste: for each prompt, hatch one candidate from the
+// good model and one from a known mess-maker, and check the judge picks the
+// good one. 5/5 on 2026-08-31 (see CALIBRATION.md).
 //   HATCH_API_KEY=... HATCH_API_URL=... npx tsx farm/taste_check.ts
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { PNG } from 'pngjs';
-import { anatomyOf, tasteScores, warmTaste, tasteReady, renderCandidate } from '../src/taste';
+import { anatomyOf, pickBest } from '../src/taste';
 import { hatchGenome } from '../src/hatch';
-import { defaultBiped, hound, walkingShrine, drifter, lasher, Genome } from '../src/genome';
-
-mkdirSync('farm/out/taste', { recursive: true });
-function keep(label: string, g: Genome) {
-  const slug = label.replace(/[^a-z0-9]+/gi, '_').slice(0, 40);
-  const rgba = renderCandidate(g);
-  const png = new PNG({ width: 224, height: 224 });
-  png.data.set(rgba);
-  writeFileSync(`farm/out/taste/${slug}.png`, PNG.sync.write(png));
-  writeFileSync(`farm/out/taste/${slug}.json`, JSON.stringify(g));
-}
+import { defaultBiped, hound, walkingShrine, drifter, lasher } from '../src/genome';
 
 const PROMPTS = [
   'a hooded pale hunter with a tall silver longbow',
@@ -24,34 +12,32 @@ const PROMPTS = [
   'a censer priest swinging green smoke on a chain',
   'a crowned moth queen with four wings and a curved horn bow',
 ];
+const GOOD = 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
+const MESSY = 'deepseek-ai/DeepSeek-V4-Pro-0813';
 
-warmTaste();
-while (!tasteReady()) await new Promise(r => setTimeout(r, 500));
-
-async function judge(label: string, g: Genome, desc?: string) {
-  keep(label, g);
-  const a = anatomyOf(g);
-  const [total] = await tasteScores([g], desc);
-  console.log(`${label.padEnd(34)} anatomy ${a.score.toFixed(2)} (conn ${a.connected.toFixed(2)} gnd ${a.grounded ? 'y' : 'N'} fig ${a.figure.toFixed(2)})  total ${total.toFixed(2)}`);
-  return { anatomy: a.score, total };
-}
-
-console.log('--- known-good bodies');
-const goods: number[] = [];
+console.log('--- known-good bodies (anatomy only)');
 for (const [name, mk] of [['biped', defaultBiped], ['hound', hound], ['shrine', walkingShrine], ['drifter', drifter], ['lasher', lasher]] as const) {
-  goods.push((await judge(name, JSON.parse(JSON.stringify(mk())))).total);
+  const a = anatomyOf(JSON.parse(JSON.stringify(mk())));
+  console.log(`${name.padEnd(10)} anatomy ${a.score.toFixed(2)} (conn ${a.connected.toFixed(2)} gnd ${a.grounded ? 'y' : 'N'})`);
 }
 
-for (const [tag, model] of [['70B', 'meta-llama/Llama-3.3-70B-Instruct-Turbo'], ['V4-Pro', 'deepseek-ai/DeepSeek-V4-Pro-0813']] as const) {
-  console.log(`--- ${tag} hatches`);
-  for (const p of PROMPTS) {
-    try {
-      const g = await hatchGenome(p, model, undefined, undefined, 0.85);
-      await judge(`${tag}: ${p.slice(2, 30)}`, g, p);
-    } catch (e: any) {
-      console.log(`${tag}: ${p.slice(2, 30)} FAILED ${String(e?.message ?? e).slice(0, 40)}`);
-    }
+console.log('--- judged pairs (good vs messy, shuffled)');
+let right = 0, ran = 0;
+for (const p of PROMPTS) {
+  try {
+    const [good, messy] = await Promise.all([
+      hatchGenome(p, GOOD, undefined, undefined, 0.85),
+      hatchGenome(p, MESSY, undefined, undefined, 0.85),
+    ]);
+    const goodFirst = Math.random() < 0.5;
+    const pair = goodFirst ? [good, messy] : [messy, good];
+    const pick = await pickBest(pair, p);
+    const choseGood = (pick === 0) === goodFirst;
+    ran++; right += choseGood ? 1 : 0;
+    console.log(`${p.slice(0, 44).padEnd(46)} -> ${choseGood ? 'chose the good one' : 'CHOSE THE MESS'}`);
+  } catch (e: any) {
+    console.log(`${p.slice(0, 44)} FAILED ${String(e?.message ?? e).slice(0, 50)}`);
   }
 }
-console.log(`good floor: ${Math.min(...goods).toFixed(2)}`);
+console.log(`${right}/${ran}`);
 process.exit(0);
