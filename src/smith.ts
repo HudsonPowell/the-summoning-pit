@@ -92,6 +92,11 @@ export function armoury(desc: string): WeaponSpec {
   return ARMOURY.sword;
 }
 
+/** The smith's brief plus one worked example — for any model, any provider. */
+export function smithPrompt(desc: string): string {
+  return SMITH_NOTES + `\n\nExample staff:\n${JSON.stringify(ARMOURY.staff)}\n\nNow forge: "${desc}"\nJSON:`;
+}
+
 export async function forgeWeapon(
   desc: string,
   onProgress?: (chars: number) => void,
@@ -316,46 +321,71 @@ export function weaponsFromWords(desc: string): { main?: WeaponSpec; off?: Weapo
   // What the words SAY about each held thing, applied to what is held.
   // "a big shield" is bigger; "a flaming sword" burns; "a tiny frozen dagger"
   // is both. Modifiers only reach the thing they stand near.
-  const dress = (spec: WeaponSpec | undefined, triggers: RegExp): WeaponSpec | undefined => {
-    if (!spec) return spec;
-    const m = d.match(triggers);
-    if (!m || m.index === undefined) return spec;
-    // the 40 characters before the weapon word are its adjectives
-    const before = d.slice(Math.max(0, m.index - 40), m.index);
-    let scale = 1;
-    if (/\b(huge|massive|giant|colossal|enormous|great|big|tower|oversized)\b/.test(before)) scale = 1.4;
-    else if (/\b(small|tiny|little|short)\b/.test(before)) scale = 0.75;
-    const element =
-      /\b(flaming|burning|fiery|fire|blazing)\b/.test(before) ? '#ff8a3a'
-      : /\b(frost|frozen|icy|ice)\b/.test(before) ? '#bfe6ff'
-      : /\b(venom|poison(ous)?|toxic)\b/.test(before) ? '#9fe07a'
-      : /\b(lightning|storm|charged|crackling)\b/.test(before) ? '#f2f0b0'
-      : /\b(shadow|void|black-flame|cursed)\b/.test(before) ? '#8a6fb8'
-      : /\b(holy|blessed|radiant|golden)\b/.test(before) ? '#ffd88a'
-      : null;
-    if (scale === 1 && !element) return spec;
-    const parts = spec.parts.map(part => ({
-      a: [part.a[0] * scale, part.a[1] * scale, part.a[2] * scale] as [number, number, number],
-      b: [part.b[0] * scale, part.b[1] * scale, part.b[2] * scale] as [number, number, number],
-      r: part.r * scale,
-      color: element ? blendHex(part.color, element, 0.55) : part.color,
-    }));
-    if (element) {
-      // the element rides the far end as a soft glow
-      const tip = parts.reduce((m2, q) => Math.max(m2, q.b[0], q.a[0]), 0);
-      parts.push({
-        a: [tip * 0.55, 0, 0], b: [tip * 0.95, 0, 0],
-        r: Math.min(0.11, 0.05 * scale + 0.03), color: element,
-      });
-    }
-    return { name: spec.name, parts };
-  };
+  const dress = (spec: WeaponSpec | undefined, triggers: RegExp): WeaponSpec | undefined =>
+    spec ? dressWeapon(spec, d, triggers) : spec;
 
   const WEAPON_WORD = /sword|blade|axe|hammer|maul|mace|club|dagger|kni[fv]e|spear|pike|lance|javelin|trident|glaive|halberd|scythe|whip|flail|staff|stave|wand|orb|tome|bow|crossbow|cleaver|katana|scimitar|rapier|pick/;
   main = dress(main, WEAPON_WORD);
   off = dress(off, /shield|buckler|torch|lantern/) ?? (off ? dress(off, WEAPON_WORD) : off);
 
   return { main, off };
+}
+
+/**
+ * Apply the words' modifiers to a held thing, wherever it came from — the
+ * armoury or the model's own hand. Size words scale it, element words blend
+ * the steel and hang a glow off the far end. Modifiers only count when they
+ * stand within a few words of the thing they describe.
+ */
+export function dressWeapon(spec: WeaponSpec, desc: string, triggers?: RegExp): WeaponSpec {
+  const d = desc.toLowerCase();
+  const re = triggers ?? /sword|blade|axe|hammer|maul|mace|club|dagger|kni[fv]e|spear|pike|lance|javelin|trident|glaive|halberd|scythe|whip|flail|staff|stave|wand|orb|tome|bow|crossbow|cleaver|katana|scimitar|rapier|pick|shield|buckler|torch|nunchuck|nunchak|chain|net\b/;
+  const m = d.match(re);
+  if (!m || m.index === undefined) return spec;
+  const before = d.slice(Math.max(0, m.index - 40), m.index);
+  let scale = 1;
+  if (/\b(huge|massive|giant|colossal|enormous|great|big|tower|oversized)\b/.test(before)) scale = 1.4;
+  else if (/\b(small|tiny|little|short)\b/.test(before)) scale = 0.75;
+  const element =
+    /\b(flaming|burning|fiery|fire|blazing)\b/.test(before) ? '#ff8a3a'
+    : /\b(frost|frozen|icy|ice)\b/.test(before) ? '#bfe6ff'
+    : /\b(venom|poison(ous)?|toxic)\b/.test(before) ? '#9fe07a'
+    : /\b(lightning|storm|charged|crackling)\b/.test(before) ? '#f2f0b0'
+    : /\b(shadow|void|black-flame|cursed)\b/.test(before) ? '#8a6fb8'
+    : /\b(holy|blessed|radiant|golden)\b/.test(before) ? '#ffd88a'
+    : null;
+  if (scale === 1 && !element) return spec;
+  const parts = spec.parts.map(part => ({
+    a: [part.a[0] * scale, part.a[1] * scale, part.a[2] * scale] as [number, number, number],
+    b: [part.b[0] * scale, part.b[1] * scale, part.b[2] * scale] as [number, number, number],
+    r: part.r * scale,
+    color: element ? blendHex(part.color, element, 0.55) : part.color,
+  }));
+  if (element) {
+    const tip = parts.reduce((m2, q) => Math.max(m2, q.b[0], q.a[0]), 0);
+    parts.push({
+      a: [tip * 0.55, 0, 0] as [number, number, number],
+      b: [tip * 0.95, 0, 0] as [number, number, number],
+      r: Math.min(0.11, 0.05 * scale + 0.03), color: element,
+    });
+  }
+  return { ...spec, parts };
+}
+
+/**
+ * The fairness budget for held things: total capsule volume is capped, so the
+ * model may invent ANY shape but never a mountain. Oversized designs keep
+ * their silhouette and lose thickness.
+ */
+export function priceWeapon(spec: WeaponSpec): WeaponSpec {
+  const BUDGET = 0.012;
+  const vol = spec.parts.reduce((v, q) => {
+    const len = Math.hypot(q.b[0] - q.a[0], q.b[1] - q.a[1], q.b[2] - q.a[2]) + q.r;
+    return v + len * q.r * q.r;
+  }, 0);
+  if (vol <= BUDGET) return spec;
+  const k = Math.sqrt(BUDGET / vol);
+  return { ...spec, parts: spec.parts.map(q => ({ ...q, r: q.r * k })) };
 }
 
 /** Mix two #rrggbb colours; t=1 is all the second. */

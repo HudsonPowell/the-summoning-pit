@@ -11,7 +11,8 @@ import {
   Genome, Skeleton, Gait, ChainSpec, ChainRole, Locomotion, Palette, girthAt,
 } from './genome';
 import { titleFor } from './naming';
-import { weaponsFromWords } from './smith';
+import { weaponsFromWords, validateWeapon, dressWeapon, priceWeapon, smithPrompt } from './smith';
+import type { WeaponSpec } from './character';
 import { HATCH_MODEL, OLLAMA_URL, HATCH_API_KEY, HATCH_API_URL } from './ollama';
 import { temperOf, temperFromWords } from './temper';
 import { gearFromWords } from './gear';
@@ -53,6 +54,21 @@ skeleton.chains: everything that hangs off the body. Each has:
 Ideas the vocabulary can express, so use it: barrel-bodied beasts, long
 serpents with no legs at all, many-legged scuttlers, two-headed things, horns
 and back fins, one oversized arm, stubby legs under a huge body, long necks.
+
+held: if the words name ANYTHING carried in a hand — a weapon, a tool, an
+  instrument, however strange — DESIGN IT from 1-6 capsules. You are the
+  smith: nunchucks are two sticks and a thin chain link, a net is a wide
+  sparse fan of thin strands, a censer is a chain and a hanging ball. Grip
+  space: the hand is at [0,0,0]; +x runs away from the hand along the thing
+  (max 1.1); +y is knuckle-side; +z out to the side. Shafts thin (r
+  0.015-0.03), heads chunky (r up to 0.09). Give it a real silhouette and
+  colour — it is the character's signature. Also pick style: how it is used.
+  "swipe" cuts, "slam" crushes, "thrust" stabs, "lash" whips, "shoot" looses
+  an arrow, "cast" hurls arcane bolts, "fireball" lobs an exploding ball,
+  "frost" throws slow ice, "zap" strikes as lightning, "throw" hurls the
+  thing itself (it sticks in the ground and must be fetched back).
+offhand: a second held thing — a shield, torch, or twin of the first — same
+  rules. Omit held/offhand entirely for creatures with nothing in hand.
 
 gait: cadence 0.2-2.2 (small things quick, heavy things slow), stride 0.2-2.4,
 lean/slump = hunch, armSwing, headPitch, flapAmp = wingbeat, tailWave,
@@ -155,6 +171,45 @@ export const GENOME_SCHEMA = {
       properties: {
         torso: { type: 'string' }, limbs: { type: 'string' },
         head: { type: 'string' }, accent: { type: 'string' },
+      },
+    },
+    held: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        style: { type: 'string', enum: ['swipe', 'slam', 'thrust', 'lash', 'shoot', 'cast', 'fireball', 'frost', 'zap', 'throw'] },
+        parts: {
+          type: 'array', minItems: 1, maxItems: 6,
+          items: {
+            type: 'object',
+            required: ['a', 'b', 'r', 'color'],
+            properties: {
+              a: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
+              b: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
+              r: num(0.012, 0.1),
+              color: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    offhand: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        parts: {
+          type: 'array', minItems: 1, maxItems: 5,
+          items: {
+            type: 'object',
+            required: ['a', 'b', 'r', 'color'],
+            properties: {
+              a: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
+              b: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
+              r: num(0.012, 0.12),
+              color: { type: 'string' },
+            },
+          },
+        },
       },
     },
   },
@@ -558,9 +613,19 @@ export function validateGenome(raw: any, desc: string): Genome {
   // be a table of lengths and radii, which is why every armed hero was holding
   // the same grey stick.
   if (chains.some(c => c.role === 'arm')) {
+    // The MODEL is the smith now: whatever it designed, priced and dressed,
+    // is what the hand holds. The regex armoury answers only when the model
+    // stayed silent — it is a fallback, not the source. This is the
+    // difference between "nunchucks" being nunchucks and being a club.
+    const rawAny = raw as any;
+    const modelMade = (w: any) => w && Array.isArray(w?.parts) && w.parts.length ? w : undefined;
+    const designed = validHeld(modelMade(rawAny.held) ?? modelMade(rawAny.weapon), desc);
+    const designedOff = validHeld((raw as any).offhand, desc);
     const { main, off } = weaponsFromWords(desc);
-    if (main) genome.weapon = main;
-    if (off) genome.offhand = off;
+    genome.weapon = designed ?? main ?? undefined;
+    genome.offhand = designedOff ?? off ?? undefined;
+    if (!genome.weapon) delete genome.weapon;
+    if (!genome.offhand) delete genome.offhand;
   }
   // Temperament is the last thing the words do. They set three numbers — how
   // readily it starts a fight, whether it holds when hurt, how fast it moves —
@@ -584,6 +649,16 @@ export function validateGenome(raw: any, desc: string): Genome {
   return genome;
 }
 
+/** The model's held-thing design, clamped, priced and dressed — or nothing. */
+function validHeld(raw: any, desc: string): WeaponSpec | undefined {
+  if (!raw || !Array.isArray(raw.parts) || !raw.parts.length) return undefined;
+  const spec = validateWeapon(raw, typeof raw.name === 'string' ? raw.name : 'held');
+  if (!spec.parts.length) return undefined;
+  const style = typeof raw.style === 'string' ? raw.style : undefined;
+  const priced = priceWeapon(dressWeapon(spec, desc));
+  return style ? { ...priced, style } : priced;
+}
+
 export async function hatchGenome(
   desc: string,
   model = HATCH_MODEL,
@@ -596,5 +671,65 @@ export async function hatchGenome(
   const text = HATCH_API_KEY
     ? await askOpenAI(desc, model ?? HATCH_MODEL, HATCH_API_URL, HATCH_API_KEY, temperature)
     : await askOllama(desc, model, url, onProgress, temperature);
-  return validateGenome(parseLoose(text), desc);
+  const genome = validateGenome(parseLoose(text), desc);
+
+  // The smith's second chance. The words plainly name a carried thing, the
+  // armoury has no word for it, and the genome pass did not design one — so
+  // one small focused call forges it. This is what makes "nunchucks" be
+  // nunchucks instead of nothing: the list of weapons we never wrote is the
+  // whole point.
+  if (!genome.weapon
+    && genome.skeleton.chains.some(c => c.role === 'arm')
+    && namesImplement(desc)) {
+    try {
+      const forged = await askSmith(desc, model, url);
+      if (forged.parts.length) genome.weapon = priceWeapon(dressWeapon(forged, desc));
+    } catch { /* bare hands, then — the fight goes on */ }
+  }
+  return genome;
+}
+
+/**
+ * Do the words name something carried? A "carrying" verb, or "with a/two X"
+ * where X is not anatomy. Deliberately loose — a false positive costs one
+ * small model call; a false negative costs the whole point.
+ */
+function namesImplement(desc: string): boolean {
+  const d = desc.toLowerCase();
+  if (/(wielding|wields|carrying|carries|holding|holds|swinging|swings|armed with|brandishing)\s+\w/.test(d)) return true;
+  // the article is optional — "with nunchucks" names a thing as plainly as
+  // "with a net". Anatomy and plain description words are not implements.
+  const NOT_A_THING = '(eye|horn|wing|leg|arm|head|tail|scale|fang|claw|tooth|teeth|fin|snout|beak|shell|mane|crest|hoof|hide|fur|face|bod(y|ies)|neck|maw|jaw|skin|scar|wound|feather|whisker|tusk|hump|stripe|spot|red|blue|green|black|white|golden|pale|dark|glowing|burning|no)';
+  return new RegExp(String.raw`\bwith\s+((a|an|two|twin|dual|paired|his|her|its)\s+)?((giant|huge|big|small|long|short|great|rusty|old|heavy|sharp)\s+)?(?!${NOT_A_THING}s?\b)[a-z]{3,}`).test(d);
+}
+
+/** One focused smith call, on whichever brain this hatch is using. */
+async function askSmith(desc: string, model?: string, url?: string): Promise<WeaponSpec> {
+  const prompt = smithPrompt(desc);
+  if (HATCH_API_KEY) {
+    const res = await fetch(`${HATCH_API_URL.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${HATCH_API_KEY}` },
+      body: JSON.stringify({
+        model: model ?? HATCH_MODEL, temperature: 0.8, max_tokens: 600,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!res.ok) throw new Error(`smith api ${res.status}`);
+    const j: any = await res.json();
+    return validateWeapon(parseLoose(j?.choices?.[0]?.message?.content ?? ''), desc);
+  }
+  const res = await fetch(`${(url ?? OLLAMA_URL)}/api/generate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: model ?? HATCH_MODEL, stream: false, format: 'json',
+      options: { temperature: 0.8, num_predict: 600 },
+      prompt,
+    }),
+  });
+  if (!res.ok) throw new Error(`smith ollama ${res.status}`);
+  const j: any = await res.json();
+  return validateWeapon(parseLoose(j?.response ?? ''), desc);
 }

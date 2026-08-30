@@ -79,6 +79,9 @@ export interface WeaponPart {
 }
 export interface WeaponSpec {
   name: string;
+  /** How it is USED — picked by the model that designed it. One of
+   *  STRIKE_STYLES' keys; anything else falls back to the name heuristics. */
+  style?: string;
   parts: WeaponPart[];
 }
 
@@ -220,6 +223,32 @@ export const DEFAULT_STRIKE_LIGHT = STRIKE_SWIPE;
 export const DEFAULT_STRIKE_HEAVY = STRIKE_SLAM;
 
 /** What a creature should naturally do, given what it has and what it holds. */
+/**
+ * The designer of the weapon said how it is used; honour that first. Each
+ * choice pairs a light and a heavy the engine already knows how to execute —
+ * closed verbs, open geometry.
+ */
+const STYLE_PAIRS: Record<string, { light: StrikeSpec; heavy: StrikeSpec }> = {
+  swipe: { light: STRIKE_SWIPE, heavy: STRIKE_SLAM },
+  slam: { light: STRIKE_SWIPE, heavy: STRIKE_SLAM },
+  thrust: { light: STRIKE_THRUST, heavy: STRIKE_SLAM },
+  lash: { light: STRIKE_SWIPE, heavy: STRIKE_LASH },
+  shoot: { light: STRIKE_SHOOT, heavy: STRIKE_SHOOT },
+  cast: { light: STRIKE_ARCANE, heavy: STRIKE_CAST },
+  fireball: { light: STRIKE_ARCANE, heavy: STRIKE_FIREBALL },
+  frost: { light: STRIKE_FROST, heavy: STRIKE_FROST },
+  zap: { light: STRIKE_ZAP, heavy: STRIKE_ZAP },
+  throw: { light: STRIKE_THROW, heavy: STRIKE_THROW },
+};
+
+function styleByChoice(
+  weapon: WeaponSpec | undefined, hasArms: boolean, hasTail: boolean, breath?: string,
+): { light: StrikeSpec; heavy: StrikeSpec } | null {
+  void hasTail;
+  if (!weapon?.style || !hasArms || breath) return null;
+  return STYLE_PAIRS[weapon.style] ?? null;
+}
+
 export function styleFor(
   weaponName: string | undefined, hasArms: boolean, hasTail: boolean, breath?: string,
 ): {
@@ -305,7 +334,7 @@ export function makeCharacter(genome: Genome, kind: 'hero' | 'beast' = 'beast'):
     name: genome.name,
     kind,
     genome,
-    behaviors: defaultBehaviors(genome.gait, styleFor(weapon?.name ?? genome.name, hasArms, hasTail, genome.breath)),
+    behaviors: defaultBehaviors(genome.gait, styleByChoice(weapon, hasArms, hasTail, genome.breath) ?? styleFor(weapon?.name ?? genome.name, hasArms, hasTail, genome.breath)),
     weapon: migrateWeapon(genome.weapon),
     offhand: migrateWeapon(genome.offhand),
     gear: genome.gear,

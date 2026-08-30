@@ -58,8 +58,10 @@ export function sanitiseGenome(raw: unknown): Genome | null {
   // the name is decorative here; the server renames it off the body anyway
   g.name = typeof g.name === 'string' ? g.name.slice(0, 40) : 'a thing';
 
-  if (g.weapon && typeof g.weapon === 'object') {
-    const w: any = g.weapon;
+  const STYLE_OK = ['swipe', 'slam', 'thrust', 'lash', 'shoot', 'cast', 'fireball', 'frost', 'zap', 'throw'];
+  for (const slot of ['weapon', 'offhand'] as const) {
+    const w: any = (g as any)[slot];
+    if (!w || typeof w !== 'object') continue;
     if (Array.isArray(w.parts)) {
       // roomy enough for a 1.4x 'huge' weapon; still nothing absurd
       w.parts = w.parts.slice(0, 10).map((q: any) => ({
@@ -69,6 +71,8 @@ export function sanitiseGenome(raw: unknown): Genome | null {
         color: hex(q?.color, '#9aa1ab'),
       }));
       if (typeof w.name === 'string') w.name = w.name.slice(0, 24);
+      // how it is used is an enum, not a string off the wire
+      if (typeof w.style !== 'string' || !STYLE_OK.includes(w.style)) delete w.style;
     }
   }
   // Gear is decorative but it is still geometry off a socket
