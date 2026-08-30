@@ -391,7 +391,21 @@ export const PRESETS: Record<string, () => Genome> = {
 
 /** v1 (body/thigh/shin) and v2 (spine/hip/chest chains) both land here. */
 export function migrateGenome(raw: any): Genome {
-  if (raw?.skeleton?.body && Array.isArray(raw.skeleton.body)) return raw as Genome;
+  if (raw?.skeleton?.body && Array.isArray(raw.skeleton.body)) {
+    // Models love boundary values: a head chain at the schema's extreme
+    // angle (-1.6) folds an upright creature's neck backward at a right
+    // angle — a mess on every screen. Clamp heads to carriage a neck can
+    // actually hold. Done here so every restored and incoming creature is
+    // healed on read, current pit lords included.
+    for (const c of raw.skeleton.chains ?? []) {
+      if (c?.role === 'head' && typeof c.angle === 'number') {
+        c.angle = raw.skeleton.upright
+          ? Math.max(-0.5, Math.min(1.0, c.angle))
+          : Math.max(-1.1, Math.min(1.3, c.angle));
+      }
+    }
+    return raw as Genome;
+  }
 
   // ---- v2: single spine number, hip/chest girdles ----
   if (raw?.skeleton) {

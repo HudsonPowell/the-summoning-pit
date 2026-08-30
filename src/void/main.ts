@@ -408,13 +408,15 @@ function formingWisp(t: number): Capsule[] {
  * held, so a visitor arriving to a quiet pit still reads the story.
  */
 function crownFor(ageSecs: number): GearPiece {
-  const growth = 1 + Math.min(0.85, (ageSecs / 3600) * 0.35);
+  // Straight UP and gently: scaling every axis leant the points outward and
+  // an overnight lord wore antlers. A tenth per hour, capped at a third.
+  const growth = 1 + Math.min(0.3, (ageSecs / 3600) * 0.1);
   if (growth < 1.02) return CROWN;
   return {
     ...CROWN,
     parts: CROWN.parts.map((part, i) => i < 2 ? part : ({
       ...part,
-      b: [part.b[0] * growth, part.b[1] * growth, part.b[2] * growth] as [number, number, number],
+      b: [part.b[0], part.b[1] * growth, part.b[2]] as [number, number, number],
     })),
   };
 }
