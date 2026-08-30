@@ -41,6 +41,9 @@ const ARENA_R = 7.4;
 
 let nextId = 1;
 
+/** Relic ids are minted here so a spear thrown by the sim gets a real one. */
+export function takeRelicId(): number { return nextId++; }
+
 // --- births -----------------------------------------------------------------
 
 /** A death seeds the floor: a skull, a bone or two, and the unclaimed weapon. */

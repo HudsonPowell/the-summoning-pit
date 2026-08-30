@@ -3,13 +3,13 @@
 // fights. Continuous space, no grid, no walls; the only rules are wanting
 // things and bumping into each other.
 
-import { Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT } from '../character';
+import { STRIKE_SWIPE, Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT } from '../character';
 import { Genome, effectiveGait, heightOf } from '../genome';
 import { Temper, temperOf } from '../temper';
 import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
 import { Pacts, newPacts, stanceOf } from './pacts';
 import { Prop, scatterProps } from '../props';
-import { Relic, Flora, leaveRemains, seedFlora, stepRelics, stepFlora } from './relics';
+import { Relic, Flora, leaveRemains, seedFlora, stepRelics, stepFlora, takeRelicId } from './relics';
 import { Record as Deeds, takeSpoil } from './spoils';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down' | 'rest';
@@ -43,6 +43,7 @@ export interface Agent {
   deeds: Deeds;              // what it has done, and what it took for doing it
   calm: number;              // seconds since anything happened to it
   rest: number;              // 0 up .. 1 lying down, for the long wait
+  thrownRelic: number | null;// the spear is OUT THERE, and this is where
   lookAt: number;            // world angle the head is resting on
   scanT: number;             // seconds until it looks somewhere else
   turnRate: number;          // radians/sec, for secondary motion
@@ -151,6 +152,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     deeds: { kills: 0, spoils: [], born: 0 },
     calm: 0,
     rest: 0,
+    thrownRelic: null,
     lookAt: rnd(-Math.PI, Math.PI),
     scanT: rnd(0, 0.8),
     turnRate: 0,
@@ -261,7 +263,9 @@ function strikeStyleOf(a: Agent, heavy: boolean): StrikeSpec {
 
 /** The swing in progress, if there is one — otherwise the creature's style. */
 export function strikeSpecOf(a: Agent): StrikeSpec {
-  return a.swing ?? strikeStyleOf(a, a.heavy);
+  const spec = a.swing ?? strikeStyleOf(a, a.heavy);
+  if (spec.ranged?.sticks && a.thrownRelic != null) return STRIKE_SWIPE;
+  return spec;
 }
 
 export function strikeDuration(a: Agent): number {
@@ -270,6 +274,9 @@ export function strikeDuration(a: Agent): number {
 
 export function rangedOf(a: Agent): RangedSpec | undefined {
   const light = (a.ch.behaviors['attack-light'] as { strike?: StrikeSpec } | undefined)?.strike;
+  // a thrown spear is not in the hand: until it is pulled back out of the
+  // floor, this creature fights like anything else with empty hands
+  if (light?.ranged?.sticks && a.thrownRelic != null) return undefined;
   return light?.ranged;
 }
 
@@ -549,7 +556,8 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         a.struck = true;
         const t = a.target;
         if (spec.ranged) {
-          // let go, and stop caring — the shot is on its own now
+          // let go, and stop caring — the shot is on its own now.
+          // (Unless it STICKS: a spear is a possession in flight.)
           const aim = t && t.deadT < 0 ? Math.atan2(t.z - a.z, t.x - a.x) : a.heading;
           sim.shots.push({
             x: a.x + Math.cos(aim) * 0.35,
@@ -582,6 +590,12 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     switch (a.state) {
       case 'wander': {
         a.move += (1 - a.move) * Math.min(1, 4 * dt);
+        // an empty-handed thrower wanders TOWARD its spear, the way anyone
+        // circles back for the thing they put down
+        if (a.thrownRelic != null) {
+          const r = sim.relics.find(x => x.id === a.thrownRelic);
+          if (r) a.aim = Math.atan2(r.z - a.z, r.x - a.x);
+        }
         walk(a, dt);
         if (a.stateT > rnd(2, 4) && Math.random() < dt * 0.8) setState(a, 'think');
         break;
@@ -806,6 +820,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
   }
 
   // things in flight
+  const landed: Shot[] = [];
   for (const s of sim.shots) {
     s.trail.unshift({ x: s.x, z: s.z, y: s.y });
     if (s.trail.length > s.spec.trail) s.trail.pop();
@@ -813,16 +828,63 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     s.z += s.vz * dt;
     if (s.spec.arcing) s.y += (s.life * 0.5 - 0.25) * dt * 3;
     s.life -= dt;
+    if (s.spec.spark) continue;                 // debris hits nothing
     for (const o of sim.agents) {
       if (o === s.from || o.deadT >= 0) continue;
       if (Math.hypot(o.x - s.x, o.z - s.z) < 0.45 + s.spec.size) {
-        hurt(sim, o, s.x - s.vx * 0.1, s.z - s.vz * 0.1, s.from, s.spec.speed > 12 ? 'bolt' : 'spell');
+        // a boom does not hurt on touch — it goes off, and the blast decides
+        if (!s.spec.boom) hurt(sim, o, s.x - s.vx * 0.1, s.z - s.vz * 0.1, s.from, s.spec.speed > 12 ? 'bolt' : 'spell');
         s.life = -1;
         break;
       }
     }
+    if (s.life <= 0) landed.push(s);
+  }
+  for (const s of landed) {
+    if (s.spec.boom) {
+      // everything inside the blast takes it, friend and stranger alike —
+      // a fireball has no opinion about who is standing where
+      for (const o of sim.agents) {
+        if (o === s.from || o.deadT >= 0) continue;
+        if (Math.hypot(o.x - s.x, o.z - s.z) < s.spec.boom) hurt(sim, o, s.x, s.z, s.from, 'spell');
+      }
+      // the flash: brief harmless debris on the same wire as every shot
+      for (let k = 0; k < 6; k++) {
+        const a2 = (k / 6) * Math.PI * 2 + Math.random() * 0.5;
+        sim.shots.push({
+          x: s.x, z: s.z, y: Math.max(0.1, s.y),
+          vx: Math.cos(a2) * 3.2, vz: Math.sin(a2) * 3.2,
+          life: 0.22 + Math.random() * 0.1,
+          spec: { speed: 3, range: 1, size: 0.05 + Math.random() * 0.04, color: s.spec.color, arcing: false, trail: 3, spark: true },
+          from: s.from, trail: [],
+        });
+      }
+    }
+    if (s.spec.sticks && s.from) {
+      // the spear stands where it landed, a relic like any other — except its
+      // owner knows exactly which one is theirs
+      const spear: Relic = {
+        id: takeRelicId(), kind: 'wpn',
+        x: s.x, z: s.z, vx: 0, vz: 0,
+        yaw: Math.atan2(s.vz, s.vx), vyaw: 0, sink: 0,
+        item: s.from.ch.weapon,
+      };
+      sim.relics.push(spear);
+      s.from.thrownRelic = spear.id;
+    }
   }
   sim.shots = sim.shots.filter(s => s.life > 0);
+
+  // pulling the spear back out of the floor: walk to it and it is yours again
+  for (const a of sim.agents) {
+    if (a.thrownRelic == null || a.deadT >= 0) continue;
+    const r = sim.relics.find(x => x.id === a.thrownRelic);
+    if (!r) { a.thrownRelic = null; continue; }   // the floor swallowed it
+    if (Math.hypot(r.x - a.x, r.z - a.z) < 0.6) {
+      sim.relics.splice(sim.relics.indexOf(r), 1);
+      a.thrownRelic = null;
+    }
+  }
 
   // The fallen fade. Nothing spawns by itself — no keeper, no refill, no
   // house challenger. Every creature in the pit was summoned by a person, and

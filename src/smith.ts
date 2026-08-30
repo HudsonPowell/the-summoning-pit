@@ -301,7 +301,69 @@ export function weaponsFromWords(desc: string): { main?: WeaponSpec; off?: Weapo
   if (/\bshield\b|shielded|shieldmaiden|slab shield/.test(d)) off = OFFHAND.shield;
   else if (/buckler/.test(d)) off = OFFHAND.buckler;
   else if (/torch|lantern/.test(d)) off = OFFHAND.torch;
-  // twin blades: the off hand gets the same weapon back
-  if (!off && main && /twin|dual|two (daggers|blades|swords)|paired/.test(d)) off = main;
+  // twin ANYTHING: the off hand gets the same thing back. "two swords" was
+  // silently one sword; "two shields" was not even a sentence the smith heard.
+  if (!off && main && /\b(twin|dual|paired|pair of|two|double)\b.{0,24}(sword|blade|dagger|kni[fv]e|axe|hatchet|hammer|club|mace|whip|torch)/.test(d)) {
+    off = main;
+  }
+  // two shields: a wall that walks. If a weapon was also named, one hand
+  // keeps it — nobody has three hands, and the words asked for a lot.
+  if (/\b(twin|dual|paired|pair of|two|double)\b.{0,20}shields/.test(d)) {
+    if (!main) main = OFFHAND.shield;
+    off = OFFHAND.shield;
+  }
+
+  // What the words SAY about each held thing, applied to what is held.
+  // "a big shield" is bigger; "a flaming sword" burns; "a tiny frozen dagger"
+  // is both. Modifiers only reach the thing they stand near.
+  const dress = (spec: WeaponSpec | undefined, triggers: RegExp): WeaponSpec | undefined => {
+    if (!spec) return spec;
+    const m = d.match(triggers);
+    if (!m || m.index === undefined) return spec;
+    // the 40 characters before the weapon word are its adjectives
+    const before = d.slice(Math.max(0, m.index - 40), m.index);
+    let scale = 1;
+    if (/\b(huge|massive|giant|colossal|enormous|great|big|tower|oversized)\b/.test(before)) scale = 1.4;
+    else if (/\b(small|tiny|little|short)\b/.test(before)) scale = 0.75;
+    const element =
+      /\b(flaming|burning|fiery|fire|blazing)\b/.test(before) ? '#ff8a3a'
+      : /\b(frost|frozen|icy|ice)\b/.test(before) ? '#bfe6ff'
+      : /\b(venom|poison(ous)?|toxic)\b/.test(before) ? '#9fe07a'
+      : /\b(lightning|storm|charged|crackling)\b/.test(before) ? '#f2f0b0'
+      : /\b(shadow|void|black-flame|cursed)\b/.test(before) ? '#8a6fb8'
+      : /\b(holy|blessed|radiant|golden)\b/.test(before) ? '#ffd88a'
+      : null;
+    if (scale === 1 && !element) return spec;
+    const parts = spec.parts.map(part => ({
+      a: [part.a[0] * scale, part.a[1] * scale, part.a[2] * scale] as [number, number, number],
+      b: [part.b[0] * scale, part.b[1] * scale, part.b[2] * scale] as [number, number, number],
+      r: part.r * scale,
+      color: element ? blendHex(part.color, element, 0.55) : part.color,
+    }));
+    if (element) {
+      // the element rides the far end as a soft glow
+      const tip = parts.reduce((m2, q) => Math.max(m2, q.b[0], q.a[0]), 0);
+      parts.push({
+        a: [tip * 0.55, 0, 0], b: [tip * 0.95, 0, 0],
+        r: Math.min(0.11, 0.05 * scale + 0.03), color: element,
+      });
+    }
+    return { name: spec.name, parts };
+  };
+
+  const WEAPON_WORD = /sword|blade|axe|hammer|maul|mace|club|dagger|kni[fv]e|spear|pike|lance|javelin|trident|glaive|halberd|scythe|whip|flail|staff|stave|wand|orb|tome|bow|crossbow|cleaver|katana|scimitar|rapier|pick/;
+  main = dress(main, WEAPON_WORD);
+  off = dress(off, /shield|buckler|torch|lantern/) ?? (off ? dress(off, WEAPON_WORD) : off);
+
   return { main, off };
+}
+
+/** Mix two #rrggbb colours; t=1 is all the second. */
+function blendHex(a: string, b: string, t: number): string {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = (sh: number) => {
+    const va = (pa >> sh) & 255, vb = (pb >> sh) & 255;
+    return Math.round(va + (vb - va) * t);
+  };
+  return '#' + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0');
 }

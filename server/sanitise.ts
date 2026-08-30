@@ -61,10 +61,11 @@ export function sanitiseGenome(raw: unknown): Genome | null {
   if (g.weapon && typeof g.weapon === 'object') {
     const w: any = g.weapon;
     if (Array.isArray(w.parts)) {
-      w.parts = w.parts.slice(0, 8).map((q: any) => ({
-        a: [num(q?.a?.[0], -0.4, 1.2, 0), num(q?.a?.[1], -0.4, 0.4, 0), num(q?.a?.[2], -0.4, 0.4, 0)],
-        b: [num(q?.b?.[0], -0.4, 1.2, 0.4), num(q?.b?.[1], -0.4, 0.4, 0), num(q?.b?.[2], -0.4, 0.4, 0)],
-        r: num(q?.r, 0.01, 0.1, 0.03),
+      // roomy enough for a 1.4x 'huge' weapon; still nothing absurd
+      w.parts = w.parts.slice(0, 10).map((q: any) => ({
+        a: [num(q?.a?.[0], -0.6, 1.7, 0), num(q?.a?.[1], -0.6, 0.6, 0), num(q?.a?.[2], -0.6, 0.6, 0)],
+        b: [num(q?.b?.[0], -0.6, 1.7, 0.4), num(q?.b?.[1], -0.6, 0.6, 0), num(q?.b?.[2], -0.6, 0.6, 0)],
+        r: num(q?.r, 0.01, 0.15, 0.03),
         color: hex(q?.color, '#9aa1ab'),
       }));
       if (typeof w.name === 'string') w.name = w.name.slice(0, 24);

@@ -38,6 +38,9 @@ export interface RangedSpec {
   color: string;
   arcing: boolean; // lobbed, or flat and fast
   trail: number;   // how many ghosts it draws behind itself
+  boom?: number;   // metres: it EXPLODES where it lands, hurting all inside
+  sticks?: boolean;// it lands in the floor and its owner wants it back
+  spark?: boolean; // debris of a boom: pretty, brief, harmless
 }
 
 /**
@@ -169,10 +172,47 @@ export const STRIKE_BREATH: StrikeSpec = {
   ranged: { speed: 6.5, range: 5, size: 0.17, color: '#ff9a3d', arcing: false, trail: 9 },
 };
 
+/** The staff's answer: a slow lobbed ball of fire that goes off where it lands. */
+export const STRIKE_FIREBALL: StrikeSpec = {
+  ...STRIKE_CAST,
+  duration: 0.95, windup: 0.6,
+  ranged: { speed: 6.5, range: 8.5, size: 0.16, color: '#ff8a3a', arcing: true, trail: 8, boom: 1.4 },
+};
+
+/** The wand's answer: quick violet needles. */
+export const STRIKE_ARCANE: StrikeSpec = {
+  ...STRIKE_CAST,
+  duration: 0.55,
+  ranged: { speed: 13, range: 8, size: 0.07, color: '#c9a0ff', arcing: false, trail: 5 },
+};
+
+/** The orb's answer: a slow pale shard of frost. */
+export const STRIKE_FROST: StrikeSpec = {
+  ...STRIKE_CAST,
+  duration: 0.8,
+  ranged: { speed: 5.5, range: 9, size: 0.13, color: '#bfe6ff', arcing: false, trail: 6 },
+};
+
+/** The tome's answer: a line of light, gone before the eye settles. */
+export const STRIKE_ZAP: StrikeSpec = {
+  ...STRIKE_CAST,
+  duration: 0.85, windup: 0.66,
+  ranged: { speed: 26, range: 10, size: 0.05, color: '#f2f0b0', arcing: false, trail: 14 },
+};
+
+/** Thrown, not loosed: the spear leaves the hand and stays where it lands.
+ *  The thrower fights bare until it walks back and pulls it out of the floor. */
+export const STRIKE_THROW: StrikeSpec = {
+  ...STRIKE_SHOOT,
+  duration: 0.8, windup: 0.55,
+  ranged: { speed: 12, range: 8, size: 0.08, color: '#c9b795', arcing: true, trail: 4, sticks: true },
+};
+
 export const STRIKE_STYLES: Record<string, StrikeSpec> = {
   swipe: STRIKE_SWIPE, slam: STRIKE_SLAM, thrust: STRIKE_THRUST,
   bite: STRIKE_BITE, lash: STRIKE_LASH, cast: STRIKE_CAST, shoot: STRIKE_SHOOT,
-  breath: STRIKE_BREATH,
+  breath: STRIKE_BREATH, fireball: STRIKE_FIREBALL, arcane: STRIKE_ARCANE,
+  frost: STRIKE_FROST, zap: STRIKE_ZAP, throw: STRIKE_THROW,
 };
 
 // kept for older callers
@@ -198,8 +238,19 @@ export function styleFor(
   if (!hasArms) {
     return { light: STRIKE_BITE, heavy: hasTail ? STRIKE_LASH : STRIKE_BITE };
   }
-  if (/bow|crossbow|sling/.test(w)) return { light: STRIKE_SHOOT, heavy: STRIKE_SHOOT };
-  if (/staff|stave|wand|rod|orb|tome/.test(w)) return { light: STRIKE_CAST, heavy: STRIKE_CAST };
+  // every ranged school has its own projectile now — the pit had exactly one
+  // arrow and one blue bolt, fired by everything from wizards to slingers
+  if (/javelin|throwing spear|throwing axe|throwing knife/.test(w)) {
+    return { light: STRIKE_THROW, heavy: STRIKE_THROW };
+  }
+  if (/crossbow|arbalest/.test(w)) {
+    return { light: { ...STRIKE_SHOOT, ranged: { ...STRIKE_SHOOT.ranged!, speed: 19, range: 11, color: '#d8cfc0' } }, heavy: STRIKE_SHOOT };
+  }
+  if (/bow|sling/.test(w)) return { light: STRIKE_SHOOT, heavy: STRIKE_SHOOT };
+  if (/staff|stave/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_FIREBALL };
+  if (/\bwand\b|rod\b|sceptre|scepter/.test(w)) return { light: STRIKE_ARCANE, heavy: STRIKE_ARCANE };
+  if (/\borb\b/.test(w)) return { light: STRIKE_FROST, heavy: STRIKE_FROST };
+  if (/\btome\b|grimoire|spellbook/.test(w)) return { light: STRIKE_ZAP, heavy: STRIKE_ZAP };
   if (/spear|pike|lance|trident|rapier|halberd/.test(w)) return { light: STRIKE_THRUST, heavy: STRIKE_SLAM };
   if (/whip|scourge/.test(w)) return { light: STRIKE_SWIPE, heavy: STRIKE_LASH };
   if (/hammer|maul|mace|flail|axe|club|cudgel/.test(w)) return { light: STRIKE_SWIPE, heavy: STRIKE_SLAM };

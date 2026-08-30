@@ -202,6 +202,7 @@ export class LiveVoid {
       // deeds cross the wire so a veteran reads as one on every screen
       if (typeof row.k === 'number') a.deeds.kills = row.k;
       a.state = row.st;
+      a.thrownRelic = row.tw ? 1 : null;
       a.deadT = row.d;
       a.recalled = row.rc === 1;
       a.by = row.by;

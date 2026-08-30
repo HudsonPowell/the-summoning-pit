@@ -213,6 +213,7 @@ function snapshot() {
       by: a.by,
       k: a.deeds.kills,
       sp: a.deeds.spoils.length,
+      ...(a.thrownRelic != null ? { tw: 1 } : {}),
     })),
     shots: sim.shots.map(s => ({
       x: r2(s.x), z: r2(s.z), y: r2(s.y),

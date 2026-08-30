@@ -754,7 +754,8 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     // feet and simply goes.
     a.deadT >= 0 ? (a.recalled ? 0 : Math.min(1, a.deadT / 0.5)) : a.rest * 0.72,
     {
-      weapon: a.ch.weapon,
+      // a thrown spear is in the FLOOR, not the hand — the relic renders it
+      weapon: a.thrownRelic != null ? undefined : a.ch.weapon,
       offhand: a.ch.offhand,
       // the crown belongs to the title, not to the creature
       gear: a.id === lordId ? [...(a.ch.gear ?? []), crownFor(t - a.deeds.born)] : a.ch.gear,
