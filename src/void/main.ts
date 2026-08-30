@@ -103,6 +103,11 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
  * exactly the report. The cap keeps total pixels constant whatever the shape.
  */
 const MAX_BUFFER_PX = 1120 * 760;
+// The CPU fallback renders every pixel by hand: at the full buffer a portrait
+// phone tops out around 40fps. Devices without WebGPU get a smaller buffer
+// and their 60 back — the soft-field look hides the resolution far better
+// than it hides a stutter.
+const MAX_BUFFER_CPU_PX = 500_000;
 function fitCanvas() {
   const stage = document.getElementById('stage')!;
   const w = Math.max(240, Math.round(stage.clientWidth));
@@ -110,7 +115,8 @@ function fitCanvas() {
   canvas.width = w;
   canvas.height = h;
   const aspect = h / w;
-  const res = Math.min(look.res, Math.floor(Math.sqrt(MAX_BUFFER_PX / aspect)));
+  const cap = view.mode === 'cpu' ? MAX_BUFFER_CPU_PX : MAX_BUFFER_PX;
+  const res = Math.min(look.res, Math.floor(Math.sqrt(cap / aspect)));
   view.setSize(res, Math.max(80, Math.round(res * aspect)));
 }
 const view = new PixelView(canvas, look.res, Math.round(look.res * 0.625));
@@ -1278,6 +1284,12 @@ async function boot() {
     muteFrame = (muteFrame + 1) & 1;
     if (muteFrame === 0) muteIcon?.draw(muted, sim.t);
 
+    // the renderer decides cpu/gpu asynchronously after boot; when the mode
+    // settles differently than the buffer was sized for, size it again
+    if ((fitCanvas as any).mode !== view.mode) {
+      (fitCanvas as any).mode = view.mode;
+      fitCanvas();
+    }
     findLord(sim);
     summonUI(sim, live);
     const caps: Capsule[] = [];
