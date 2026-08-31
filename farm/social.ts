@@ -23,13 +23,13 @@ import { weaponsFromWords } from '../src/smith';
 import { gearFromWords } from '../src/gear';
 import { rotY, v3 } from '../src/vec';
 
-const OUT = 'farm/out/social';
-const FPS = 30;
+export const OUT = 'farm/out/social';
+export const FPS = 30;
 
 export interface Size { w: number; h: number; tag: string }
-const STORY: Size = { w: 1080, h: 1920, tag: 'story' };      // 9:16
-const POST: Size = { w: 1080, h: 1350, tag: 'post' };        // 4:5
-const SQUARE: Size = { w: 1080, h: 1080, tag: 'square' };    // 1:1
+export const STORY: Size = { w: 1080, h: 1920, tag: 'story' };      // 9:16
+export const POST: Size = { w: 1080, h: 1350, tag: 'post' };        // 4:5
+export const SQUARE: Size = { w: 1080, h: 1080, tag: 'square' };    // 1:1
 
 /**
  * The soft field, in METRES.
@@ -45,7 +45,7 @@ const SQUARE: Size = { w: 1080, h: 1080, tag: 'square' };    // 1:1
 const BLEND_M = 0.030;
 
 /** The look Jody settled on, exactly as the pit renders it. */
-function pitCam(over: Partial<Camera> = {}): Camera {
+export function pitCam(over: Partial<Camera> = {}): Camera {
   const ppm = over.ppm ?? 200;
   return {
     yaw: 0.6, pitch: 0.34, cy: 0.9, cx: 0, cz: 0,
@@ -68,7 +68,7 @@ function pitCam(over: Partial<Camera> = {}): Camera {
  * moves by 255 is empty air, and the in-between is a soft edge. Exact, and it
  * does not care how the background is drawn.
  */
-function renderRGBA(r: PixelRenderer, w: number, h: number, caps: Capsule[], cam: Camera): Uint8ClampedArray {
+export function renderRGBA(r: PixelRenderer, w: number, h: number, caps: Capsule[], cam: Camera): Uint8ClampedArray {
   const onBlack = new Uint8ClampedArray(w * h * 4);
   const onWhite = new Uint8ClampedArray(w * h * 4);
   r.render(onBlack, caps, { ...cam, floor: false, voidColor: [0, 0, 0] }, 0);
@@ -89,7 +89,7 @@ function renderRGBA(r: PixelRenderer, w: number, h: number, caps: Capsule[], cam
 }
 
 /** Composite straight-alpha pixels over a background painter. */
-function over(rgba: Uint8ClampedArray, w: number, h: number,
+export function over(rgba: Uint8ClampedArray, w: number, h: number,
               bg: (x: number, y: number) => [number, number, number]): Uint8ClampedArray {
   const out = new Uint8ClampedArray(w * h * 4);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -103,14 +103,14 @@ function over(rgba: Uint8ClampedArray, w: number, h: number,
   return out;
 }
 
-function writePNG(path: string, w: number, h: number, rgba: Uint8ClampedArray): void {
+export function writePNG(path: string, w: number, h: number, rgba: Uint8ClampedArray): void {
   const png = new PNG({ width: w, height: h });
   png.data.set(rgba);
   writeFileSync(path, PNG.sync.write(png));
 }
 
 /** Frames on disk become a file people can actually post. */
-function encode(dir: string, out: string, kind: 'mp4' | 'alpha-mov' | 'webm' | 'gif'): void {
+export function encode(dir: string, out: string, kind: 'mp4' | 'alpha-mov' | 'webm' | 'gif'): void {
   const inp = ['-y', '-framerate', String(FPS), '-i', `${dir}/%04d.png`];
   const args: Record<string, string[]> = {
     'mp4': [...inp, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '17', '-movflags', '+faststart', out],
@@ -122,17 +122,17 @@ function encode(dir: string, out: string, kind: 'mp4' | 'alpha-mov' | 'webm' | '
   console.log(`  ${out}`);
 }
 
-const frameDir = (name: string) => {
+export const frameDir = (name: string) => {
   const d = `${OUT}/.frames-${name}`;
   rmSync(d, { recursive: true, force: true });
   mkdirSync(d, { recursive: true });
   return d;
 };
-const pad = (n: number) => String(n).padStart(4, '0');
+export const pad = (n: number) => String(n).padStart(4, '0');
 
 // --- the cast ---------------------------------------------------------------
 
-function roster(): Character[] {
+export function roster(): Character[] {
   const out: Character[] = [];
   const seen = new Set<string>();
   for (const dir of ['characters', 'genomes']) {
@@ -190,7 +190,7 @@ const LOADOUTS: [string, string][] = [
   ['shortbow',    'a goblin raider with a shortbow'],
 ];
 
-function armouryCast(): Character[] {
+export function armouryCast(): Character[] {
   const bodies = roster();
   const out: Character[] = [];
   LOADOUTS.forEach(([tag, desc], i) => {
@@ -233,7 +233,7 @@ function idleCast(): Character[] {
  * other clipped. The horizontal measure is a radius about the origin, so it
  * holds however far the camera swings round.
  */
-function fitCam(caps: Capsule[], w: number, h: number, fill: number, over: Partial<Camera> = {},
+export function fitCam(caps: Capsule[], w: number, h: number, fill: number, over: Partial<Camera> = {},
                 bodyOnly = false): Camera {
   let reach = 0.2, minY = Infinity, maxY = -Infinity;
   for (const c of caps) {
@@ -254,7 +254,7 @@ function fitCam(caps: Capsule[], w: number, h: number, fill: number, over: Parti
 }
 
 /** An agent, posed in the world, exactly as the pit poses it. */
-function agentCaps(ag: Agent): Capsule[] {
+export function agentCaps(ag: Agent): Capsule[] {
   let intent: Intent | undefined;
   if (ag.strikeT >= 0) {
     const spec = strikeSpecOf(ag);
@@ -477,7 +477,7 @@ const LOOPS = Number(process.env.LOOPS ?? 18);
  * reason the performance can be this busy and still close perfectly. Nothing
  * here is random: randomness cannot loop.
  */
-function livingIdle(t: number, secs: number) {
+export function livingIdle(t: number, secs: number) {
   const TAU = Math.PI * 2;
   const f = (cycles: number, phase = 0) => Math.sin(TAU * (cycles / secs) * t + phase);
   return {
@@ -609,9 +609,13 @@ function cinematic(sizes: Size[] = [STORY]): void {
 // --- run --------------------------------------------------------------------
 
 const what = process.argv[2] ?? 'all';
+// only run when this file IS the command; otherwise it is a toolbox
+const invoked = process.argv[1]?.replace(/\\/g, '/').endsWith('farm/social.ts');
+if (invoked) {
 mkdirSync(OUT, { recursive: true });
 if (what === 'title' || what === 'all') title(STORY);
 if (what === 'arena' || what === 'all') arena(Number(process.argv[3] ?? 15));
 if (what === 'idles' || what === 'grid' || what === 'all') idles(POST);
 if (what === 'cine' || what === 'all') cinematic([STORY]);
 console.log(`\neverything in ${OUT}/`);
+}
