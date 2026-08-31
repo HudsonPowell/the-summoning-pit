@@ -38,10 +38,11 @@ const STATE_FILE = process.env.PIT_STATE ?? 'pit-state.json';
 /** Can this pit hatch for people who have no model of their own? */
 const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
 /**
- * The pit has taste: hosted summons hatch TWO candidates in parallel and the
- * judge keeps the one that reads as a creature (anatomy always; CLIP when
- * seated). Same latency, double the pennies, no more abstract messes walking
- * in when a coherent sibling was available. PIT_TASTE=0 turns it off.
+ * The pit has taste: hosted summons hatch TWO candidates and the judge keeps
+ * the one that reads as a creature — a hosted eye when it answers in time,
+ * the deterministic anatomy check behind it when it does not. No more
+ * abstract messes walking in when a coherent sibling was available.
+ * PIT_TASTE=0 turns it off.
  */
 const TASTE = process.env.PIT_TASTE !== '0';
 
@@ -130,6 +131,35 @@ function loadRoster(): Character[] {
 const roster = loadRoster();
 
 let wssRef: WebSocketServer | null = null;
+
+/**
+ * How many PEOPLE are here — not how many sockets are open.
+ *
+ * The count was `clients.size`, which is a count of connections, and a
+ * connection is not a person. Your own second tab was company. A phone
+ * reconnecting was company for as long as the dead socket lingered. Every
+ * diagnostic probe was company. The pit told a lone visitor that someone else
+ * was watching, which is the one thing a presence count must never do: it is
+ * there to say the room is shared, and a number that inflates makes that a
+ * lie the visitor cannot check.
+ *
+ * Identities are already known — every socket presents a key — so watchers
+ * are counted by distinct owner. Two tabs are one person, a reconnect is one
+ * person, and the one moment a socket is counted on its own is the instant
+ * between opening and saying who it is.
+ */
+function watching(): number {
+  if (!wssRef) return 0;
+  const who = new Set<string>();
+  let unnamed = 0;
+  for (const c of wssRef.clients) {
+    if (c.readyState !== WebSocket.OPEN) continue;
+    const key = (c as any).__key as string | undefined;
+    if (key) who.add(ownerOf(key));
+    else unnamed++;
+  }
+  return who.size + unnamed;
+}
 
 /**
  * Characters are addressed by index and cached by clients. The cast GROWS now
@@ -279,7 +309,7 @@ function snapshot() {
   return {
     t: 'snap',
     time: r2(sim.t),
-    w: wssRef ? wssRef.clients.size : 0,
+    w: watching(),
     agents: sim.agents.map(a => ({
       i: a.id,
       c: castId(a.ch),
@@ -344,7 +374,7 @@ const http = createServer((req, res) => {
     res.end(JSON.stringify({
       ok: true,
       agents: sim.agents.filter(a => a.deadT < 0).length,
-      watchers: wss.clients.size,
+      watchers: watching(),
       openFor: Math.round((Date.now() - wallBase) / 1000),
       oldest: Math.round(Math.max(0, ...sim.agents.filter(a => a.deadT < 0).map(a => sim.t - a.deeds.born))),
       model: HATCH_API_KEY ? 'hosted' : warm.ready ? 'ready' : warm.error ? `error: ${warm.error}` : warm.progress || 'starting',
@@ -362,7 +392,7 @@ const http = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
       openForDays: Math.round((Date.now() - wallBase) / 8640000) / 10,
-      watching: wss.clients.size,
+      watching: watching(),
       standing: sim.agents.filter(a => a.deadT < 0).length,
       lord: lord ? { name: lord.ch.name, kills: lord.deeds.kills, ageMin: Math.round((sim.t - lord.deeds.born) / 60) } : null,
       totals: { loads: ledger.loads, summons: ledger.summons, summoners: ledger.owners.size, kills: ledger.kills },
