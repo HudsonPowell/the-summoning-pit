@@ -16,8 +16,11 @@ import { PixelRenderer, Camera } from '../src/render';
 import { createVoid, stepVoid, spawnChar, strikeSpecOf, VoidSim, Agent } from '../src/void/sim';
 import { makeCharacter, migrateCharacter, Character } from '../src/character';
 import { migrateGenome, heightOf, Genome } from '../src/genome';
+import * as EXEMPLARS from '../src/genome';
 import { solvePose, slashWeight, Capsule, Intent } from '../src/pose';
 import { WireTitle } from '../src/void/wiretitle';
+import { weaponsFromWords } from '../src/smith';
+import { gearFromWords } from '../src/gear';
 import { rotY, v3 } from '../src/vec';
 
 const OUT = 'farm/out/social';
@@ -152,18 +155,98 @@ function roster(): Character[] {
 }
 
 /**
+ * The widest cast the repo can offer: the pit's saved creatures first, then
+ * the hand-built exemplars, which carry the shapes the saved ones do not —
+ * serpent, spider, hydra, hippo. Four variants of one biped make a poor set
+ * of eighteen portraits.
+ */
+/**
+ * The armoury, worn by somebody.
+ *
+ * The saved creatures carry whatever they happened to be summoned with, which
+ * is a poor advertisement for a game whose weapons are designed per creature.
+ * These are built: a loadout in words, put through the same smith and the same
+ * gear tables the pit uses, on a body chosen to suit it. Nothing here is
+ * special-cased for the camera — it is the armoury, worn.
+ */
+const LOADOUTS: [string, string][] = [
+  ['knight',      'a knight in heavy plate with a greatsword and a kite shield'],
+  ['ranger',      'a hooded ranger with a tall longbow and a quiver'],
+  ['wizard',      'a robed wizard with a gnarled staff'],
+  ['crossbowman', 'a bolt-shooter with a heavy crossbow and a helm'],
+  ['spearman',    'a scaled spearman with a long spear and a buckler'],
+  ['axeman',      'a horned barbarian with a great axe'],
+  ['maul',        'an armoured brute with a war maul and heavy plate'],
+  ['flail',       'a chained warden with a flail and a shield'],
+  ['whip',        'a lean duellist with a whip and a torch'],
+  ['rapier',      'a masked fencer with a rapier and a cloak'],
+  ['scythe',      'a hooded reaper with a long scythe'],
+  ['trident',     'a deep-sea warrior with a trident'],
+  ['daggers',     'a masked cutter with twin daggers'],
+  ['orb',         'a shrouded seer with a floating orb and a cloak'],
+  ['tome',        'a scholar with a heavy grimoire'],
+  ['katana',      'a wandering swordsman with a katana'],
+  ['cleaver',     'a butcher with a huge cleaver and a lantern'],
+  ['shortbow',    'a goblin raider with a shortbow'],
+];
+
+function armouryCast(): Character[] {
+  const bodies = roster();
+  const out: Character[] = [];
+  LOADOUTS.forEach(([tag, desc], i) => {
+    const base = bodies[(i * 5 + 3) % Math.max(1, bodies.length)];
+    const g: Genome = migrateGenome(JSON.parse(JSON.stringify(base.genome)));
+    const arms = weaponsFromWords(desc);
+    g.weapon = arms.main as any;
+    g.offhand = arms.off as any;
+    g.gear = gearFromWords(desc) as any;
+    const ch = makeCharacter(g, 'beast');
+    ch.name = tag;
+    out.push(ch);
+  });
+  return out;
+}
+
+function idleCast(): Character[] {
+  const out = roster();
+  const seen = new Set(out.map(c => c.name.toLowerCase()));
+  const names = ['hound', 'troll', 'ogre', 'hippo', 'serpent', 'raptor', 'spider',
+    'hydra', 'imp', 'walkingShrine', 'drifter', 'lasher'] as const;
+  for (const n of names) {
+    const mk = (EXEMPLARS as any)[n];
+    if (typeof mk !== 'function') continue;
+    const g = migrateGenome(JSON.parse(JSON.stringify(mk())));
+    g.name = g.name || n;
+    const ch = makeCharacter(g, 'beast');
+    ch.name = n;
+    if (seen.has(ch.name.toLowerCase())) continue;
+    seen.add(ch.name.toLowerCase());
+    out.push(ch);
+  }
+  return out;
+}
+
+/**
  * Frame a creature by what it ACTUALLY occupies, not by its nominal height.
  * A lasher is mostly horizontal and a shrine is mostly vertical; sizing both
  * off a single number leaves one lost in the middle of the frame and the
  * other clipped. The horizontal measure is a radius about the origin, so it
  * holds however far the camera swings round.
  */
-function fitCam(caps: Capsule[], w: number, h: number, fill: number, over: Partial<Camera> = {}): Camera {
+function fitCam(caps: Capsule[], w: number, h: number, fill: number, over: Partial<Camera> = {},
+                bodyOnly = false): Camera {
   let reach = 0.2, minY = Infinity, maxY = -Infinity;
-  for (const c of caps) for (const p of [c.a, c.b] as any[]) {
-    reach = Math.max(reach, Math.hypot(p.x, p.z) + c.r);
-    minY = Math.min(minY, p.y - c.r);
-    maxY = Math.max(maxY, p.y + c.r);
+  for (const c of caps) {
+    // A pike held out at arm's length is three times the width of the creature
+    // carrying it, and fitting to that shrinks the creature to nothing while
+    // the frame fills with stick. Portraits fit the BODY and let the weapon
+    // run past the edge, which is how a portrait has always worked.
+    if (bodyOnly && (c.part === 'weapon' || c.part === 'blade')) continue;
+    for (const p of [c.a, c.b] as any[]) {
+      reach = Math.max(reach, Math.hypot(p.x, p.z) + c.r);
+      minY = Math.min(minY, p.y - c.r);
+      maxY = Math.max(maxY, p.y + c.r);
+    }
   }
   const tall = Math.max(0.4, maxY - minY), wide = Math.max(0.4, reach * 2);
   const ppm = Math.min((h * fill) / tall, (w * fill) / wide);
@@ -333,7 +416,7 @@ function arena(seconds = 15, sizes: Size[] = [STORY, SQUARE]): void {
 function idles(size: Size = POST, count = 8): void {
   mkdirSync(OUT, { recursive: true });
   const { w, h } = size;
-  const cast = roster().slice(0, count);
+  const cast = armouryCast().slice(0, count);
   const r = new PixelRenderer(w, h);
   const sheetCols = 4, cell = 420;
   const rSheet = new PixelRenderer(cell, cell);
@@ -346,13 +429,13 @@ function idles(size: Size = POST, count = 8): void {
     const still = solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, 1.4, undefined, 0,
       { weapon: ch.weapon, offhand: ch.offhand, gear: ch.gear as any });
     // portrait framing: the creature stands in the lower third, air above
-    const cam = fitCam(still, w, h, 0.62, { yaw: 0.6 });
+    const cam = fitCam(still, w, h, 0.66, { yaw: 0.6 });
     const rgba = renderRGBA(r, w, h, still, cam);
     const name = ch.name.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
     writePNG(`${OUT}/idle-${name}-${size.tag}.png`, w, h, over(rgba, w, h, () => [0, 0, 0]));
     writePNG(`${OUT}/idle-${name}-alpha.png`, w, h, rgba);
     // and into the contact sheet
-    const cellCam = fitCam(still, cell, cell, 0.78, { yaw: 0.6 });
+    const cellCam = fitCam(still, cell, cell, 0.76, { yaw: 0.6 });
     const cbuf = new Uint8ClampedArray(cell * cell * 4);
     rSheet.render(cbuf, still, cellCam, 0);
     const ox = (i % sheetCols) * cell, oy = Math.floor(i / sheetCols) * cell;
@@ -365,7 +448,7 @@ function idles(size: Size = POST, count = 8): void {
   writeFileSync(`${OUT}/bestiary-grid.png`, PNG.sync.write(sheet));
   console.log(`  ${OUT}/bestiary-grid.png`);
 
-  for (const ch2 of cast.slice(0, LOOPS)) idleLoop(ch2, size);
+  for (const ch2 of armouryCast().slice(0, LOOPS)) idleLoop(ch2, size);
 }
 
 /**
@@ -381,7 +464,34 @@ function idles(size: Size = POST, count = 8): void {
  * So the loop is twenty seconds, the camera turns exactly once in that time,
  * and the last frame is the first frame. Verified by comparing them.
  */
-const LOOPS = 3;
+const LOOPS = Number(process.env.LOOPS ?? 18);
+
+/**
+ * A creature standing still is not a creature doing nothing. The pit's own
+ * idle is three faint sines and reads, on a turntable, as a statue on a
+ * plinth — so this drives the parts that make a body look inhabited: the head
+ * looking about, weight moving from one leg to the other, the torso turning a
+ * little after the head, and a deeper breath than the game bothers with.
+ *
+ * Every frequency is a whole number of cycles per loop, which is the only
+ * reason the performance can be this busy and still close perfectly. Nothing
+ * here is random: randomness cannot loop.
+ */
+function livingIdle(t: number, secs: number) {
+  const TAU = Math.PI * 2;
+  const f = (cycles: number, phase = 0) => Math.sin(TAU * (cycles / secs) * t + phase);
+  return {
+    // the head leads: a slow sweep with a smaller second thought inside it
+    lookYaw: 0.62 * f(3) + 0.17 * f(7, 1.3),
+    lean: 0.30 * f(2, 0.6),          // weight rocking between the feet
+    twist: 0.26 * f(5),              // the torso following the head, late
+    bob: 0.018 * f(4, 2.1),          // settling
+    jiggle: 0.04 * f(6),             // mass carrying on
+    breatheAmp: 2.4,                 // a breath you can actually see
+    breatheRate: 0.35,               // 7 breaths per loop — already commensurate
+  };
+}
+
 function idleLoop(ch: Character, size: Size): void {
   const { w, h } = size;
   const g = ch.genome as Genome;
@@ -392,14 +502,16 @@ function idleLoop(ch: Character, size: Size): void {
   const SECS = 20;                        // where breath, sway and drift agree
   const LOOP = FPS * SECS;
   // black IS the background here, so one render does it — no alpha key needed
-  const base = solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, 0, undefined, 0,
-    { weapon: ch.weapon, offhand: ch.offhand, gear: ch.gear as any });
-  const fitted = fitCam(base, w, h, 0.60);        // one framing, held all the way round
+  const posed = (u: number) => solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, u * SECS, undefined, 0,
+    { weapon: ch.weapon, offhand: ch.offhand, gear: ch.gear as any, ...livingIdle(u * SECS, SECS) });
+  // frame off the widest the performance ever gets, so nothing swings out of
+  // shot halfway through — sampled, because the extremes are not at u=0
+  const probe: Capsule[] = [];
+  for (let i = 0; i < 24; i++) probe.push(...posed(i / 24));
+  const fitted = fitCam(probe, w, h, 0.68);   // one framing, weapon and all, held all the way round
   const frame = (u: number): Uint8ClampedArray => {
-    const caps = solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, u * SECS, undefined, 0,
-      { weapon: ch.weapon, offhand: ch.offhand, gear: ch.gear as any });
     const buf = new Uint8ClampedArray(w * h * 4);
-    r.render(buf, caps, { ...fitted, yaw: 0.6 + u * Math.PI * 2, voidColor: [0, 0, 0] }, 0);
+    r.render(buf, posed(u), { ...fitted, yaw: 0.6 + u * Math.PI * 2, voidColor: [0, 0, 0] }, 0);
     return buf;
   };
   let firstPx: Uint8ClampedArray | null = null;
