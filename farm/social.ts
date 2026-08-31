@@ -23,7 +23,9 @@ import { weaponsFromWords } from '../src/smith';
 import { gearFromWords } from '../src/gear';
 import { rotY, v3 } from '../src/vec';
 
+export const OUT_ = 0;
 export const OUT = 'farm/out/social';
+for (const d of ['01-title','02-arena','03-cinematic','04-characters/loops','04-characters/stills','04-characters/transparent','05-reveal','06-diagrams','07-missing','_working']) mkdirSync(`farm/out/social/${d}`, { recursive: true });
 export const FPS = 30;
 
 export interface Size { w: number; h: number; tag: string }
@@ -314,16 +316,16 @@ function title(size: Size = STORY): void {
     n++;
   }
   console.log(`title: ${n} frames at ${w}x${h}`);
-  encode(dirs.black, `${OUT}/title-black-${size.tag}.mp4`, 'mp4');
-  encode(dirs.gradient, `${OUT}/title-gradient-${size.tag}.mp4`, 'mp4');
-  encode(dirs.alpha, `${OUT}/title-transparent-${size.tag}.mov`, 'alpha-mov');
-  encode(dirs.alpha, `${OUT}/title-transparent-${size.tag}.webm`, 'webm');
+  encode(dirs.black, `${OUT}/01-title/title-black-${size.tag}.mp4`, 'mp4');
+  encode(dirs.gradient, `${OUT}/01-title/title-gradient-${size.tag}.mp4`, 'mp4');
+  encode(dirs.alpha, `${OUT}/01-title/title-transparent-${size.tag}.mov`, 'alpha-mov');
+  encode(dirs.alpha, `${OUT}/01-title/title-transparent-${size.tag}.webm`, 'webm');
   // one still of each, for a post that does not move
-  writePNG(`${OUT}/title-still-transparent.png`, w, h,
+  writePNG(`${OUT}/01-title/title-still-transparent.png`, w, h,
     (() => { const t2 = new WireTitle('the summoning pit', frameW);
       let c: Capsule[] = []; for (let i = 0; i < FPS * 4; i++) c = t2.caps(dt, 0.6);
       return renderRGBA(r, w, h, c, pitCam({ ppm, yaw: 0.6, cy: 1.5, floor: false })); })());
-  console.log(`  ${OUT}/title-still-transparent.png`);
+  console.log(`  ${OUT}/01-title/title-still-transparent.png`);
 }
 
 // --- 2. the arena -----------------------------------------------------------
@@ -401,12 +403,12 @@ function arena(seconds = 15, sizes: Size[] = [STORY, SQUARE]): void {
       for (const a of sim.agents) caps.push(...agentCaps(a));
       const buf = new Uint8ClampedArray(w * h * 4);
       // sit the action on the frame's middle third, so a caption can live above
-      r.render(buf, caps, pitCam({ ppm: camPpm, yaw, cx: camX, cz: camZ, cy: tight ? 1.5 : 1.0 }), sim.t);
+      r.render(buf, caps, pitCam({ ppm: camPpm, yaw, cx: camX, cz: camZ, cy: tight ? 1.5 : 1.0 }), 0);
       writePNG(`${dir}/${pad(f)}.png`, w, h, buf);
       if (f % 60 === 0) process.stdout.write(`  arena ${size.tag} ${f}/${total}\r`);
     }
     console.log(`\narena ${size.tag}: ${total} frames at ${w}x${h}`);
-    encode(dir, `${OUT}/arena-${size.tag}.mp4`, 'mp4');
+    encode(dir, `${OUT}/02-arena/arena-${size.tag}.mp4`, 'mp4');
   }
 }
 
@@ -432,8 +434,8 @@ function idles(size: Size = POST, count = 8): void {
     const cam = fitCam(still, w, h, 0.66, { yaw: 0.6 });
     const rgba = renderRGBA(r, w, h, still, cam);
     const name = ch.name.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-    writePNG(`${OUT}/idle-${name}-${size.tag}.png`, w, h, over(rgba, w, h, () => [0, 0, 0]));
-    writePNG(`${OUT}/idle-${name}-alpha.png`, w, h, rgba);
+    writePNG(`${OUT}/04-characters/stills/idle-${name}-${size.tag}.png`, w, h, over(rgba, w, h, () => [0, 0, 0]));
+    writePNG(`${OUT}/04-characters/transparent/idle-${name}-alpha.png`, w, h, rgba);
     // and into the contact sheet
     const cellCam = fitCam(still, cell, cell, 0.76, { yaw: 0.6 });
     const cbuf = new Uint8ClampedArray(cell * cell * 4);
@@ -445,8 +447,8 @@ function idles(size: Size = POST, count = 8): void {
     }
     console.log(`  idle: ${ch.name}`);
   });
-  writeFileSync(`${OUT}/bestiary-grid.png`, PNG.sync.write(sheet));
-  console.log(`  ${OUT}/bestiary-grid.png`);
+  writeFileSync(`${OUT}/04-characters/bestiary-grid.png`, PNG.sync.write(sheet));
+  console.log(`  ${OUT}/04-characters/bestiary-grid.png`);
 
   for (const ch2 of armouryCast().slice(0, LOOPS)) idleLoop(ch2, size);
 }
@@ -527,7 +529,7 @@ function idleLoop(ch: Character, size: Size): void {
     worst = Math.max(worst, Math.abs(firstPx[i] - lastPx[i]));
   }
   console.log(`  idle loop ${ch.name}: wrap error ${worst}/255 ${worst <= 1 ? '(seamless)' : '(VISIBLE JUMP)'}`);
-  encode(dir, `${OUT}/idle-loop-${name}-${size.tag}.mp4`, 'mp4');
+  encode(dir, `${OUT}/04-characters/loops/idle-loop-${name}-${size.tag}.mp4`, 'mp4');
 }
 
 // --- 4. cinematic ------------------------------------------------------------
@@ -597,11 +599,11 @@ function cinematic(sizes: Size[] = [STORY]): void {
         for (const a of sim.agents) caps.push(...agentCaps(a));
         const buf = new Uint8ClampedArray(w * h * 4);
         r.render(buf, caps, pitCam({ ppm: camPpm, yaw: want.yaw, cx: camX, cz: camZ,
-          cy: want.cy, pitch: shot.pitch }), sim.t);
+          cy: want.cy, pitch: shot.pitch }), 0);
         writePNG(`${dir}/${pad(f)}.png`, w, h, buf);
       }
       console.log(`cinematic ${shot.tag} ${size.tag}: ${total} frames`);
-      encode(dir, `${OUT}/cine-${shot.tag}-${size.tag}.mp4`, 'mp4');
+      encode(dir, `${OUT}/03-cinematic/cine-${shot.tag}-${size.tag}.mp4`, 'mp4');
     }
   }
 }

@@ -109,7 +109,7 @@ function kill(size = STORY): void {
     }
     if (killAt < 0) continue;
 
-    const { sim } = build(attempt);
+    const { sim, a: fighterA, b: fighterB } = build(attempt);
     const { w, h } = size;
     const r = new PixelRenderer(w, h);
     const dir = frameDir('kill');
@@ -122,14 +122,16 @@ function kill(size = STORY): void {
       for (let s = 0; s < sub; s++) {
         stepVoid(sim, dt / sub);
         if (f < from) break;
-        const live = sim.agents;
-        const mx = (live[0].x + live[1].x) / 2, mz = (live[0].z + live[1].z) / 2;
-        const sep = Math.hypot(live[0].x - live[1].x, live[0].z - live[1].z);
+        // Hold the two by REFERENCE. The pit culls a corpse a few seconds
+        // after it falls, so reading sim.agents[1] mid-shot eventually reads
+        // past the end — the agent object outlives its place in the array.
+        const mx = (fighterA.x + fighterB.x) / 2, mz = (fighterA.z + fighterB.z) / 2;
+        const sep = Math.hypot(fighterA.x - fighterB.x, fighterA.z - fighterB.z);
         const buf = new Uint8ClampedArray(w * h * 4);
         r.render(buf, scene(sim), pitCam({
           ppm: Math.max(150, Math.min(430, w / Math.max(2.1, sep + 1.8))),
           yaw: 0.45 + out * 0.0016, cx: mx, cz: mz, cy: 1.05, pitch: 0.22,
-        }), sim.t);
+        }), 0);
         writePNG(`${dir}/${pad(out++)}.png`, w, h, buf);
       }
     }
@@ -278,7 +280,7 @@ function two(seconds = 12): void {
       r.render(buf, scene(sim), pitCam({
         ppm: idx === 0 ? pA : pB, yaw: idx === 0 ? 0.35 : 3.6,
         cx: idx === 0 ? xA : xB, cz: idx === 0 ? zA : zB, cy: 1.2,
-      }), sim.t);
+      }), 0);
       for (let y = 0; y < H; y++) for (let x = 0; x < HALF; x++) {
         const s = (y * HALF + x) * 4, d = (y * frame.width + ox + x) * 4;
         frame.data[d] = buf[s]; frame.data[d+1] = buf[s+1]; frame.data[d+2] = buf[s+2]; frame.data[d+3] = 255;
@@ -322,7 +324,7 @@ function day(hours = 6, size = SQUARE): void {
     if (since < every) continue;
     since = 0;
     const buf = new Uint8ClampedArray(w * h * 4);
-    r.render(buf, scene(sim), pitCam({ ppm: (h * 0.46) / 6.2, yaw: 0.3 + t * 0.00002, cy: 1.0 }), sim.t);
+    r.render(buf, scene(sim), pitCam({ ppm: (h * 0.46) / 6.2, yaw: 0.3 + t * 0.00002, cy: 1.0 }), 0);
     writePNG(`${dir}/${pad(shot++)}.png`, w, h, buf);
     if (shot % 120 === 0) process.stdout.write(`  day ${(t / 3600).toFixed(1)}h / ${hours}h\r`);
   }

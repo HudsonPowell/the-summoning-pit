@@ -76,6 +76,6 @@ for (let i = 0; i < FPS * 7; i++) {
 }
 execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-framerate', String(FPS),
   '-i', `${dir}/%04d.png`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '17',
-  '-movflags', '+faststart', `${OUT}/${TAG}-story.mp4`]);
+  '-movflags', '+faststart', `${OUT}/05-reveal/${TAG}-story.mp4`]);
 rmSync(dir, { recursive: true, force: true });
 console.log(`${OUT}/${TAG}-story.mp4  (${f} frames)`);
