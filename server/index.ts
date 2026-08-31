@@ -24,7 +24,15 @@ import { warm, warmModel } from './warm';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_HZ = 30;
-const SNAP_HZ = 12;
+/**
+ * Snapshots are counted in TICKS, not hertz. As a rate it was 12Hz, but a
+ * snapshot can only leave on a tick boundary, so `sinceSnap >= 1/12` waited
+ * three ticks and shipped 10Hz — the pit advertised a rate it never once
+ * achieved, and the number was wrong in every calculation that trusted it.
+ * Two ticks is exactly 15Hz: honest, evenly spaced, and half the gap the
+ * client has to bridge, for about 19 KB/s to a watching phone.
+ */
+const SNAP_EVERY = 2;
 const POPULATION = Number(process.env.PIT_POPULATION ?? 0);
 const STATE_FILE = process.env.PIT_STATE ?? 'pit-state.json';
 /** Can this pit hatch for people who have no model of their own? */
@@ -627,8 +635,9 @@ setInterval(() => {
     }
   }
 
-  sinceSnap += dt;
-  if (sinceSnap >= 1 / SNAP_HZ) {
+  // counted in ticks, so the spacing is exact and the client's clock can
+  // trust it as the even grid it interpolates along
+  if (++sinceSnap >= SNAP_EVERY) {
     sinceSnap = 0;
     broadcast(snapshot());
   }

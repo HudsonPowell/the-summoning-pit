@@ -13,7 +13,22 @@ import { Character, migrateCharacter } from '../character';
 import { effectiveGait } from '../genome';
 import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
 
-const DELAY = 0.15; // render this far in the past, so there is always a pair
+/**
+ * How far behind the newest snapshot to play, as a FRACTION of the gap
+ * between snapshots — never as a count of seconds.
+ *
+ * It was 0.15s, and the pit streams a snapshot every 0.10s. So the playback
+ * clock aimed at a moment BEFORE the previous snapshot, u clamped to 0, and
+ * 99.9% of frames drew the older snapshot's positions verbatim: a phone
+ * rendering sixty frames a second of a world that moved ten times a second.
+ * Every report of "glitchy, low fps" motion was this, and no amount of
+ * rendering work could have touched it.
+ *
+ * Expressed as a fraction it cannot come apart again: whatever the rate, the
+ * clock sits partway between the last two snapshots and always has a pair to
+ * interpolate, with a little under half a gap of slack for a late packet.
+ */
+const LAG = 0.45;
 
 interface Snap {
   at: number;
@@ -45,6 +60,8 @@ export class LiveVoid {
       or after a silent reconnect the server thinks the owner left. */
   onOpen?: () => void;
   watchers = 0;
+  /** Where playback sits between the last two snapshots. 0 or 1 means broken. */
+  uNow = 0;
   private prev?: Snap;
   private next?: Snap;
   private clock = 0;
@@ -128,7 +145,7 @@ export class LiveVoid {
     this.next = { at: performance.now() / 1000, time: m.time, agents: m.agents, shots: m.shots, relics: m.relics, flora: m.flora };
     if (!this.prev) {
       this.prev = this.next;
-      this.clock = this.next.at - DELAY;
+      this.clock = this.next.time - 0.06;
     }
     // NO hard resync here: snapping the clock to every arrival replayed the
     // network's jitter as visible stutter. update() eases toward the target.
@@ -181,16 +198,22 @@ export class LiveVoid {
     // events arrive between frames, so they are drained by the caller AFTER
     // it has read them — clearing here would destroy them unread
     if (!this.next || !this.prev) return;
-    // the clock ADVANCES with the frame and EASES toward where the buffer
-    // says it should be — jitter is absorbed instead of replayed
+    // The clock runs in SERVER time, which is spaced exactly and evenly by a
+    // machine doing nothing else. Arrival times were the old basis, and they
+    // carry the network's jitter straight into how fast the world appears to
+    // move; the server's own clock carries none of it.
+    const span = Math.max(1e-3, this.next.time - this.prev.time);
     this.clock += dt;
-    const target = this.next.at - DELAY;
-    this.clock += (target - this.clock) * Math.min(1, dt * 4);
+    const target = this.next.time - span * LAG;
+    // a tab that was asleep, or a pit that restarted, is caught up at once
+    // rather than crawled toward over a minute
+    if (Math.abs(target - this.clock) > span * 8) this.clock = target;
+    else this.clock += (target - this.clock) * Math.min(1, dt * 3);
 
-    const span = Math.max(1e-3, this.next.at - this.prev.at);
     // a late packet no longer freezes the world at u=1: motion carries on a
     // short way along its last known line, then holds
-    const u = Math.max(0, Math.min(1.3, (this.clock - this.prev.at) / span));
+    const u = Math.max(0, Math.min(1.25, (this.clock - this.prev.time) / span));
+    this.uNow = u;
     this.sim.t = this.prev.time + (this.next.time - this.prev.time) * u;
 
     const prevById = new Map<number, any>(this.prev.agents.map((r: any) => [r.i, r]));
