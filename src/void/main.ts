@@ -120,6 +120,20 @@ const MAX_BUFFER_CPU_PX = 500_000;
  */
 const PERF_FLOOR = 0.3;              // never below a third of the cap
 let perfScale = 1;
+/**
+ * The camera's ppm is PIXELS per metre — buffer pixels. So resizing the
+ * buffer without touching ppm changes how many metres are on screen: the
+ * governor's first step down cut the view instantly tighter, and the damping
+ * then crawled it back out over two seconds. That is the little zoom-in cut,
+ * once as the title died (its physics spike the frame time) and again at
+ * every governor window after.
+ *
+ * A resize must therefore carry the camera with it. Scale ppm by exactly the
+ * factor the buffer changed by and the framing is invariant — the picture
+ * gets softer or sharper, and does not move at all.
+ */
+let sizeBasis = 0;
+let camRef: Camera | null = null;
 function fitCanvas() {
   const stage = document.getElementById('stage')!;
   const w = Math.max(240, Math.round(stage.clientWidth));
@@ -130,6 +144,13 @@ function fitCanvas() {
   const cap = (view.mode === 'cpu' ? MAX_BUFFER_CPU_PX : MAX_BUFFER_PX) * perfScale;
   const res = Math.min(look.res, Math.floor(Math.sqrt(cap / aspect)));
   view.setSize(res, Math.max(80, Math.round(res * aspect)));
+  const basis = view.size.H;
+  if (sizeBasis && basis !== sizeBasis && camRef) {
+    const k = basis / sizeBasis;
+    camRef.ppm *= k;
+    rig.vppm.v *= k;      // the damper's velocity is in the same units
+  }
+  sizeBasis = basis;
 }
 
 // the last second and a half of real frame times, and the last time we moved
@@ -140,6 +161,7 @@ let medianMs = 0;
  * Judge on the MEDIAN, not the mean: a single 300ms hitch from a hatch or a
  * garbage collection would otherwise drag the buffer down and keep it there.
  */
+let badWindows = 0;
 function govern(ms: number): void {
   if (ms > 0 && ms < 400) frameMs.push(ms);
   if (frameMs.length > 90) frameMs.shift();
@@ -149,11 +171,19 @@ function govern(ms: number): void {
   const sorted = frameMs.slice().sort((a, b) => a - b);
   medianMs = sorted[sorted.length >> 1];
   const was = perfScale;
-  // 20ms is 50fps: below that the eye reads stutter, so give up pixels fast
-  if (medianMs > 20) perfScale = Math.max(PERF_FLOOR, perfScale * 0.8);
-  // and take them back slowly, so a lull does not start an oscillation
-  else if (medianMs < 11 && perfScale < 1) perfScale = Math.min(1, perfScale * 1.1);
+  // 20ms is 50fps: below that the eye reads stutter. But one bad window is
+  // usually a passing cost — a title dying, a creature hatching — and acting
+  // on it changes the picture's sharpness for a stumble that is already over.
+  // Two in a row is a device that genuinely cannot keep up.
+  if (medianMs > 20) {
+    if (++badWindows >= 2) perfScale = Math.max(PERF_FLOOR, perfScale * 0.8);
+  } else {
+    badWindows = 0;
+    // and take them back slowly, so a lull does not start an oscillation
+    if (medianMs < 11 && perfScale < 1) perfScale = Math.min(1, perfScale * 1.1);
+  }
   if (perfScale !== was) {
+    badWindows = 0;
     frameMs.length = 0;          // the old times describe the old buffer
     fitCanvas();
   }
@@ -169,6 +199,8 @@ new ResizeObserver(fitCanvas).observe(document.getElementById('stage')!);
 const cam: Camera = {
   yaw: 0.6, pitch: look.pitch, ppm: look.zoom, cy: 0.95, cx: 0, cz: 0, tile: look.tile,
 };
+// from here on, a buffer resize carries the framing with it
+camRef = cam;
 
 function hexRgb(h: string): [number, number, number] {
   const n = parseInt(h.slice(1), 16);
