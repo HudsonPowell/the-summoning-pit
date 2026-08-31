@@ -1,0 +1,629 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anatomy of the Pit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    /* Paper — the pit's own print treatment: earth inks on a dry ground */
+    --ground: #eeebe4;
+    --plate:  #e5e1d8;
+    --sunk:   #dcd7cc;
+    --rule:   #cbc5b7;
+    --ink:    #24211c;
+    --dim:    #6f6a60;
+    --faint:  #8d8779;
+    --lord:   #7d5f21;
+    --fire:   #a2521a;
+    --arcane: #6a4f96;
+    --frost:  #3f6f8a;
+    --moss:   #3f6b4c;
+    --rust:   #8a4a2a;
+    --shadow: rgba(36,33,28,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      /* The pit: near-black ground, weathered bone, old iron */
+      --ground: #06060a;
+      --plate:  #0f1015;
+      --sunk:   #0a0b0f;
+      --rule:   #23262e;
+      --ink:    #d2ccbf;
+      --dim:    #8b867c;
+      --faint:  #63605a;
+      --lord:   #b8975a;
+      --fire:   #ff8a3a;
+      --arcane: #c9a0ff;
+      --frost:  #bfe6ff;
+      --moss:   #6fae7f;
+      --rust:   #c07a4e;
+      --shadow: rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #06060a;
+    --plate:  #0f1015;
+    --sunk:   #0a0b0f;
+    --rule:   #23262e;
+    --ink:    #d2ccbf;
+    --dim:    #8b867c;
+    --faint:  #63605a;
+    --lord:   #b8975a;
+    --fire:   #ff8a3a;
+    --arcane: #c9a0ff;
+    --frost:  #bfe6ff;
+    --moss:   #6fae7f;
+    --rust:   #c07a4e;
+    --shadow: rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.62;
+    margin: 0;
+    padding: 0 20px 120px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .col { max-width: 68ch; }
+
+  h1, h2, h3, .lab, .eyebrow, th {
+    font-family: Michroma, "IBM Plex Sans", Helvetica, sans-serif;
+    font-weight: 400;
+    text-transform: uppercase;
+  }
+  h1 {
+    font-size: clamp(22px, 3.4vw, 38px);
+    letter-spacing: .04em;
+    line-height: 1.24;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: clamp(14px, 1.5vw, 17px);
+    letter-spacing: .12em;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  h3 {
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    color: var(--lord);
+    margin: 28px 0 10px;
+  }
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: .28em;
+    color: var(--faint);
+    margin: 0 0 14px;
+  }
+  p { margin: 0 0 14px; }
+  a { color: var(--lord); }
+  code, .mono, td.n, .field {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  code {
+    font-size: .86em;
+    background: var(--sunk);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: .5px 5px;
+    color: var(--ink);
+  }
+
+  /* --- masthead ------------------------------------------------------- */
+  header { padding: 74px 0 42px; border-bottom: 1px solid var(--rule); }
+  .thesis { font-size: clamp(16px, 1.9vw, 19px); color: var(--dim); max-width: 62ch; }
+  .thesis strong { color: var(--ink); font-weight: 500; }
+
+  .now {
+    display: flex; flex-wrap: wrap; gap: 30px 46px;
+    margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--rule);
+  }
+  .now div { display: flex; flex-direction: column; gap: 3px; }
+  .now .v {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 21px; color: var(--lord); letter-spacing: -.01em;
+  }
+  .now .k {
+    font-family: Michroma, sans-serif; text-transform: uppercase;
+    font-size: 8.5px; letter-spacing: .2em; color: var(--faint);
+  }
+
+  /* --- plates --------------------------------------------------------- */
+  section { padding: 54px 0; border-bottom: 1px solid var(--rule); }
+  .plate {
+    background: var(--plate);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 22px 24px;
+    margin: 18px 0 0;
+  }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 16px; margin-top: 18px; }
+
+  /* --- the schematic -------------------------------------------------- */
+  .scroller { overflow-x: auto; margin: 26px 0 0; padding-bottom: 8px; }
+  svg.schema { display: block; min-width: 940px; width: 100%; height: auto; }
+  svg.schema .box { fill: var(--plate); stroke: var(--rule); stroke-width: 1; }
+  svg.schema .hot { stroke: var(--lord); }
+  svg.schema .t  { font-family: "IBM Plex Sans", sans-serif; font-size: 11.5px; fill: var(--ink); }
+  svg.schema .td { font-family: "IBM Plex Mono", monospace; font-size: 10px; fill: var(--dim); }
+  svg.schema .tl { font-family: Michroma, sans-serif; font-size: 8.5px; letter-spacing: .18em; fill: var(--faint); text-transform: uppercase; }
+  svg.schema .wire { stroke: var(--faint); stroke-width: 1; fill: none; }
+  svg.schema .wire.auth { stroke: var(--lord); stroke-width: 1.6; }
+  svg.schema .cap { fill: var(--faint); }
+  svg.schema .cap.auth { fill: var(--lord); }
+
+  /* --- tables --------------------------------------------------------- */
+  .tw { overflow-x: auto; margin-top: 16px; }
+  table { border-collapse: collapse; width: 100%; min-width: 540px; font-size: 13.5px; }
+  th {
+    text-align: left; font-size: 8.5px; letter-spacing: .2em; color: var(--faint);
+    border-bottom: 1px solid var(--rule); padding: 0 14px 8px 0; white-space: nowrap;
+  }
+  td { padding: 8px 14px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--dim); }
+  td:first-child { color: var(--ink); }
+  td.n { color: var(--lord); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  /* --- sequence (a real sequence: a summon, in order) ------------------ */
+  ol.seq { list-style: none; counter-reset: s; padding: 0; margin: 18px 0 0; }
+  ol.seq > li {
+    counter-increment: s; position: relative;
+    padding: 0 0 22px 52px; border-left: 1px solid var(--rule); margin-left: 13px;
+  }
+  ol.seq > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  ol.seq > li::before {
+    content: counter(s, decimal-leading-zero);
+    position: absolute; left: -13px; top: 0;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--ground); border: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", monospace; font-size: 10px;
+    color: var(--lord); display: grid; place-items: center;
+  }
+  ol.seq h4 {
+    font-family: "IBM Plex Sans", sans-serif; font-weight: 600;
+    font-size: 14.5px; margin: 2px 0 5px; color: var(--ink);
+  }
+  ol.seq p { margin: 0 0 6px; color: var(--dim); font-size: 14px; max-width: 66ch; }
+  .tag {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 10.5px;
+    color: var(--faint); border: 1px solid var(--rule); border-radius: 3px;
+    padding: 1px 6px; margin: 2px 5px 0 0;
+  }
+
+  .note { color: var(--dim); font-size: 13.5px; max-width: 66ch; }
+  .law {
+    border-left: 2px solid var(--lord); padding: 2px 0 2px 16px;
+    margin: 16px 0; color: var(--ink); max-width: 64ch;
+  }
+  .law em { color: var(--dim); font-style: normal; display: block; font-size: 13.5px; margin-top: 3px; }
+  footer { padding: 42px 0 0; color: var(--faint); font-size: 12px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .now .v { transition: color .2s; }
+  }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">The Summoning Pit · system reference · 31 August 2026</p>
+  <h1>Anatomy of the Pit</h1>
+  <p class="thesis">
+    One room, one simulation, many watchers. A player types a sentence; a language model
+    <strong>composes a body</strong> from it; the engine <strong>prices that body</strong> so it cannot be
+    unfair; and the creature walks into a persistent world that every other player is watching at the
+    same moment. Nothing is drawn by hand and nothing is picked from a list.
+  </p>
+
+  <div class="now">
+    <div><span class="v">30&nbsp;Hz</span><span class="k">sim tick</span></div>
+    <div><span class="v">15&nbsp;Hz</span><span class="k">snapshots</span></div>
+    <div><span class="v">19.4&nbsp;KB/s</span><span class="k">wire cost</span></div>
+    <div><span class="v">98.4%</span><span class="k">frames interpolating</span></div>
+    <div><span class="v">7–19&nbsp;s</span><span class="k">summon, end to end</span></div>
+    <div><span class="v">~0.5p</span><span class="k">cost per creature</span></div>
+  </div>
+</header>
+
+<!-- ================= THE LOOP ================= -->
+<section>
+  <p class="eyebrow">01 — the whole loop</p>
+  <h2>Four domains, one authority</h2>
+  <p class="col note">
+    The server owns the world outright. No client predicts, nothing rolls back, and nobody drives a
+    character — creatures decide for themselves — so the hard parts of netcode do not apply here. Only
+    two things cross the wire: <strong>positions at a fixed rate</strong>, and <strong>events the instant
+    they happen</strong>. Genomes travel once, by index, because the expensive data is the only part
+    that never changes.
+  </p>
+
+  <div class="scroller">
+    <svg class="schema" viewBox="0 0 1160 478" role="img" aria-label="System schematic: summoner, composer, pit server and every screen.">
+      <defs>
+        <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- lane labels -->
+      <text class="tl" x="0" y="14">Summoner · browser</text>
+      <text class="tl" x="318" y="14">Composer · hosted models</text>
+      <text class="tl" x="672" y="14">The pit · authoritative</text>
+      <text class="tl" x="980" y="14">Every screen</text>
+
+      <!-- lane separators -->
+      <line x1="300" y1="26" x2="300" y2="452" stroke="var(--rule)"/>
+      <line x1="655" y1="26" x2="655" y2="452" stroke="var(--rule)"/>
+      <line x1="962" y1="26" x2="962" y2="452" stroke="var(--rule)"/>
+
+      <!-- SUMMONER -->
+      <rect class="box" x="0" y="40" width="272" height="62" rx="4"/>
+      <text class="t" x="14" y="64">Summon box</text>
+      <text class="td" x="14" y="82">a sentence, ≤200 chars</text>
+      <text class="td" x="14" y="95">never stored · never logged</text>
+
+      <rect class="box" x="0" y="286" width="272" height="76" rx="4"/>
+      <text class="t" x="14" y="310">Renderer · PixelView</text>
+      <text class="td" x="14" y="328">WebGPU, else CPU raymarch</text>
+      <text class="td" x="14" y="341">capsule field, soft-min blend</text>
+      <text class="td" x="14" y="354">resolution governed by frame cost</text>
+
+      <rect class="box" x="0" y="376" width="272" height="62" rx="4"/>
+      <text class="t" x="14" y="400">Playback clock</text>
+      <text class="td" x="14" y="418">interpolates on the SERVER clock</text>
+      <text class="td" x="14" y="431">lag = 0.45 × snapshot gap</text>
+
+      <!-- COMPOSER -->
+      <rect class="box" x="318" y="40" width="308" height="86" rx="4"/>
+      <text class="t" x="332" y="64">Llama-3.3-70B · two candidates</text>
+      <text class="td" x="332" y="82">JSON schema: skeleton, chains, gait,</text>
+      <text class="td" x="332" y="95">palette, held, offhand, worn, attack</text>
+      <text class="td" x="332" y="112">max_tokens 3400 · temp 0.75–1.05</text>
+
+      <rect class="box hot" x="318" y="150" width="308" height="72" rx="4"/>
+      <text class="t" x="332" y="174">The judge · Qwen3.8-Flash</text>
+      <text class="td" x="332" y="192">both candidates rendered to 224px</text>
+      <text class="td" x="332" y="205">picks the coherent one · 9 s ceiling</text>
+
+      <rect class="box" x="318" y="246" width="308" height="72" rx="4"/>
+      <text class="t" x="332" y="270">Anatomy · deterministic</text>
+      <text class="td" x="332" y="288">union-find connectivity, grounding,</text>
+      <text class="td" x="332" y="301">stray-part penalty · &lt;5 ms, never stalls</text>
+
+      <rect class="box" x="318" y="342" width="308" height="96" rx="4"/>
+      <text class="t" x="332" y="366">Smith · engine, not model</text>
+      <text class="td" x="332" y="384">weapon volume ≤ 0.012 m³</text>
+      <text class="td" x="332" y="397">tempo × reach ≤ 3.2 · duration ≥ 0.22 s</text>
+      <text class="td" x="332" y="410">shot speed×size×blast ≤ 36</text>
+      <text class="td" x="332" y="423">mass banded 0.025 – 0.17</text>
+
+      <!-- SERVER -->
+      <rect class="box" x="672" y="40" width="272" height="72" rx="4"/>
+      <text class="t" x="686" y="64">Sanitiser</text>
+      <text class="td" x="686" y="82">clamps every field, whitelists every</text>
+      <text class="td" x="686" y="95">enum — the model is never trusted</text>
+
+      <rect class="box hot" x="672" y="136" width="272" height="104" rx="4"/>
+      <text class="t" x="686" y="160">Simulation · 30 Hz</text>
+      <text class="td" x="686" y="178">states: wander · think · rest · approach</text>
+      <text class="td" x="686" y="191">fight · flee · down</text>
+      <text class="td" x="686" y="208">combat triangle, spot-aimed IK strikes</text>
+      <text class="td" x="686" y="221">relics, flora, scars, deeds</text>
+
+      <rect class="box" x="672" y="264" width="272" height="76" rx="4"/>
+      <text class="t" x="686" y="288">Identity · keys</text>
+      <text class="td" x="686" y="306">key minted server-side, hashed to an</text>
+      <text class="td" x="686" y="319">owner id · newest socket holds it</text>
+      <text class="td" x="686" y="332">20 s heartbeat reaps the dead</text>
+
+      <rect class="box" x="672" y="364" width="272" height="74" rx="4"/>
+      <text class="t" x="686" y="388">Persistence · 5 s</text>
+      <text class="td" x="686" y="406">creatures, relics, flora, ledger</text>
+      <text class="td" x="686" y="419">volume-backed · survives deploys</text>
+
+      <!-- SCREENS -->
+      <rect class="box hot" x="980" y="136" width="176" height="104" rx="4"/>
+      <text class="t" x="994" y="160">Snapshots</text>
+      <text class="td" x="994" y="178">every 2nd tick</text>
+      <text class="td" x="994" y="191">positions, hp, state,</text>
+      <text class="td" x="994" y="204">shots, relics, flora</text>
+      <text class="td" x="994" y="221">≈19 KB/s per watcher</text>
+
+      <rect class="box" x="980" y="264" width="176" height="90" rx="4"/>
+      <text class="t" x="994" y="288">Events</text>
+      <text class="td" x="994" y="306">strike · loose · hit</text>
+      <text class="td" x="994" y="319">blocked · parried</text>
+      <text class="td" x="994" y="332">guard-broken · kill</text>
+      <text class="td" x="994" y="345">sent the moment they occur</text>
+
+      <!-- flows -->
+      <g color="var(--faint)">
+        <path class="wire" d="M272,71 L318,71" marker-end="url(#ar)"/>
+        <path class="wire" d="M472,126 L472,150" marker-end="url(#ar)"/>
+        <path class="wire" d="M472,222 L472,246" marker-end="url(#ar)"/>
+        <path class="wire" d="M472,318 L472,342" marker-end="url(#ar)"/>
+        <path class="wire" d="M626,390 C650,390 660,120 672,84" marker-end="url(#ar)"/>
+        <path class="wire" d="M808,112 L808,136" marker-end="url(#ar)"/>
+      </g>
+      <g color="var(--lord)">
+        <path class="wire auth" d="M944,180 L980,180" marker-end="url(#ar)"/>
+        <path class="wire auth" d="M944,200 C960,200 966,290 980,296" marker-end="url(#ar)"/>
+        <path class="wire auth" d="M1068,354 C1068,452 300,462 136,444" marker-end="url(#ar)"/>
+      </g>
+      <text class="td" x="196" y="464" fill="var(--lord)">one world, broadcast to every watcher</text>
+      <circle class="cap auth" cx="944" cy="180" r="2.5"/>
+      <circle class="cap" cx="272" cy="71" r="2.5"/>
+    </svg>
+  </div>
+</section>
+
+<!-- ================= A SUMMON ================= -->
+<section>
+  <p class="eyebrow">02 — a summoning, in order</p>
+  <h2>From sentence to standing creature</h2>
+  <p class="col note">
+    The only genuine sequence in the system. Everything else is a loop or a lattice; this runs once,
+    in this order, in 7 to 19 seconds.
+  </p>
+
+  <ol class="seq">
+    <li>
+      <h4>The words leave, and are never written down</h4>
+      <p>The client sends the sentence and its key over the socket. The prompt is held in memory
+      for the length of the request and released. It is never written to disk, never logged, and
+      never appears in a creature's name or on the wire.</p>
+      <span class="tag">t:'summon'</span><span class="tag">≤200 chars</span><span class="tag">2 s cooldown</span>
+    </li>
+    <li>
+      <h4>Two bodies are composed in parallel</h4>
+      <p>The same sentence goes twice to the 70B at different temperatures, against a JSON schema
+      describing a skeleton, its chains, gait, palette, what it holds, what it wears, and how it
+      attacks. Two samples, because one model call is a coin toss and the pit would rather choose.</p>
+      <span class="tag">Llama-3.3-70B</span><span class="tag">response_format: json</span><span class="tag">max_tokens 3400</span>
+    </li>
+    <li>
+      <h4>The first to arrive sets the pace</h4>
+      <p>Waiting for both meant the slowest sample decided the wait — 21 seconds against 7, measured.
+      The first body to land starts the clock; its sibling gets a 5-second grace to arrive and earn a
+      comparison. Whatever has not happened by then does not happen.</p>
+      <span class="tag">GRACE_MS 5000</span>
+    </li>
+    <li>
+      <h4>A judge looks at both and keeps one</h4>
+      <p>Both candidates are posed and rendered to 224px, and a vision model is asked which reads as a
+      single coherent creature rather than scattered shapes. It is a picker, not a gate: it ranks two
+      images and never rejects. If it does not answer within 9 seconds, a deterministic anatomy check —
+      connectivity, grounding, stray parts — decides instead, in under 5 ms.</p>
+      <span class="tag">Qwen3.8-Flash</span><span class="tag">thinking disabled</span><span class="tag">EYE_MS 9000</span>
+    </li>
+    <li>
+      <h4>The engine prices what the model imagined</h4>
+      <p>Fairness is never a whitelist. A weapon's volume is capped, tempo × reach is capped so a fast
+      far attack stretches its own duration back out, a projectile's speed × presence × blast is
+      capped, and total mass is squeezed into a band. Ambition costs character, not damage.</p>
+      <span class="tag">volume ≤ 0.012</span><span class="tag">tempo×reach ≤ 3.2</span><span class="tag">shot ≤ 36</span>
+    </li>
+    <li>
+      <h4>It is sanitised, named, and it walks in</h4>
+      <p>Every numeric field is clamped and every enum whitelisted on the server — the model's output
+      is treated as hostile input, because it is input. The creature is named from its own skeleton,
+      given a cast index, spawned, and appears in the next snapshot on every screen watching.</p>
+      <span class="tag">one hero per owner</span><span class="tag">next snapshot ≤ 67 ms</span>
+    </li>
+  </ol>
+</section>
+
+<!-- ================= THE BODY ================= -->
+<section>
+  <p class="eyebrow">03 — the body</p>
+  <h2>Genome, skeleton, capsule field</h2>
+
+  <div class="grid2">
+    <div class="plate">
+      <h3>Composition</h3>
+      <p class="note">A creature is a <strong>genome</strong>: a spine of nodes, a set of chains hung
+      off it by role (arm, leg, tail, wing, spike, tentacle), a gait, a palette, and its gear. Nothing
+      is a mesh. Every part is a <strong>capsule</strong> — two points and a radius — which is why a
+      body can be composed by a language model in a few hundred numbers and still pose, fight and
+      render.</p>
+    </div>
+    <div class="plate">
+      <h3>Pose</h3>
+      <p class="note">Limbs solve by two-bone IK against a target and a pole vector. Legs cycle on
+      <strong>distance travelled</strong>, not on a clock: one stride is one cycle whatever the speed,
+      so backing off runs the cycle in reverse and strafing still lifts the feet. A clock-driven cycle
+      is what makes a creature look like it is skating.</p>
+    </div>
+    <div class="plate">
+      <h3>Secondary motion</h3>
+      <p class="note">The parts that arrive <em>late</em> are springs, not animation: the bank that
+      overshoots a turn, the torso dragged round after the feet, weight landing, flesh still moving
+      after the frame stopped, and the head — which arrives last and overshoots when it does. This is
+      most of what separates "animated" from "alive".</p>
+    </div>
+    <div class="plate">
+      <h3>Idle</h3>
+      <p class="note">Standing still is three sines of idle time — breath at 0.35 Hz, a sway at 0.6, a
+      limb drift at 0.3. Their periods are 20⁄7, 5⁄3 and 10⁄3 seconds and first coincide at
+      <strong>exactly 20 seconds</strong>, which is the only duration at which an idle loop closes
+      without a visible jump.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= THE PICTURE ================= -->
+<section>
+  <p class="eyebrow">04 — the picture</p>
+  <h2>A field, marched per pixel</h2>
+  <p class="col note">
+    There is no polygon anywhere in the renderer. For every pixel it marches the capsule field and
+    resolves the nearest surface, then fuses neighbours with an exponential smooth-minimum so
+    silhouettes melt at the joints and each part's ink cross-fades into the next. Bodies read as one
+    mass rather than an assembly of sticks. Outlines are added afterwards: silhouette edges darkened,
+    and interior edges wherever a nearer limb sits in front of the one behind it.
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Control</th><th>Value</th><th>What it governs</th></tr></thead>
+      <tbody>
+        <tr><td>blend</td><td class="n">softness, in pixels</td><td>How far the field melts across. Being a <em>pixel</em> quantity it must scale with zoom, or the same number is a different look at a different resolution.</td></tr>
+        <tr><td>blendShape</td><td class="n">0.6</td><td>0 keeps a hard silhouette and blends only colour; 1 fully fuses the geometry.</td></tr>
+        <tr><td>blendDepth</td><td class="n">0.35 m</td><td>The furthest a part may bleed across depth, so a far limb cannot smear into a near one.</td></tr>
+        <tr><td>GPU buffer cap</td><td class="n">1120 × 760</td><td>Capped by <em>area</em>, not width — a portrait phone otherwise renders twice the rows.</td></tr>
+        <tr><td>CPU buffer cap</td><td class="n">500 000 px</td><td>The hand-rasterised fallback, where every pixel is paid for on the main thread.</td></tr>
+        <tr><td>governor</td><td class="n">&gt;20 ms → shrink</td><td>Median frame cost, two bad windows in a row before acting; recovers slowly toward the cap. Floor 0.3× — and a resize scales the camera with it, or the picture cuts.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= THE WIRE ================= -->
+<section>
+  <p class="eyebrow">05 — the wire</p>
+  <h2>Positions at a rate, events at once</h2>
+  <p class="col note">
+    Snapshots leave every second tick — counted in <em>ticks</em>, not hertz, because a snapshot can
+    only depart on a tick boundary and a rate that does not divide the tick grid is a rate the server
+    never achieves. Events do not wait for the next position packet: they carry the story, they are
+    sparse, and they go the instant they happen.
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Field</th><th>Carries</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="field">time</td><td>server clock</td><td class="n">the interpolation basis — exact and evenly spaced</td></tr>
+        <tr><td class="field">i · c</td><td>agent id · cast index</td><td class="n">genome sent once, referenced forever</td></tr>
+        <tr><td class="field">x · z · h</td><td>position, heading</td><td class="n">2 dp — the floor is flat</td></tr>
+        <tr><td class="field">mv · st · tr</td><td>move, state, turn rate</td><td class="n">drives gait and lean on the client</td></tr>
+        <tr><td class="field">hp · mx · sc</td><td>health, ceiling, scars</td><td class="n">maxHp grows with trophies; scars never heal</td></tr>
+        <tr><td class="field">tg · by · k · sp</td><td>target, owner, kills, spoils</td><td class="n">a veteran reads as one on every screen</td></tr>
+        <tr><td class="field">tw · gd · d · rc</td><td>thrown, guarding, dead, recalled</td><td class="n">flags, present only when true</td></tr>
+        <tr><td class="field">shots · relics · flora</td><td>the floor's memory</td><td class="n">ids so they interpolate instead of popping</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The playback clock</h3>
+  <p class="col note">
+    Clients render the world <strong>0.45 of a snapshot gap in the past</strong> — a fraction, never a
+    fixed number of seconds. A fixed delay larger than the gap aims the clock before the previous
+    snapshot, pins interpolation at zero, and the world moves at the snapshot rate while the phone
+    draws at 60: the exact signature of "low frame rate" that no amount of rendering work can fix.
+    Playback runs on the server's own clock rather than packet arrival times, so network jitter never
+    becomes a change in how fast the world appears to move.
+  </p>
+  <div class="now" style="margin-top:20px">
+    <div><span class="v">66 ms</span><span class="k">measured gap</span></div>
+    <div><span class="v">±2.6 ms</span><span class="k">arrival jitter</span></div>
+    <div><span class="v">0.54</span><span class="k">mean position between snapshots</span></div>
+    <div><span class="v">1.3%</span><span class="k">frames clamped</span></div>
+  </div>
+</section>
+
+<!-- ================= THE FIGHT ================= -->
+<section>
+  <p class="eyebrow">06 — the fight</p>
+  <h2>A triangle, and a cost for winning</h2>
+
+  <div class="grid2">
+    <div class="plate">
+      <h3>The triangle</h3>
+      <p class="note">Light beats guard-break. Guard beats light. Heavy and feint beat guard.
+      Interrupt beats a heavy still winding up. Every exchange resolves through this, not through
+      a damage roll: a clean block staggers the attacker and opens a riposte; a parry on a bare
+      weapon smashes it aside; a feint beats a guard six times in ten.</p>
+    </div>
+    <div class="plate">
+      <h3>Where the blow lands</h3>
+      <p class="note">A strike picks a <strong>spot</strong> — high, middle or low, left or right — and
+      the arm solves to it, so the animation and the hit are the same fact. A feint shows the opposite
+      line and swaps at the end of the wind-up. The choice comes from a seed both server and client
+      compute identically, so every screen sees the same swing.</p>
+    </div>
+    <div class="plate">
+      <h3>The crown gets heavy</h3>
+      <p class="note">A long reign used to compound: every kill grew the lord, every quiet minute
+      healed it to full. Now, after the first free hour and first free kill, every second trophy and
+      every hour held is a <strong>scar</strong> — one point of health no rest, and no blood-won surge,
+      ever restores. Capped at 45% of the bar: worn down, not hollowed out.</p>
+      <p class="note mono" style="font-size:12.5px;color:var(--lord)">scars = min(⌊0.45·maxHp⌋, ⌊kills/2 + (hours − 1)⌋)</p>
+    </div>
+    <div class="plate">
+      <h3>The floor remembers</h3>
+      <p class="note">Bones and dropped arms stay where they fell, get kicked around, and sink. A
+      thrown spear becomes a relic its owner will walk back to collect. Plants grow, get trampled,
+      and reseed. All of it is server-authoritative and persisted, so the pit you return to is the
+      pit you left.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BUDGETS ================= -->
+<section>
+  <p class="eyebrow">07 — budgets</p>
+  <h2>Every number that keeps it fair</h2>
+  <p class="col note">
+    The model is free to be strange. It is not free to be strong. Each of these is a price, applied
+    after composition, and none of them refuses a design — they only make it pay.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Budget</th><th>Limit</th><th>Effect when exceeded</th></tr></thead>
+      <tbody>
+        <tr><td>Weapon volume</td><td class="n">0.012 m³</td><td>The weapon is scaled down until it fits.</td></tr>
+        <tr><td>Tempo × reach</td><td class="n">3.2</td><td>Swing duration stretches back out until the product is fair.</td></tr>
+        <tr><td>Swing duration</td><td class="n">≥ 0.22 s</td><td>A hard floor; nothing swings faster than the eye can read.</td></tr>
+        <tr><td>Projectile</td><td class="n">speed × size × blast ≤ 36</td><td>Speed is reduced to bring the product back under.</td></tr>
+        <tr><td>Body mass</td><td class="n">0.025 – 0.17</td><td>The whole skeleton is rescaled into the band.</td></tr>
+        <tr><td>Heroes per owner</td><td class="n">1</td><td>While yours stands you are watching, not summoning.</td></tr>
+        <tr><td>Summon cooldown</td><td class="n">2 s</td><td>Swallows a double-press; not a paywall.</td></tr>
+        <tr><td>Short-life penalty</td><td class="n">6 s after a 10 s death</td><td>A bad summon cannot be re-rolled at a model call a time.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= INVARIANTS ================= -->
+<section style="border-bottom:0">
+  <p class="eyebrow">08 — invariants</p>
+  <h2>Rules the system will not break</h2>
+
+  <div class="law">Prompts are never stored, logged, or exposed.
+    <em>Held in memory for one request. A weapon's fallback name is drawn from a matched vocabulary
+    noun, never a slice of what someone typed, because a name travels the wire and sits in the save.</em></div>
+
+  <div class="law">The model composes; the engine budgets.
+    <em>Invention is unbounded and power is priced. No whitelist of allowed creatures has ever
+    existed, and adding one would end the game.</em></div>
+
+  <div class="law">The server is the only authority.
+    <em>Every model output is treated as hostile input and clamped on arrival. Clients render;
+    they never decide.</em></div>
+
+  <div class="law">Identity survives the network.
+    <em>A phone that locks, changes network or backgrounds drops its socket silently. The newest
+    socket holds the key, so a reconnect is the same person — never a stranger handed a new name.</em></div>
+
+  <div class="law">A judge ranks; it never rejects.
+    <em>Taste chooses between two candidates that both exist. There is always a creature to show,
+    and the summoner never waits on an opinion for longer than nine seconds.</em></div>
+
+  <footer>
+    Figures measured against production on 31 August 2026. Sim tick, snapshot rate, budgets and
+    clamps read from source; wire and latency figures from live measurement over the public socket.
+  </footer>
+</section>
+
+</div>
+</head></html>

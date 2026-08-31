@@ -1,0 +1,274 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pit Signal Path</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper:  #e7e2d6;   /* the plate stock */
+    --tint:   #cfd6d9;   /* flat box fill, the blue-grey of a printed schematic */
+    --tint2:  #d9d2c0;   /* second fill, for the engine's own boxes */
+    --line:   #17150f;   /* hairline */
+    --soft:   #6b665a;   /* secondary rule + annotation */
+    --gold:   #7a5a12;   /* the authoritative path */
+  }
+  :root[data-theme="dark"], :root:not([data-theme="light"]) {}
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0a0a0c; --tint: #1b2026; --tint2: #201d16;
+      --line: #cfc9ba; --soft: #7d7869; --gold: #b8975a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0a0a0c; --tint: #1b2026; --tint2: #201d16;
+    --line: #cfc9ba; --soft: #7d7869; --gold: #b8975a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); }
+  body { padding: 26px; }
+  .plate { width: 100%; max-width: 1700px; margin: 0 auto; }
+  svg { display: block; width: 100%; height: auto; }
+
+  /* every mark on the plate is a hairline; nothing is rounded, nothing glows */
+  .bx   { fill: var(--tint);  stroke: var(--line); stroke-width: 1; }
+  .bx2  { fill: var(--tint2); stroke: var(--line); stroke-width: 1; }
+  .open { fill: none;         stroke: var(--line); stroke-width: 1; }
+  .rule { stroke: var(--line); stroke-width: 1; fill: none; }
+  .thin { stroke: var(--soft); stroke-width: .7; fill: none; }
+  .dash { stroke: var(--soft); stroke-width: .7; fill: none; stroke-dasharray: 3 3; }
+  .auth { stroke: var(--gold); stroke-width: 1.4; fill: none; }
+  .frame{ fill: none; stroke: var(--line); stroke-width: 1.2; }
+
+  text { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; fill: var(--line); }
+  .cap  { font-size: 9px; letter-spacing: .14em; fill: var(--soft); }   /* label ABOVE a box */
+  .in   { font-size: 10.5px; }                                          /* contents of a box */
+  .sm   { font-size: 8.6px; fill: var(--soft); }                        /* annotation */
+  .num  { font-size: 10px; fill: var(--gold); font-weight: 500; }
+  .ttl  { font-size: 13px; letter-spacing: .3em; }
+  .plateno { font-size: 26px; font-weight: 600; letter-spacing: .04em; }
+  .reg  { font-size: 9px; letter-spacing: .22em; fill: var(--soft); }
+</style>
+
+<div class="plate">
+<svg viewBox="0 0 1700 1210" role="img"
+     aria-label="Technical plate: the signal path of The Summoning Pit, from a typed sentence to every watching screen.">
+
+  <!-- ============ plate furniture ============ -->
+  <rect class="frame" x="18" y="18" width="1664" height="1174"/>
+  <line class="rule" x1="18" y1="92" x2="1682" y2="92"/>
+  <text class="plateno" x="42" y="72">01</text>
+  <text class="ttl" x="108" y="70">THE SUMMONING PIT — SIGNAL PATH</text>
+  <text class="sm" x="1682" y="52" text-anchor="end">SHEET 1 OF 1 · 31.08.2026</text>
+  <text class="sm" x="1682" y="70" text-anchor="end">TICK 30 Hz · SNAPSHOT EVERY 2ND TICK · 19.4 KB/s PER WATCHER</text>
+
+  <text class="reg" x="42" y="126">A — COMPOSITION</text>
+  <line class="thin" x1="150" y1="122" x2="1682" y2="122"/>
+
+  <!-- ============ REGISTER A : the chain ============ -->
+
+  <!-- 1 words -->
+  <text class="cap" x="42" y="168">SUMMONER</text>
+  <rect class="bx" x="42" y="176" width="176" height="52"/>
+  <text class="in" x="52" y="198">SENTENCE</text>
+  <text class="sm" x="52" y="214">≤200 CHARS · NEVER STORED</text>
+
+  <!-- 2 two composers in parallel, stacked — one prompt, two samples -->
+  <text class="cap" x="286" y="168">COMPOSER ×2 · PARALLEL</text>
+  <rect class="bx" x="286" y="176" width="212" height="52"/>
+  <text class="in" x="296" y="198">LLAMA-3.3-70B</text>
+  <text class="sm" x="296" y="214">TEMP 0.75 · JSON SCHEMA</text>
+  <rect class="bx" x="286" y="242" width="212" height="52"/>
+  <text class="in" x="296" y="264">LLAMA-3.3-70B</text>
+  <text class="sm" x="296" y="280">TEMP 1.05 · MAX_TOKENS 3400</text>
+
+  <!-- 3 judge -->
+  <text class="cap" x="566" y="168">JUDGE</text>
+  <rect class="bx" x="566" y="176" width="188" height="52"/>
+  <text class="in" x="576" y="198">QWEN3.8-FLASH</text>
+  <text class="sm" x="576" y="214">2 × 224px · VERDICT A|B</text>
+  <rect class="open" x="566" y="242" width="188" height="52"/>
+  <text class="in" x="576" y="264">ANATOMY</text>
+  <text class="sm" x="576" y="280">FALLBACK · &lt;5 ms</text>
+  <text class="sm" x="566" y="310">CEILING 9 s — THEN ANATOMY RULES</text>
+
+  <!-- 4 smith -->
+  <text class="cap" x="822" y="168">SMITH · ENGINE</text>
+  <rect class="bx2" x="822" y="176" width="176" height="118"/>
+  <text class="in" x="832" y="198">PRICING</text>
+  <text class="sm" x="832" y="216">VOLUME</text>
+  <text class="sm" x="832" y="232">TEMPO × REACH</text>
+  <text class="sm" x="832" y="248">SHOT POWER</text>
+  <text class="sm" x="832" y="264">BODY MASS</text>
+  <text class="sm" x="832" y="284">SEE REGISTER B</text>
+
+  <!-- 5 sanitiser -->
+  <text class="cap" x="1066" y="168">SANITISER</text>
+  <rect class="bx2" x="1066" y="176" width="164" height="52"/>
+  <text class="in" x="1076" y="198">CLAMP · WHITELIST</text>
+  <text class="sm" x="1076" y="214">MODEL OUTPUT = INPUT</text>
+
+  <!-- 6 sim -->
+  <text class="cap" x="1298" y="168">THE PIT · AUTHORITATIVE</text>
+  <rect class="bx2" x="1298" y="176" width="180" height="118"/>
+  <text class="in" x="1308" y="198">SIMULATION</text>
+  <text class="sm" x="1308" y="216">30 Hz FIXED</text>
+  <text class="sm" x="1308" y="232">ONE WORLD</text>
+  <text class="sm" x="1308" y="248">PERSISTED / 5 s</text>
+  <text class="sm" x="1308" y="264">SEE REGISTER C</text>
+  <text class="sm" x="1308" y="284">SEE REGISTER D</text>
+
+  <!-- 7 screens, stacked like drivers off one divider -->
+  <text class="cap" x="1546" y="168">WATCHERS</text>
+  <rect class="bx" x="1546" y="176" width="112" height="30"/>
+  <text class="sm" x="1554" y="195">SCREEN</text>
+  <rect class="bx" x="1546" y="212" width="112" height="30"/>
+  <text class="sm" x="1554" y="231">SCREEN</text>
+  <rect class="bx" x="1546" y="248" width="112" height="30"/>
+  <text class="sm" x="1554" y="267">SCREEN</text>
+  <text class="sm" x="1546" y="296">n WATCHERS · SAME WORLD</text>
+
+  <!-- chain wiring -->
+  <g>
+    <path class="rule" d="M218,202 L262,202 L262,202 L286,202"/>
+    <path class="rule" d="M262,202 L262,268 L286,268"/>
+    <path class="rule" d="M498,202 L566,202"/>
+    <path class="rule" d="M498,268 L532,268 L532,268 L566,268"/>
+    <path class="rule" d="M754,202 L788,202 L788,235 L822,235"/>
+    <path class="rule" d="M754,268 L788,268 L788,235"/>
+    <path class="rule" d="M998,235 L1032,235 L1032,202 L1066,202"/>
+    <path class="rule" d="M1230,202 L1264,202 L1264,235 L1298,235"/>
+    <path class="auth" d="M1478,235 L1512,235 L1512,191 L1546,191"/>
+    <path class="auth" d="M1512,235 L1546,227"/>
+    <path class="auth" d="M1512,235 L1512,263 L1546,263"/>
+  </g>
+  <text class="sm" x="1490" y="330" text-anchor="end">SNAPSHOTS 15 Hz + EVENTS AT ONCE</text>
+
+  <!-- ============ REGISTER B : the budget axis ============ -->
+  <text class="reg" x="42" y="392">B — BUDGETS · APPLIED AFTER COMPOSITION, BEFORE THE PIT</text>
+  <line class="thin" x1="600" y1="388" x2="1682" y2="388"/>
+
+  <!-- crossover-style scale -->
+  <line class="rule" x1="60" y1="452" x2="820" y2="452"/>
+  <g>
+    <path class="rule" d="M170,438 L190,466 M190,438 L170,466"/>
+    <path class="rule" d="M360,438 L380,466 M380,438 L360,466"/>
+    <path class="rule" d="M550,438 L570,466 M570,438 L550,466"/>
+    <path class="rule" d="M720,438 L740,466 M740,438 L720,466"/>
+  </g>
+  <text class="sm" x="180" y="428" text-anchor="middle">WEAPON VOLUME</text>
+  <text class="sm" x="370" y="428" text-anchor="middle">TEMPO × REACH</text>
+  <text class="sm" x="560" y="428" text-anchor="middle">SHOT POWER</text>
+  <text class="sm" x="730" y="428" text-anchor="middle">BODY MASS</text>
+  <text class="num" x="180" y="486" text-anchor="middle">0.012 m³</text>
+  <text class="num" x="370" y="486" text-anchor="middle">3.2</text>
+  <text class="num" x="560" y="486" text-anchor="middle">36</text>
+  <text class="num" x="730" y="486" text-anchor="middle">0.025–0.17</text>
+  <text class="sm" x="180" y="504" text-anchor="middle">SCALED TO FIT</text>
+  <text class="sm" x="370" y="504" text-anchor="middle">DURATION STRETCHES</text>
+  <text class="sm" x="560" y="504" text-anchor="middle">SPEED REDUCED</text>
+  <text class="sm" x="730" y="504" text-anchor="middle">SKELETON RESCALED</text>
+  <text class="sm" x="60" y="530">SWING DURATION FLOOR 0.22 s · ONE HERO PER OWNER · SUMMON GAP 2 s · SHORT-LIFE PENALTY 6 s</text>
+  <text class="sm" x="60" y="548">NO BUDGET REFUSES A DESIGN. EACH ONE MAKES IT PAY.</text>
+
+  <!-- state cycle, drawn as the reference draws relations: circles and arrows -->
+  <rect class="open" x="900" y="404" width="782" height="176"/>
+  <text class="sm" x="912" y="422">AGENT STATE — EACH CREATURE DECIDES FOR ITSELF; NOBODY DRIVES ONE</text>
+  <g>
+    <circle class="open" cx="972"  cy="500" r="34"/><text class="sm" x="972"  y="503" text-anchor="middle">WANDER</text>
+    <circle class="open" cx="1090" cy="500" r="34"/><text class="sm" x="1090" y="503" text-anchor="middle">THINK</text>
+    <circle class="open" cx="1208" cy="500" r="34"/><text class="sm" x="1208" y="503" text-anchor="middle">APPROACH</text>
+    <circle class="open" cx="1326" cy="500" r="34"/><text class="sm" x="1326" y="503" text-anchor="middle">FIGHT</text>
+    <circle class="open" cx="1444" cy="500" r="34"/><text class="sm" x="1444" y="503" text-anchor="middle">FLEE</text>
+    <circle class="open" cx="1562" cy="500" r="34"/><text class="sm" x="1562" y="503" text-anchor="middle">REST</text>
+    <path class="thin" d="M1006,500 L1052,500 M1124,500 L1170,500 M1242,500 L1288,500 M1360,500 L1406,500 M1478,500 L1524,500"/>
+    <path class="dash" d="M1562,466 C1562,430 972,430 972,466"/>
+    <path class="dash" d="M1326,534 C1326,566 1090,566 1090,534"/>
+  </g>
+  <text class="sm" x="1268" y="424" text-anchor="middle">HP 0 → [DOWN] · THE FLOOR KEEPS THE BONES</text>
+
+  <!-- ============ REGISTER C : the pit, in plan ============ -->
+  <text class="reg" x="42" y="628">C — THE PIT IN PLAN</text>
+  <line class="thin" x1="230" y1="624" x2="820" y2="624"/>
+
+  <rect class="open" x="42" y="648" width="778" height="410"/>
+  <ellipse class="thin" cx="431" cy="852" rx="330" ry="150"/>
+  <ellipse class="dash" cx="431" cy="852" rx="222" ry="100"/>
+  <text class="sm" x="431" y="684" text-anchor="middle">[FLOOR] CHECKERED PLANE · LIT POOL r 12 m · FALLOFF 2.4</text>
+
+  <!-- creatures as small repeated glyphs, the way seats are drawn -->
+  <g>
+    <g transform="translate(300,806)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <g transform="translate(372,838)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <g transform="translate(466,824)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <g transform="translate(540,868)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <g transform="translate(262,880)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <g transform="translate(600,812)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <g transform="translate(350,912)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <g transform="translate(496,918)"><circle class="open" cx="0" cy="0" r="5"/><line class="rule" x1="0" y1="5" x2="0" y2="13"/></g>
+    <!-- the lord, filled -->
+    <g transform="translate(420,864)">
+      <circle cx="0" cy="0" r="6" fill="var(--gold)" stroke="var(--line)"/>
+      <line class="rule" x1="0" y1="6" x2="0" y2="15"/>
+      <text class="sm" x="12" y="4" fill="var(--gold)">[LORD] 8 KILLS · 8 h · SCARS 5</text>
+    </g>
+  </g>
+
+  <!-- duel sight-line, drawn like the stage sight-lines in the reference -->
+  <path class="dash" d="M420,864 L540,868"/>
+  <text class="sm" x="480" y="892" text-anchor="middle">[DUEL] ≤12 m</text>
+
+  <!-- camera cone -->
+  <path class="dash" d="M431,1030 L250,900 M431,1030 L612,900"/>
+  <text class="sm" x="431" y="1046" text-anchor="middle">[CAMERA] FRAMES THE FIGHT, NOT THE CENTROID</text>
+  <text class="sm" x="60" y="1000">[RELIC] BONES + DROPPED ARMS SINK, CAP 24</text>
+  <text class="sm" x="60" y="1016">[FLORA] GROWS · TRAMPLED · RESEEDS, CAP 12</text>
+
+  <!-- ============ REGISTER D : the wire, in time ============ -->
+  <text class="reg" x="900" y="628">D — THE WIRE IN TIME</text>
+  <line class="thin" x1="1076" y1="624" x2="1682" y2="624"/>
+  <rect class="open" x="900" y="648" width="782" height="410"/>
+
+  <!-- tick ruler -->
+  <text class="sm" x="916" y="682">SERVER TICK 30 Hz — 33.3 ms</text>
+  <line class="rule" x1="916" y1="716" x2="1666" y2="716"/>
+  <g class="rule">
+    <path d="M916,708 L916,724 M966,710 L966,722 M1016,708 L1016,724 M1066,710 L1066,722
+             M1116,708 L1116,724 M1166,710 L1166,722 M1216,708 L1216,724 M1266,710 L1266,722
+             M1316,708 L1316,724 M1366,710 L1366,722 M1416,708 L1416,724 M1466,710 L1466,722
+             M1516,708 L1516,724 M1566,710 L1566,722 M1616,708 L1616,724 M1666,710 L1666,722"/>
+  </g>
+  <text class="sm" x="916" y="744">EVERY 2ND TICK LEAVES AS A SNAPSHOT — 15 Hz, 66 ms</text>
+  <g class="auth">
+    <path d="M916,760 L916,786 M1016,760 L1016,786 M1116,760 L1116,786 M1216,760 L1216,786
+             M1316,760 L1316,786 M1416,760 L1416,786 M1516,760 L1516,786 M1616,760 L1616,786"/>
+  </g>
+
+  <!-- playback clock -->
+  <text class="sm" x="916" y="822">CLIENT PLAYS 0.45 OF A GAP IN THE PAST — A FRACTION, NEVER A FIXED DELAY</text>
+  <line class="rule" x1="916" y1="856" x2="1666" y2="856"/>
+  <g class="rule"><path d="M1216,846 L1216,866 M1316,846 L1316,866"/></g>
+  <path class="auth" d="M1261,846 L1261,866"/>
+  <text class="sm" x="1216" y="884" text-anchor="middle">PREV</text>
+  <text class="sm" x="1316" y="884" text-anchor="middle">NEXT</text>
+  <text class="num" x="1261" y="840" text-anchor="middle">u ≈ 0.55</text>
+  <text class="sm" x="916" y="908">INTERPOLATED ON THE SERVER'S OWN CLOCK — ARRIVAL JITTER NEVER BECOMES SPEED</text>
+
+  <!-- measured -->
+  <text class="sm" x="916" y="952">MEASURED, PRODUCTION, 31.08.2026</text>
+  <line class="thin" x1="916" y1="962" x2="1666" y2="962"/>
+  <text class="num" x="916" y="986">15.1 /s</text><text class="sm" x="1010" y="986">SNAPSHOTS RECEIVED</text>
+  <text class="num" x="916" y="1006">±2.6 ms</text><text class="sm" x="1010" y="1006">ARRIVAL JITTER</text>
+  <text class="num" x="916" y="1026">98.4 %</text><text class="sm" x="1010" y="1026">FRAMES INTERPOLATING (WAS 0.3 %)</text>
+  <text class="num" x="1340" y="986">19.4 KB/s</text><text class="sm" x="1452" y="986">PER WATCHER</text>
+  <text class="num" x="1340" y="1006">7–19 s</text><text class="sm" x="1452" y="1006">SUMMON, END TO END</text>
+  <text class="num" x="1340" y="1026">~0.5 p</text><text class="sm" x="1452" y="1026">PER CREATURE</text>
+
+  <!-- ============ footer rule ============ -->
+  <line class="rule" x1="18" y1="1096" x2="1682" y2="1096"/>
+  <text class="sm" x="42" y="1122">PROMPTS ARE NEVER STORED, LOGGED OR EXPOSED · THE MODEL COMPOSES, THE ENGINE BUDGETS · THE SERVER IS THE ONLY AUTHORITY</text>
+  <text class="sm" x="42" y="1140">IDENTITY SURVIVES THE NETWORK · A JUDGE RANKS, IT NEVER REJECTS</text>
+  <text class="sm" x="1682" y="1122" text-anchor="end">CONSTANTS READ FROM SOURCE</text>
+  <text class="sm" x="1682" y="1140" text-anchor="end">LATENCY MEASURED OVER THE PUBLIC SOCKET</text>
+</svg>
+</div>
+</head></html>
