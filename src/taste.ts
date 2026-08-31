@@ -155,17 +155,30 @@ async function pngDataUri(genome: Genome): Promise<string> {
  * a thinking model and its host demands SSE); only the verdict is kept.
  * Returns 0 or 1, or null when the eye is closed or unreadable.
  */
-export async function pickByEye(genomes: [Genome, Genome], desc?: string): Promise<number | null> {
+export async function pickByEye(
+  genomes: [Genome, Genome], desc?: string, timeoutMs = 6000,
+): Promise<number | null> {
   if (!eyeReady()) return null;
+  // A judge that deliberates is a judge that keeps the summoner staring at an
+  // empty pit. It gets a fixed moment to answer and is cut off at it; the
+  // deterministic anatomy check behind it costs a millisecond and never stalls.
+  const cutOff = AbortSignal.timeout(timeoutMs);
   const [a, b] = await Promise.all([pngDataUri(genomes[0]), pngDataUri(genomes[1])]);
   const brief = desc
     ? `Two renders of a game creature summoned from the words "${desc.slice(0, 140)}", A then B.`
     : 'Two renders of game creatures, A then B.';
   const res = await fetch(`${HATCH_API_URL.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
+    signal: cutOff,
     headers: { 'content-type': 'application/json', authorization: `Bearer ${HATCH_API_KEY}` },
     body: JSON.stringify({
-      model: EYE_MODEL, max_tokens: 400, temperature: 0, stream: true,
+      model: EYE_MODEL, max_tokens: 300, temperature: 0, stream: true,
+      // The eye is a THINKING model, and left to think it spent eleven to
+      // twenty seconds reasoning its way to a one-letter answer — so every
+      // judgment timed out and taste quietly stopped happening. Told not to
+      // deliberate it answers in about two seconds, and just as correctly:
+      // this is a glance, not a deliberation.
+      chat_template_kwargs: { enable_thinking: false },
       messages: [{ role: 'user', content: [
         { type: 'text', text: `${brief} Which looks more like a single coherent creature with a readable body — not scattered shapes, debris, or a bare stick — and better fits the words? End your answer with exactly VERDICT: A or VERDICT: B.` },
         { type: 'text', text: 'A:' },
@@ -201,16 +214,18 @@ export async function pickByEye(genomes: [Genome, Genome], desc?: string): Promi
  * The full judgment: the eye picks when it can; anatomy breaks the fall.
  * Never throws, never refuses — SOME candidate always walks in.
  */
-export async function pickBest(genomes: Genome[], desc?: string): Promise<number> {
+export async function pickBest(genomes: Genome[], desc?: string, timeoutMs = 6000): Promise<number> {
   if (genomes.length < 2) return 0;
   try {
-    const eyed = await pickByEye([genomes[0], genomes[1]], desc);
+    const eyed = await pickByEye([genomes[0], genomes[1]], desc, timeoutMs);
     if (eyed != null) {
       console.log(`[taste] the eye chose ${eyed === 0 ? 'the first' : 'the second'}`);
       return eyed;
     }
   } catch (e) {
-    console.log(`[taste] the eye blinked: ${(e as Error).message.slice(0, 60)}`);
+    const why = (e as Error).name === 'TimeoutError' || (e as Error).name === 'AbortError'
+      ? 'took too long' : (e as Error).message.slice(0, 60);
+    console.log(`[taste] the eye blinked: ${why}`);
   }
   try {
     const scores = genomes.map(g => anatomyOf(g).score);

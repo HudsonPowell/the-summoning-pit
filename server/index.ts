@@ -45,15 +45,54 @@ const SERVER_HATCH = process.env.PIT_HATCH !== 'off';
  */
 const TASTE = process.env.PIT_TASTE !== '0';
 
+/** How long a sibling hatch, and then the judge, may hold up a summoning. */
+const GRACE_MS = 5000;
+// measured: the eye answers in 4.6s median, 5.6s worst across the calibration
+// pairs. Six was clipping honest verdicts; nine lands them and still bounds
+// the wait — past that, anatomy rules and the summoning goes on.
+const EYE_MS = 9000;
+
+/**
+ * Two candidates, one judged winner — without making the summoner wait for
+ * the worst of everything. Waiting on BOTH hatches meant the slowest sample
+ * set the pace (21s against 7s, measured), and then a deliberating judge
+ * added another 20 on top: half a minute of empty pit, which reads as broken
+ * however good the creature is when it finally walks in.
+ *
+ * So the FIRST body to arrive sets the pace. Its sibling gets a short grace
+ * to catch up and earn a comparison, the judge gets a short moment to rule,
+ * and whatever has not happened by then simply does not happen — there is
+ * always a creature to show, and it was always going to be one of these two.
+ */
 async function hatchJudged(desc: string, temperature: () => number): Promise<unknown> {
   const one = () => hatchGenome(desc, undefined, undefined, undefined, temperature());
   // a local 3B hatches slowly and serially — two would double the wait
   if (!TASTE || !HATCH_API_KEY) return one();
-  const pair = await Promise.allSettled([one(), one()]);
-  const hatched = pair.filter(p => p.status === 'fulfilled').map(p => (p as PromiseFulfilledResult<any>).value);
-  if (!hatched.length) throw (pair[0] as PromiseRejectedResult).reason;
-  if (hatched.length === 1) return hatched[0];
-  return hatched[await pickBest(hatched, desc)];
+
+  const jobs = [one(), one()];
+  const settled = Promise.allSettled(jobs);
+  let first: any;
+  try {
+    first = await Promise.any(jobs);
+  } catch {
+    // both refused; report the first reason as the failure
+    const rs = await settled;
+    throw (rs.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined)?.reason
+      ?? new Error('nothing hatched');
+  }
+
+  const sibling = await Promise.race([
+    settled.then(rs => rs
+      .map(r => (r.status === 'fulfilled' ? r.value : null))
+      .find(v => v && v !== first) ?? null),
+    new Promise<null>(r => setTimeout(() => r(null), GRACE_MS)),
+  ]);
+  if (!sibling) {
+    console.log('[taste] only one body arrived in time; it stands');
+    return first;
+  }
+  const pair = [first, sibling];
+  return pair[await pickBest(pair, desc, EYE_MS)];
 }
 const SAVE_EVERY = 5;                 // seconds
 const MAX_PER_OWNER = 1;              // one hero each — the pit is not a kennel
@@ -349,14 +388,20 @@ function broadcast(msg: unknown): void {
 }
 
 /**
- * One key, one live session. A key used to travel in the URL, so anyone who
- * shared their own link handed over their identity — and every friend who
- * opened it became the same person, sharing one hero between them. The key is
- * out of the URL now, but the copies are already in people's browsers, and
- * nobody should have to clear storage to play.
+ * One key, one live session — held by the NEWEST connection to present it.
  *
- * So: if a key is already held by another open connection, the newcomer is a
- * different person using a copy. Mint them their own and tell them.
+ * This used to mint a fresh identity whenever a key arrived while another
+ * socket still held it, on the theory that the newcomer was a stranger with a
+ * copied link. But a phone that locks, changes network or is backgrounded
+ * drops its socket without ever saying so, and the pit goes on believing that
+ * socket is open for minutes. Every one of those reconnects looked exactly
+ * like a stranger — so the summoner was handed a new identity, their creature
+ * became someone else's, and a summon already in flight arrived for an owner
+ * they were no longer: a wait that ends in nothing and a box that resets.
+ *
+ * The newest socket takes the key. Two tabs belonging to one person then
+ * share one identity, which is the truth, and the one-hero-each rule already
+ * governs what that person may do with it.
  */
 const liveKeys = new Map<string, WebSocket>();
 
@@ -370,7 +415,25 @@ function ownerOnline(owner: string): boolean {
   return false;
 }
 
+/**
+ * A phone that locks or changes network drops its socket without a word, and
+ * the pit would hold that dead connection open for as long as the kernel let
+ * it — counting a watcher who left, and believing an identity was still held
+ * by a socket that will never speak again. A ping every twenty seconds, and
+ * anything that has not answered by the next one is gone.
+ */
+setInterval(() => {
+  for (const c of wss.clients) {
+    const sock = c as any;
+    if (sock.__alive === false) { c.terminate(); continue; }
+    sock.__alive = false;
+    try { c.ping(); } catch { /* already going */ }
+  }
+}, 20_000);
+
 wss.on('connection', ws => {
+  (ws as any).__alive = true;
+  ws.on('pong', () => { (ws as any).__alive = true; });
   ws.send(JSON.stringify(hello()));
 
   ws.on('close', () => {
@@ -387,11 +450,12 @@ wss.on('connection', ws => {
     // of ownership that will ever exist, and the client's job is to keep it
     // in a URL. We store the hash, never the key.
     if (m.t === 'key') {
-      let key = looksLikeKey(m.key) ? m.key : mintKey();
+      const key = looksLikeKey(m.key) ? m.key : mintKey();
       const holder = liveKeys.get(key);
       if (holder && holder !== ws && holder.readyState === WebSocket.OPEN) {
-        console.log(`[pit] ${ownerOf(key)} is open twice — minting a fresh identity`);
-        key = mintKey();
+        // a reconnect, or the same person in a second tab: either way the
+        // newest socket is the live one and the identity goes with it
+        console.log(`[pit] ${ownerOf(key)} reconnected`);
       }
       liveKeys.set(key, ws);
       (ws as any).__key = key;
