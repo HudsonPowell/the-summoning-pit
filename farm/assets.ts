@@ -14,7 +14,7 @@ import { makeCharacter, migrateCharacter, Character } from '../src/character';
 import { migrateGenome, heightOf, Genome } from '../src/genome';
 import { solvePose, slashWeight, Capsule, Intent } from '../src/pose';
 import { rotY, v3 } from '../src/vec';
-import { pitCam, fitCam, writePNG, encode, frameDir, pad, roster, OUT, FPS, STORY, POST, SQUARE } from './social';
+import { pitCam, fitCam, writePNG, encode, frameDir, pad, roster, OUT, FPS, STORY, POST, SQUARE, FRONT, LEAD } from './social';
 
 const A = `${OUT}/07-missing`;
 mkdirSync(A, { recursive: true });
@@ -223,7 +223,7 @@ async function lord(size = POST): Promise<void> {
   for (let f = 0; f < LOOP; f++) {
     const u = f / LOOP;
     const buf = new Uint8ClampedArray(w * h * 4);
-    r.render(buf, posed(u), { ...fitted, yaw: 0.6 + u * Math.PI * 2, voidColor: [0, 0, 0] }, 0);
+    r.render(buf, posed(u), { ...fitted, yaw: FRONT - LEAD + u * Math.PI * 2, voidColor: [0, 0, 0] }, 0);
     writePNG(`${dir}/${pad(f)}.png`, w, h, buf);
   }
   console.log(`lord: ${ch.name} — ${got.row.k ?? 0} kills, ${got.row.hp}/${got.row.mx} hp, ${got.row.sc ?? 0} scars`);

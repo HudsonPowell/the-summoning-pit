@@ -431,13 +431,13 @@ function idles(size: Size = POST, count = 8): void {
     const still = solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, 1.4, undefined, 0,
       { weapon: ch.weapon, offhand: ch.offhand, gear: ch.gear as any });
     // portrait framing: the creature stands in the lower third, air above
-    const cam = fitCam(still, w, h, 0.66, { yaw: 0.6 });
+    const cam = fitCam(still, w, h, 0.66, { yaw: FRONT });
     const rgba = renderRGBA(r, w, h, still, cam);
     const name = ch.name.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
     writePNG(`${OUT}/04-characters/stills/idle-${name}-${size.tag}.png`, w, h, over(rgba, w, h, () => [0, 0, 0]));
     writePNG(`${OUT}/04-characters/transparent/idle-${name}-alpha.png`, w, h, rgba);
     // and into the contact sheet
-    const cellCam = fitCam(still, cell, cell, 0.76, { yaw: 0.6 });
+    const cellCam = fitCam(still, cell, cell, 0.76, { yaw: FRONT });
     const cbuf = new Uint8ClampedArray(cell * cell * 4);
     rSheet.render(cbuf, still, cellCam, 0);
     const ox = (i % sheetCols) * cell, oy = Math.floor(i / sheetCols) * cell;
@@ -467,6 +467,22 @@ function idles(size: Size = POST, count = 8): void {
  * and the last frame is the first frame. Verified by comparing them.
  */
 const LOOPS = Number(process.env.LOOPS ?? 18);
+
+/**
+ * Where the camera stands to see a creature's FACE.
+ *
+ * Measured, not guessed: put a marker one metre in front of the body and sweep
+ * the camera — the marker is fully visible and centred at 4.71, and hidden
+ * behind the body at 1.57. The loops used to open at 0.6, which reaches the
+ * BACK a sixth of the way in and does not come round to the front until
+ * two-thirds through, so the first half of every turntable was a back.
+ *
+ * They now open a little short of front-on and turn TOWARD the viewer, which
+ * is the first thing you want a portrait to do. The back still comes, in the
+ * second half, where it belongs.
+ */
+export const FRONT = 4.71;
+export const LEAD = 0.55;          // how far short of face-on the turn begins
 
 /**
  * A creature standing still is not a creature doing nothing. The pit's own
@@ -513,7 +529,7 @@ function idleLoop(ch: Character, size: Size): void {
   const fitted = fitCam(probe, w, h, 0.68);   // one framing, weapon and all, held all the way round
   const frame = (u: number): Uint8ClampedArray => {
     const buf = new Uint8ClampedArray(w * h * 4);
-    r.render(buf, posed(u), { ...fitted, yaw: 0.6 + u * Math.PI * 2, voidColor: [0, 0, 0] }, 0);
+    r.render(buf, posed(u), { ...fitted, yaw: FRONT - LEAD + u * Math.PI * 2, voidColor: [0, 0, 0] }, 0);
     return buf;
   };
   let firstPx: Uint8ClampedArray | null = null;
