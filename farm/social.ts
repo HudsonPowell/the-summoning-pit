@@ -28,15 +28,31 @@ const STORY: Size = { w: 1080, h: 1920, tag: 'story' };      // 9:16
 const POST: Size = { w: 1080, h: 1350, tag: 'post' };        // 4:5
 const SQUARE: Size = { w: 1080, h: 1080, tag: 'square' };    // 1:1
 
+/**
+ * The soft field, in METRES.
+ *
+ * `blend` is a softness in PIXELS, and the whole look — bodies reading as one
+ * mass, limbs melting into the torso — is that softness measured against the
+ * size of a creature on screen. The pit runs a coarse buffer where 1.8px is
+ * about a fiftieth of a body; asked for the same 1.8 at delivery resolution
+ * it becomes a two-hundredth, and the field turns to hard-edged sticks that
+ * happen to be the right shape. The number to hold constant is the WORLD
+ * distance the field melts across, so blend follows the zoom.
+ */
+const BLEND_M = 0.030;
+
 /** The look Jody settled on, exactly as the pit renders it. */
 function pitCam(over: Partial<Camera> = {}): Camera {
+  const ppm = over.ppm ?? 200;
   return {
-    yaw: 0.6, pitch: 0.34, ppm: 200, cy: 0.9, cx: 0, cz: 0,
-    tile: 1, flat: true, blend: 1.8, blendShape: 0.6, blendMix: 1, blendDepth: 0.35,
+    yaw: 0.6, pitch: 0.34, cy: 0.9, cx: 0, cz: 0,
+    tile: 1, flat: true, blendShape: 0.6, blendMix: 1, blendDepth: 0.35,
     floorRadius: 12, floorPower: 2.4, floorLift: 1,
     floorSquash: Math.max(0.12, 1 + (Math.sin(0.34) - 1) * 1),
     voidColor: [0, 0, 0], floorColorA: [42, 47, 58], floorColorB: [34, 38, 47],
     ...over,
+    ppm,
+    blend: over.blend ?? ppm * BLEND_M,
   };
 }
 
