@@ -8,7 +8,7 @@
 // smooth however sparse the wire is.
 
 import { newPacts } from './pacts';
-import { scatterProps } from '../props';
+import { pitScenery } from '../props';
 import { Character, migrateCharacter } from '../character';
 import { effectiveGait } from '../genome';
 import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
@@ -67,12 +67,15 @@ export class LiveVoid {
   private next?: Snap;
   private clock = 0;
   private byId = new Map<number, Agent>();
+  // when each floor item was first seen, so it can arrive instead of pop
+  private relicBorn = new Map<number, number>();
+  private floraBorn = new Map<number, number>();
 
   constructor() {
     this.sim = {
       challengeT: 0,
     seed: 1337,
-    props: scatterProps(1337, 18),
+    props: pitScenery(1337),
     pacts: newPacts(),
     agents: [], shots: [], roster: [], events: [], relics: [], flora: [],
       t: 0, spawnT: 0, population: 0, peace: 0.35,
@@ -364,6 +367,12 @@ export class LiveVoid {
 
     // the floor's memory rides the same snapshots. Positions lerp so a kicked
     // bone skitters instead of teleporting between packets.
+    // NOTHING POPS. The first snapshot lands a whole floor's worth of bones
+    // and plants at once, fully formed — on load the pit flashed into being.
+    // The floor already has the right dials: a relic first seen here starts
+    // swallowed (sink 1) and rises to its true depth; a plant grows in from
+    // nothing. Mid-session drops get the same treatment and it reads as the
+    // floor yielding them up, fast enough not to blunt a kill's scatter.
     if (this.next.relics) {
       const prevRelic = new Map<number, any>(((this.prev?.relics ?? []) as any[]).map(r => [r.i, r]));
       this.sim.relics = (this.next.relics as any[]).map(r => {
@@ -371,19 +380,35 @@ export class LiveVoid {
         let dy = r.yw - p.yw;
         while (dy > Math.PI) dy -= Math.PI * 2;
         while (dy < -Math.PI) dy += Math.PI * 2;
+        let born = this.relicBorn.get(r.i);
+        if (born === undefined) { born = this.clock; this.relicBorn.set(r.i, born); }
+        const arrive = Math.min(1, Math.max(0, (this.clock - born) / 0.45));
         return {
           id: r.i, kind: r.k,
           x: p.x + (r.x - p.x) * u, z: p.z + (r.z - p.z) * u,
           vx: 0, vz: 0, yaw: p.yw + dy * u, vyaw: 0,
-          sink: r.s, item: r.it,
+          sink: 1 - (1 - r.s) * arrive, item: r.it,
         };
       });
+      if (this.relicBorn.size > 128) {
+        const keep = new Set((this.next.relics as any[]).map(r => r.i));
+        for (const id of this.relicBorn.keys()) if (!keep.has(id)) this.relicBorn.delete(id);
+      }
     }
     if (this.next.flora) {
-      this.sim.flora = (this.next.flora as any[]).map(f => ({
-        id: f.i, kind: f.k, x: f.x, z: f.z, yaw: f.yw,
-        growth: f.g, hurt: f.h, seed: f.sd,
-      }));
+      this.sim.flora = (this.next.flora as any[]).map(f => {
+        let born = this.floraBorn.get(f.i);
+        if (born === undefined) { born = this.clock; this.floraBorn.set(f.i, born); }
+        const arrive = Math.min(1, Math.max(0, (this.clock - born) / 0.7));
+        return {
+          id: f.i, kind: f.k, x: f.x, z: f.z, yaw: f.yw,
+          growth: f.g * arrive, hurt: f.h, seed: f.sd,
+        };
+      });
+      if (this.floraBorn.size > 128) {
+        const keep = new Set((this.next.flora as any[]).map(f => f.i));
+        for (const id of this.floraBorn.keys()) if (!keep.has(id)) this.floraBorn.delete(id);
+      }
     }
   }
 }

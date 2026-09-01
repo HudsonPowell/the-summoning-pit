@@ -8,7 +8,7 @@ import { Genome, effectiveGait, heightOf } from '../genome';
 import { Temper, temperOf } from '../temper';
 import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
 import { Pacts, newPacts, stanceOf } from './pacts';
-import { Prop, scatterProps } from '../props';
+import { Prop, pitScenery } from '../props';
 import { Relic, Flora, leaveRemains, seedFlora, stepRelics, stepFlora, takeRelicId } from './relics';
 import { Record as Deeds, takeSpoil } from './spoils';
 
@@ -181,7 +181,7 @@ export function createVoid(roster: Character[], population = 1): VoidSim {
   const sim: VoidSim = {
     challengeT: 0,
     seed: 1337,
-    props: scatterProps(1337, 12),
+    props: pitScenery(1337),
     relics: [],
     flora: seedFlora(1337, 8),
     pacts: newPacts(),

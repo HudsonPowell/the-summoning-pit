@@ -225,12 +225,19 @@ export interface Prop {
 
 const KINDS: PropKind[] = ['rock', 'rock', 'shard', 'bones', 'stump', 'boulder', 'roots', 'eggs'];
 
+// the pit's rim is quieter than its floor: stone, grass, old bones — no
+// glowing things, nothing that competes with the fight for the eye
+const EDGE_KINDS: PropKind[] = ['rock', 'rock', 'rock', 'tuft', 'tuft', 'fern', 'bones', 'boulder'];
+
 /** Lay out the pit's scenery. Same seed, same pit, every time it reopens. */
-export function scatterProps(seed: number, count: number, inner = 1.8, outer = 7.5): Prop[] {
+export function scatterProps(
+  seed: number, count: number, inner = 1.8, outer = 7.5, kinds: PropKind[] = KINDS,
+  blocks = true,
+): Prop[] {
   const r = rng(seed);
   const out: Prop[] = [];
   for (let i = 0; i < count; i++) {
-    const kind = KINDS[Math.floor(r() * KINDS.length) % KINDS.length];
+    const kind = kinds[Math.floor(r() * kinds.length) % kinds.length];
     // a ring: the middle of the pit is where things fight
     const a = r() * Math.PI * 2;
     const rad = inner + r() * (outer - inner);
@@ -250,8 +257,26 @@ export function scatterProps(seed: number, count: number, inner = 1.8, outer = 7
       return { ...c, a: place(c.a), b: place(c.b), r: c.r * scale };
     });
     // things you push past rather than climb: only solid props block
-    const solid = kind === 'rock' || kind === 'boulder' || kind === 'stump';
+    const solid = blocks && (kind === 'rock' || kind === 'boulder' || kind === 'stump');
     out.push({ kind, x, z, yaw, scale, radius: solid ? reach * scale * 0.8 : 0, caps });
   }
   return out;
+}
+
+/**
+ * The whole pit's scenery in ONE place, so every screen and the server agree
+ * capsule for capsule. (They used to each call scatterProps with their own
+ * count — the live client drew six props the server never collided with.)
+ * The floor scatter keeps the middle clear for fighting; the rim ring sits
+ * OUTSIDE the wall creatures are held behind, so it defines the edge without
+ * ever being in anyone's way (blocks=false: a big rim boulder's collision
+ * reach would otherwise poke inside the wall and shove whoever is pinned
+ * against it) — and it costs the wire nothing, because all of this is still
+ * just the seed.
+ */
+export function pitScenery(seed: number): Prop[] {
+  return [
+    ...scatterProps(seed, 12),
+    ...scatterProps((seed ^ 0x5bd1e995) | 0, 36, 7.7, 8.6, EDGE_KINDS, false),
+  ];
 }
