@@ -285,7 +285,20 @@ export function solvePose(
       // It survives only as a settle, easing the legs to neutral when a
       // creature genuinely stops rather than leaving one in mid-air.
       const settle = clamp(mv / 0.3, 0, 1);
-      let ankle = v3(hip.x + t.x * settle, t.y * settle + ANKLE_H, hip.z * 0.94);
+      // A PLANTED FOOT HOLDS ITS LINE. The retreat below cancels the body's
+      // travel and the chord cancels its yaw, but the hip also SWAYS — a
+      // phase-locked cosine — and the foot re-read its z from the hip every
+      // frame, so every planted foot skated gently side to side through its
+      // stance: the hip-sway residual. The sway is a pure function of phase,
+      // so evaluate it where it stood when THIS foot planted (its p = 0) and
+      // hold that. The body then sways over still feet, which is most of
+      // what carrying weight looks like. Stateless, like the chord.
+      const swayAmp = g.sway * mv * (sk.upright ? 1 : 1 - chain.at);
+      const swayDrift = p < g.stance
+        ? -swayAmp * (Math.cos(TAU * (phase - 0.3)) - Math.cos(TAU * (phase - p - 0.3)))
+        : 0;
+      const hipZPlant = hip.z - swayDrift;
+      let ankle = v3(hip.x + t.x * settle, t.y * settle + ANKLE_H, hipZPlant * 0.94);
       // A PLANTED FOOT DOES NOT TURN EITHER. The stance rule above holds the
       // foot still while the body advances in a straight line, but when the
       // body YAWS the local frame rotates and dragged every planted foot
@@ -299,7 +312,9 @@ export function solvePose(
         const dh = clamp(spin * (p / Math.max(0.2, g.cadence)), -0.7, 0.7) * settle;
         const t0 = footTrack(0.0001, g);
         const trav = (t0.x - t.x) * settle;               // metres since plant
-        const px = hip.x + t0.x * settle, pz = hip.z * 0.94;  // plant-time local
+        // the same plant-time z as above: the chord must pivot the foot the
+        // sway-held position, or the turn fix would reintroduce the skate
+        const px = hip.x + t0.x * settle, pz = hipZPlant * 0.94;  // plant-time local
         const ca = Math.cos(dh), sa = Math.sin(dh);
         const rx = px * ca + pz * sa, rz = -px * sa + pz * ca;
         const half = dh / 2;

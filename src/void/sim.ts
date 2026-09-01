@@ -231,14 +231,34 @@ function turnToward(a: Agent, dt: number): void {
   let d = a.aim - a.heading;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
-  const step = d * (1 - Math.exp(-TURN_RATE * dt));
+  // THE EYES GO FIRST. A creature checks where it is about to go, a beat
+  // before the body commits — the head spring then arrives late off THIS,
+  // so the whole turn reads look, lean, wheel instead of turret-swivel.
+  if (Math.abs(d) > 0.4) a.lookAt = a.aim;
+  // and pivoting on the spot is easy, while turning at speed carves an arc
+  const rate = TURN_RATE * (1.35 - 0.7 * Math.min(1, a.move));
+  const step = d * (1 - Math.exp(-rate * dt));
   a.heading += step;
   // remembered so the body can bank and the tail can trail
   a.turnRate += (step / Math.max(1e-4, dt) - a.turnRate) * Math.min(1, 8 * dt);
 }
 
 function walk(a: Agent, dt: number, scale = 1): void {
-  const step = a.speed * scale * dt;
+  // THE BODY SURGES WITH THE STRIDE. `speed * dt` alone is a conveyor —
+  // perfectly uniform translation, which nothing that pushes off the ground
+  // produces. Two pushes per cycle, one per footfall, with the mean held at
+  // exactly 1 so the distance-driven leg phase and every average the wire
+  // sees are untouched: the surge only redistributes the same ground within
+  // the cycle. Bigger bodies lurch harder.
+  const surge = Math.min(0.16, 0.05 + a.bulk * 0.06);
+  const pulse = 1 + surge * Math.sin(Math.PI * 2 * (a.phase * 2 - 0.1));
+  // A SHARP TURN COSTS SPEED: nothing runs full tilt through a hundred and
+  // eighty — it wheels, slowing as it comes round, and accelerates out.
+  let mis = a.aim - a.heading;
+  while (mis > Math.PI) mis -= Math.PI * 2;
+  while (mis < -Math.PI) mis += Math.PI * 2;
+  const grip = 1 - 0.5 * Math.min(1, Math.abs(mis) / Math.PI);
+  const step = a.speed * scale * dt * pulse * grip;
   a.x += Math.cos(a.heading) * step;
   a.z += Math.sin(a.heading) * step;
   // The homeward drift at the pit's edge must NEVER fire during a pursuit:

@@ -27,6 +27,19 @@ mkdirSync(A, { recursive: true });
  * it goes. Without this the kill shot would show a death with no impact.
  */
 function litCaps(a: Agent, lordId = -1): Capsule[] {
+  // same living idle the live pit runs — parity, so an asset render of a calm
+  // creature moves like the site does
+  const calm = (a.strikeT >= 0 || a.guardT > 0 || a.deadT >= 0)
+    ? 0 : Math.max(0, 1 - a.move * 2.2) * (1 - a.rest * 0.8);
+  const it = a.idleT + a.id * 4.7;
+  const f = (cy: number, ph = 0) => Math.sin(Math.PI * 2 * (cy / 20) * it + ph);
+  const idle = calm > 0.01 ? {
+    lookYaw: (0.62 * f(3) + 0.17 * f(7, 1.3)) * calm,
+    lean: 0.30 * f(2, 0.6) * calm,
+    twist: 0.26 * f(5) * calm,
+    bob: 0.018 * f(4, 2.1) * calm,
+    jiggle: 0.04 * f(6) * calm,
+  } : { lookYaw: 0, lean: 0, twist: 0, bob: 0, jiggle: 0 };
   const mood = { tired: 0, angry: a.state === 'fight' ? 0.75 : a.state === 'approach' ? 0.35 : 0 };
   let intent: Intent | undefined;
   if (a.strikeT >= 0) {
@@ -40,9 +53,11 @@ function litCaps(a: Agent, lordId = -1): Capsule[] {
     {
       weapon: a.thrownRelic != null ? undefined : a.ch.weapon,
       offhand: a.ch.offhand, gear: a.ch.gear as any, turn: a.turnRate,
-      lookYaw: Math.max(-1.1, Math.min(1.1, a.sec.head
+      lookYaw: Math.max(-1.1, Math.min(1.1, a.sec.head + idle.lookYaw
         + (a.flinch && a.flinch.h > 0.75 ? a.flinch.side * 0.8 * (a.flinch.t / 0.5) : 0))),
-      lean: a.sec.lean, twist: a.sec.twist, bob: a.sec.bob, jiggle: a.sec.jiggle,
+      lean: a.sec.lean + idle.lean, twist: a.sec.twist + idle.twist,
+      bob: a.sec.bob + idle.bob, jiggle: a.sec.jiggle + idle.jiggle,
+      breatheAmp: 1 + calm * 1.2,
     });
   const wave = a.flinch;
   const waveAge = wave ? 1 - wave.t / 0.5 : 0;

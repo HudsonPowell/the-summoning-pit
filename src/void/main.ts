@@ -812,6 +812,23 @@ function findLord(sim: VoidSim): void {
 }
 
 function agentCapsules(a: Agent, t: number): Capsule[] {
+  // THE IDLE IS ALIVE. A creature with nothing to do rocks its weight
+  // between its feet, sweeps its head with a second thought inside the
+  // sweep, and breathes deeper — the same drives the social portraits use.
+  // Time runs from sim.t plus the creature's own offset, so a pit of ten
+  // never metronomes. It fades with movement rather than switching, and a
+  // strike, a guard or death takes the body back outright.
+  const calm = (a.strikeT >= 0 || a.guardT > 0 || a.deadT >= 0)
+    ? 0 : Math.max(0, 1 - a.move * 2.2) * (1 - a.rest * 0.8);
+  const it = t + a.id * 4.7;
+  const f = (cy: number, ph = 0) => Math.sin(Math.PI * 2 * (cy / 20) * it + ph);
+  const idle = calm > 0.01 ? {
+    lookYaw: (0.62 * f(3) + 0.17 * f(7, 1.3)) * calm,
+    lean: 0.30 * f(2, 0.6) * calm,
+    twist: 0.26 * f(5) * calm,
+    bob: 0.018 * f(4, 2.1) * calm,
+    jiggle: 0.04 * f(6) * calm,
+  } : { lookYaw: 0, lean: 0, twist: 0, bob: 0, jiggle: 0 };
   const mood = {
     tired: 0,
     angry: a.state === 'fight' ? 0.75 : a.state === 'approach' ? 0.35 : 0,
@@ -846,12 +863,13 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       // the head has already been through its own spring — it arrives late
       // and goes past, rather than snapping onto the target
       // a blow to the head SNAPS it aside; the spring brings it back
-      lookYaw: Math.max(-1.1, Math.min(1.1, a.sec.head
+      lookYaw: Math.max(-1.1, Math.min(1.1, a.sec.head + idle.lookYaw
         + (a.flinch && a.flinch.h > 0.75 ? a.flinch.side * 0.8 * (a.flinch.t / 0.5) : 0))),
-      lean: a.sec.lean,
-      twist: a.sec.twist,
-      bob: a.sec.bob,
-      jiggle: a.sec.jiggle,
+      lean: a.sec.lean + idle.lean,
+      twist: a.sec.twist + idle.twist,
+      bob: a.sec.bob + idle.bob,
+      jiggle: a.sec.jiggle + idle.jiggle,
+      breatheAmp: 1 + calm * 1.2,
     },
   );
   // BEING HIT IS A WAVE, not a strobe. The blow lands somewhere; a pulse of

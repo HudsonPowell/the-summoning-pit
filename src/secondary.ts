@@ -13,12 +13,14 @@ export interface Secondary {
   jiggle: number; jiggleV: number; // mass carrying on after the frame stops
   head: number; headV: number;     // the head arriving last
   spin: number; spinV: number;     // knocked off its axis entirely
+  lastPhase: number;               // to catch each footfall as it lands
 }
 
 export function newSecondary(): Secondary {
   return {
     lean: 0, leanV: 0, twist: 0, twistV: 0, bob: 0, bobV: 0,
     jiggle: 0, jiggleV: 0, head: 0, headV: 0, spin: 0, spinV: 0,
+    lastPhase: 0,
   };
 }
 
@@ -67,8 +69,21 @@ export function stepSecondary(s: Secondary, dt: number, d: SecondaryDrive): void
 
   // flesh: never has a target, only ever settling toward still
   [s.jiggle, s.jiggleV] = spring(s.jiggle, s.jiggleV, 0, 34 * soft, 0.12, dt);
-  // footfalls keep feeding it
-  s.jiggleV += Math.cos(Math.PI * 2 * d.phase) * d.move * d.speed * 0.05 * m * dt * 60 * 0.016;
+
+  // FOOTFALLS ARE EVENTS, not a waveform. This used to feed the jiggle a
+  // continuous cosine of phase, so mass wobbled smoothly THROUGH each step
+  // instead of being struck by it — weight that never lands. A foot lands
+  // every half cycle (phase crossing 0 and 0.5, whatever the leg count:
+  // that is the gait's beat), and each landing puts its energy in as an
+  // impulse. The springs do the rest, which is what they are for.
+  const beats = 2;
+  const wrapped = d.phase < s.lastPhase ? d.phase + 1 : d.phase;
+  if (Math.floor(wrapped * beats) > Math.floor(s.lastPhase * beats) && d.move > 0.12 && !d.dead) {
+    const strike = Math.min(1.5, 0.3 + d.speed * 0.4) * d.move * m;
+    s.bobV -= strike * 0.05;
+    s.jiggleV += strike * 0.11;
+  }
+  s.lastPhase = d.phase;
 
   // the head arrives last, and overshoots when it does
   [s.head, s.headV] = spring(s.head, s.headV, d.dead ? 0.5 : d.lookYaw, 30 * soft, 0.42, dt);

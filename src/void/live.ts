@@ -12,6 +12,7 @@ import { scatterProps } from '../props';
 import { Character, migrateCharacter } from '../character';
 import { effectiveGait } from '../genome';
 import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
+import { stepSecondary, jolt } from '../secondary';
 
 /**
  * How far behind the newest snapshot to play, as a FRACTION of the gap
@@ -176,7 +177,29 @@ export class LiveVoid {
         if (typeof ev.spotH === 'number') {
           t.flinch = { h: ev.spotH, side: ev.spotS ?? 1, t: 0.5 };
         }
+        // and so does the WEIGHT of it: the event carries where the blow
+        // came from, which is all the springs need to be knocked about the
+        // same way the sim knocks its own
+        const fy = Math.atan2(t.z - ev.z, t.x - ev.x) - t.heading;
+        // a block, a parry, a broken guard, a clean blow — each shakes the
+        // body its own amount, the sim's own numbers for the same moments
+        const force = ev.how === 'guard-broken' ? 0.34
+          : ev.how === 'parried' ? 0.24
+          : ev.how === 'blocked' ? 0.18 : 0.3;
+        jolt(t.sec, force, fy, t.bulk);
+        // a parry rings the ATTACKER's arms too
+        if (ev.how === 'parried' && ev.actor) {
+          const by = this.byId.get(ev.actor.id);
+          if (by) jolt(by.sec, 0.3, Math.atan2(t.z - by.z, t.x - by.x) - by.heading, by.bulk);
+        }
       }
+    }
+    // death lands harder than the blow that caused it: the sim jolts 0.55
+    // on a kill where a plain hit gives 0.3; the hit event already put its
+    // 0.3 in, so the kill tops it up to the same total
+    if (ev.kind === 'kill' && ev.target) {
+      const t = this.byId.get(ev.target.id);
+      if (t) jolt(t.sec, 0.25, Math.atan2(t.z - ev.z, t.x - ev.x) - t.heading, t.bulk);
     }
   }
 
@@ -270,6 +293,28 @@ export class LiveVoid {
         const spd = Math.hypot(ddx, ddz) / dt;
         a.move = Math.max(a.move, Math.min(1, spd / Math.max(0.2, stride * eff.cadence)));
       }
+      // THE SPRINGS RUN HERE TOO. stepSecondary only ever ran inside the
+      // sim's own tick, which a live client never takes — so on every real
+      // screen the banking into turns, the head arriving late, the landing
+      // weight and the jolt of being hit sat frozen at zero from the day
+      // they were written. The wire already carries everything the drive
+      // needs: turn rate, move and state; speed comes from the client's own
+      // interpolated displacement, and phase is the same one the legs use.
+      let rel = 0;
+      if (a.target && a.target.deadT < 0 && (a.state === 'fight' || a.state === 'approach')) {
+        rel = Math.atan2(a.target.z - a.z, a.target.x - a.x) - a.heading;
+        while (rel > Math.PI) rel -= Math.PI * 2;
+        while (rel < -Math.PI) rel += Math.PI * 2;
+      }
+      stepSecondary(a.sec, dt, {
+        turnRate: a.turnRate,
+        move: a.move,
+        speed: dt > 1e-4 ? Math.hypot(ddx, ddz) / dt : 0,
+        mass: a.bulk,
+        lookYaw: Math.max(-1.0, Math.min(1.0, rel)),
+        phase: a.phase,
+        dead: a.deadT >= 0,
+      });
       a.idleT += dt;
       // settling and standing back up, at the sim's own rates — without this
       // a lone lord SAID it was resting while every watcher saw it bolt
