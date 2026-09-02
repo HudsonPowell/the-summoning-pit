@@ -134,16 +134,26 @@ let perfScale = 1;
  */
 let sizeBasis = 0;
 let camRef: Camera | null = null;
+// A RESIZE MUST NOT BLINK. Setting a canvas's width or height CLEARS it —
+// even to the same value — and the cleared frame reaches the screen before
+// the next rAF repaints it. On a phone that is every load (the browser bar
+// collapsing), every tap on the summon box (the keyboard), and every governor
+// refit: a black flash each time. So: never touch a dimension that has not
+// changed, and when one has, repaint synchronously in the same task so the
+// cleared canvas is never the one presented.
+let repaint: (() => void) | null = null;
+let repainting = false;
 function fitCanvas() {
   const stage = document.getElementById('stage')!;
   const w = Math.max(240, Math.round(stage.clientWidth));
   const h = Math.max(200, Math.round(stage.clientHeight));
-  canvas.width = w;
-  canvas.height = h;
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
   const aspect = h / w;
   const cap = (view.mode === 'cpu' ? MAX_BUFFER_CPU_PX : MAX_BUFFER_PX) * perfScale;
   const res = Math.min(look.res, Math.floor(Math.sqrt(cap / aspect)));
-  view.setSize(res, Math.max(80, Math.round(res * aspect)));
+  const bufH = Math.max(80, Math.round(res * aspect));
+  if (view.size.W !== res || view.size.H !== bufH) view.setSize(res, bufH);
   const basis = view.size.H;
   if (sizeBasis && basis !== sizeBasis && camRef) {
     const k = basis / sizeBasis;
@@ -151,6 +161,12 @@ function fitCanvas() {
     rig.vppm.v *= k;      // the damper's velocity is in the same units
   }
   sizeBasis = basis;
+  // guarded: tick() itself refits on a gpu→cpu fallback, and repainting from
+  // inside that repaint would recurse
+  if (repaint && !repainting) {
+    repainting = true;
+    try { repaint(); } finally { repainting = false; }
+  }
 }
 
 // the last second and a half of real frame times, and the last time we moved
@@ -1313,7 +1329,12 @@ async function boot() {
   const caps: Capsule[] = [];
   const propCaps: Capsule[] = [];
   const add = (list: Capsule[]): void => { for (let i = 0; i < list.length; i++) caps.push(list[i]); };
+  let ticking = false;
   function tick(dt: number) {
+    ticking = true;
+    try { tickBody(dt); } finally { ticking = false; }
+  }
+  function tickBody(dt: number) {
     if (live) live.update(dt); else stepVoid(sim, dt);
     pushFeed(sim.events);
     for (const e of sim.events) {
@@ -1448,6 +1469,10 @@ async function boot() {
     }
     requestAnimationFrame(frame);
   }
+  // a resize can now redraw the world without waiting for the next rAF;
+  // a refit from INSIDE a tick (the gpu→cpu fallback) skips it — that tick
+  // is about to render anyway
+  repaint = () => { if (!ticking) tick(0); };
   requestAnimationFrame(frame);
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
