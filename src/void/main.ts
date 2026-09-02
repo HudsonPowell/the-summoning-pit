@@ -205,7 +205,26 @@ function govern(ms: number): void {
   }
 }
 const view = new PixelView(canvas, look.res, Math.round(look.res * 0.625));
-view.init();
+// THE RENDERER DECIDES LATE. Picking cpu or gpu is asynchronous, and until it
+// has answered, every frame drawn is a software raster of four hundred-odd
+// capsules — the most expensive thing this program can do, on the one device
+// least able to afford it — and all of it is thrown away the moment the gpu
+// arrives, because the two modes cap the buffer differently (500k vs 851k
+// pixels) and the handover resizes the buffer and rescales ppm under the
+// camera. That was the load: a few enormous stuttering frames, then a jump in
+// resolution and zoom. So the pit does not draw until the renderer has
+// settled. The handover happens in the dark and the first frame anyone sees
+// is the real one, at the real size.
+let rendererReady = false;
+function settleRenderer(): void {
+  if (rendererReady) return;
+  rendererReady = true;
+  (fitCanvas as any).mode = view.mode;
+  fitCanvas();
+}
+view.init().then(settleRenderer, settleRenderer);
+// a device whose gpu probe never answers still gets a pit, on the cpu
+setTimeout(settleRenderer, 2500);
 fitCanvas();
 addEventListener('resize', fitCanvas);
 // the stage changes size whenever the drawer opens or the window moves;
@@ -1427,7 +1446,10 @@ async function boot() {
       add(healthCapsules(a, a.by === ME));
     }
     for (const s of sim.shots) add(shotCapsules(s));
-    view.render(caps, cam, 0);
+    // the sim, the camera and the live clock all keep running while the
+    // renderer decides — only the drawing waits, so the first visible frame
+    // is a world already in motion rather than one starting from cold
+    if (rendererReady) view.render(caps, cam, 0);
 
   }
 
@@ -1449,16 +1471,28 @@ async function boot() {
   // once, complete. One dial instead of an ease per system. If the pit cannot
   // be reached, the stage still lifts after a few seconds so the 'far away'
   // state has somewhere to be seen.
+  // Three things must be true, and the type is one of them: text reflowing
+  // from a fallback face into Michroma is as much a flicker as anything else.
   let lit = false;
+  let fontsIn = false;
+  document.fonts.ready.then(() => { fontsIn = true; }, () => { fontsIn = true; });
   const bootAt = performance.now();
   function frame(now: number) {
     const raw = now - last;
     const dt = Math.min(0.05, raw / 1000);
     last = now;
     tick(dt);
-    if (!lit && ((live ? live.hasWorld : true) || now - bootAt > 4000)) {
+    if (!lit && rendererReady
+      && (((live ? live.hasWorld : true) && fontsIn) || now - bootAt > 4000)) {
       lit = true;
       document.getElementById('stage')!.classList.add('lit');
+      // AND THE DEVICE IS JUDGED ON WHAT IT DOES NEXT, not on the boot. A
+      // shader compiling, the first creature hatching and the type settling
+      // are one-off costs; letting them into the governor's window dropped
+      // the resolution seconds after the pit appeared — a resize, in view.
+      frameMs.length = 0;
+      sinceGovern = 0;
+      badWindows = 0;
     }
     govern(raw);
     if (fpsTag && now - tagAt > 500) {
