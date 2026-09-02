@@ -1422,11 +1422,23 @@ async function boot() {
     : null;
   let tagAt = 0;
 
+  // NOTHING IS SHOWN HALF-LOADED. The stage sits at opacity 0 while the fonts
+  // land, the buffer finds its size and the first snapshot arrives — every
+  // load-order flicker happens in the dark — then the whole scene fades up
+  // once, complete. One dial instead of an ease per system. If the pit cannot
+  // be reached, the stage still lifts after a few seconds so the 'far away'
+  // state has somewhere to be seen.
+  let lit = false;
+  const bootAt = performance.now();
   function frame(now: number) {
     const raw = now - last;
     const dt = Math.min(0.05, raw / 1000);
     last = now;
     tick(dt);
+    if (!lit && ((live ? live.hasWorld : true) || now - bootAt > 4000)) {
+      lit = true;
+      document.getElementById('stage')!.classList.add('lit');
+    }
     govern(raw);
     if (fpsTag && now - tagAt > 500) {
       tagAt = now;

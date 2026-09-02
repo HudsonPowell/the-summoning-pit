@@ -44,6 +44,7 @@ export class LiveVoid {
   sim: VoidSim;
   connected = false;
   everConnected = false;  // gates the 'far away' line: never shown before first contact
+  hasWorld = false;       // a full snapshot has landed: there is something real to show
   private pauseUntil = 0;  // performance.now()/1000 when hosted summoning resumes
 
   /** Seconds until hosted summoning resumes; 0 when it is running. */
@@ -144,6 +145,7 @@ export class LiveVoid {
   }
 
   private take(m: any): void {
+    this.hasWorld = true;
     if (typeof m.w === 'number') this.watchers = m.w;
     this.prev = this.next;
     this.next = { at: performance.now() / 1000, time: m.time, agents: m.agents, shots: m.shots, relics: m.relics, flora: m.flora };

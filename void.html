@@ -31,7 +31,9 @@
     body { font: 12px/1.5 'SF Mono', ui-monospace, Menlo, monospace; color: var(--ink); }
     /* the stage is only ever what you can actually see — never under the drawer */
     #shell { position: relative; width: 100%; height: 100%; display: flex; }
-    #stage { position: relative; flex: 1; min-width: 0; }
+    /* dark until the world has actually arrived; main.ts lifts it, once */
+    #stage { position: relative; flex: 1; min-width: 0; opacity: 0; transition: opacity 1.1s ease; }
+    #stage.lit { opacity: 1; }
     #view { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; display: block; }
     /* the drawer sits beside the stage, never over it */
     #panel {
