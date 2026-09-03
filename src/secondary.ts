@@ -55,13 +55,21 @@ export function stepSecondary(s: Secondary, dt: number, d: SecondaryDrive): void
   const m = Math.max(0.4, Math.min(2.4, d.mass));
   const soft = 1 / (0.55 + m * 0.45);     // 1 = light and snappy, <1 = heavy
 
-  // banking: lean into the turn, overshoot coming out of it
-  const leanWant = Math.max(-1.4, Math.min(1.4, -d.turnRate * 0.42)) * (0.35 + d.move);
-  [s.lean, s.leanV] = spring(s.lean, s.leanV, leanWant, 42 * soft, 0.34, dt);
+  // banking: lean into the turn, overshoot coming out of it.
+  // THESE GAINS WERE TUNED BLIND. The springs never ran on a live screen until
+  // the client began stepping them, and the sim's own turns hit 4-5 rad/s —
+  // so the old clamp of 1.4 rad, multiplied AFTER clamping by up to 1.35 and
+  // then overshot by the ringing, put the lean at 2.5 rad on ordinary turns:
+  // 0.16 m/rad at the spine top is the torso flung 0.4 m sideways on a metre
+  // of creature. Measured over a 40s brawl: lean past 0.5 rad in 13% of all
+  // frames. A bank you can see is 0.3-0.5 rad; clamp there, before the
+  // move factor, and let the ring add its little more.
+  const leanWant = Math.max(-0.45, Math.min(0.45, -d.turnRate * 0.12)) * (0.35 + 0.65 * d.move);
+  [s.lean, s.leanV] = spring(s.lean, s.leanV, leanWant, 42 * soft, 0.4, dt);
 
   // the torso does not turn when the feet do; it is dragged round after them
-  const twistWant = Math.max(-0.9, Math.min(0.9, -d.turnRate * 0.3));
-  [s.twist, s.twistV] = spring(s.twist, s.twistV, twistWant, 26 * soft, 0.26, dt);
+  const twistWant = Math.max(-0.28, Math.min(0.28, -d.turnRate * 0.075));
+  [s.twist, s.twistV] = spring(s.twist, s.twistV, twistWant, 26 * soft, 0.3, dt);
 
   // weight: driven by the gait, so it lands rather than floats
   const bobWant = d.dead ? -0.02 : Math.sin(Math.PI * 2 * (d.phase - 0.15)) * 0.012 * d.move * m;
@@ -81,12 +89,15 @@ export function stepSecondary(s: Secondary, dt: number, d: SecondaryDrive): void
   if (Math.floor(wrapped * beats) > Math.floor(s.lastPhase * beats) && d.move > 0.12 && !d.dead) {
     const strike = Math.min(1.5, 0.3 + d.speed * 0.4) * d.move * m;
     s.bobV -= strike * 0.05;
-    s.jiggleV += strike * 0.11;
+    s.jiggleV += strike * 0.06;
   }
   s.lastPhase = d.phase;
 
-  // the head arrives last, and overshoots when it does
-  [s.head, s.headV] = spring(s.head, s.headV, d.dead ? 0.5 : d.lookYaw, 30 * soft, 0.42, dt);
+  // the head arrives last, and overshoots when it does — but a neck has an
+  // end: the ask is capped short of the pose's own limit so the overshoot
+  // lands inside it instead of cranking the head round past the shoulder
+  const headWant = d.dead ? 0.5 : Math.max(-0.8, Math.min(0.8, d.lookYaw));
+  [s.head, s.headV] = spring(s.head, s.headV, headWant, 30 * soft, 0.5, dt);
 
   // spin only ever decays — nothing drives it but being hit
   [s.spin, s.spinV] = spring(s.spin, s.spinV, 0, 5 * soft, 0.5, dt);
@@ -96,10 +107,12 @@ export function stepSecondary(s: Secondary, dt: number, d: SecondaryDrive): void
 export function jolt(s: Secondary, force: number, fromYaw: number, mass: number): void {
   const m = Math.max(0.4, Math.min(2.4, mass));
   const give = force / m;
+  // scaled with the drives above: a blow should knock a body about a third
+  // of the way to where a hard turn banks it, not past it
   s.bobV -= give * 0.9;
-  s.jiggleV += give * 2.6;
-  s.leanV += Math.sin(fromYaw) * give * 5;
-  s.twistV += Math.sin(fromYaw) * give * 3.5;
-  s.headV += Math.sin(fromYaw + 0.7) * give * 4;
+  s.jiggleV += give * 1.6;
+  s.leanV += Math.sin(fromYaw) * give * 2.5;
+  s.twistV += Math.sin(fromYaw) * give * 1.8;
+  s.headV += Math.sin(fromYaw + 0.7) * give * 3;
   s.spinV += Math.sin(fromYaw) * give * 2.2;
 }

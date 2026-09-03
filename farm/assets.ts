@@ -34,9 +34,9 @@ function litCaps(a: Agent, lordId = -1): Capsule[] {
   const it = a.idleT + a.id * 4.7;
   const f = (cy: number, ph = 0) => Math.sin(Math.PI * 2 * (cy / 20) * it + ph);
   const idle = calm > 0.01 ? {
-    lookYaw: (0.62 * f(3) + 0.17 * f(7, 1.3)) * calm,
-    lean: 0.30 * f(2, 0.6) * calm,
-    twist: 0.26 * f(5) * calm,
+    lookYaw: (0.42 * f(3) + 0.12 * f(7, 1.3)) * calm,
+    lean: 0.16 * f(2, 0.6) * calm,
+    twist: 0.14 * f(5) * calm,
     bob: 0.018 * f(4, 2.1) * calm,
     jiggle: 0.04 * f(6) * calm,
   } : { lookYaw: 0, lean: 0, twist: 0, bob: 0, jiggle: 0 };
