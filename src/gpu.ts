@@ -8,7 +8,13 @@ import { V3, v3, rotX, rotY } from './vec';
 import { Capsule } from './pose';
 import { Camera } from './render';
 
-const MAX_CAPS = 512;
+// The storage buffer's capacity — a ceiling, not a budget. It was 512, and
+// the title plus the scenery alone came to 593, so for the whole of the title
+// everything past the cut (every creature, since they were added last) was
+// silently not drawn, and the cut moved every frame. Sized now for far more
+// than the pit produces; the per-pixel cost tracks what is actually uploaded,
+// which culling keeps small, not this number.
+const MAX_CAPS = 2048;
 
 const WGSL = /* wgsl */ `
 struct U {
@@ -226,6 +232,8 @@ export class GpuRenderer {
   private bindGroup: any;
   private uData = new Float32Array(48);
   private cData = new Float32Array(MAX_CAPS * 12);
+  /** capsules actually uploaded last frame, after culling and the cap */
+  drawn = 0;
   W: number;
   H: number;
 
@@ -282,17 +290,29 @@ export class GpuRenderer {
     const ccx = cam.cx ?? 0, ccz = cam.cz ?? 0;
     const view = (p: V3) => rotX(rotY(v3(p.x - ccx, p.y, p.z - ccz), cam.yaw), cam.pitch);
     let minZ = 1e9, maxZ = -1e9;
-    const n = Math.min(caps.length, MAX_CAPS);
-    for (let i = 0; i < n; i++) {
+    // CULL BEFORE COUNTING. Every pixel walks every uploaded capsule three
+    // times, so a capsule nobody can see is pure cost — and the rim ring is
+    // almost entirely off-screen at a phone's framing. A capsule is kept if
+    // its screen box, grown by its radius and the blend's reach (the soft
+    // field lets a shape just past the edge tint the pixels inside it), meets
+    // the buffer. `n` is what survives; that, not the array, is the GPU's load.
+    const margin = (cam.blend ?? 0) * 6 + 2;
+    let n = 0;
+    for (let i = 0; i < caps.length && n < MAX_CAPS; i++) {
       const c = caps[i];
       const a = view(c.a), b = view(c.b);
-      const o = i * 12;
-      this.cData[o] = W / 2 + a.x * cam.ppm;
-      this.cData[o + 1] = H / 2 - (a.y - cam.cy) * cam.ppm;
+      const ax = W / 2 + a.x * cam.ppm, ay = H / 2 - (a.y - cam.cy) * cam.ppm;
+      const bx = W / 2 + b.x * cam.ppm, by = H / 2 - (b.y - cam.cy) * cam.ppm;
+      const r = c.r * cam.ppm + margin;
+      if (Math.max(ax, bx) + r < 0 || Math.min(ax, bx) - r > W
+        || Math.max(ay, by) + r < 0 || Math.min(ay, by) - r > H) continue;
+      const o = n * 12;
+      this.cData[o] = ax;
+      this.cData[o + 1] = ay;
       this.cData[o + 2] = a.z;
       this.cData[o + 3] = c.r * cam.ppm;
-      this.cData[o + 4] = W / 2 + b.x * cam.ppm;
-      this.cData[o + 5] = H / 2 - (b.y - cam.cy) * cam.ppm;
+      this.cData[o + 4] = bx;
+      this.cData[o + 5] = by;
       this.cData[o + 6] = b.z;
       this.cData[o + 7] = 0;
       this.cData[o + 8] = c.color[0];
@@ -301,7 +321,9 @@ export class GpuRenderer {
       this.cData[o + 11] = 0;
       minZ = Math.min(minZ, a.z, b.z);
       maxZ = Math.max(maxZ, a.z, b.z);
+      n++;
     }
+    this.drawn = n;
 
     const invView = (p: V3) => rotY(rotX(p, -cam.pitch), -cam.yaw);
     const d = invView(v3(0, 0, 1));

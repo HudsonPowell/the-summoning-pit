@@ -1420,6 +1420,23 @@ async function boot() {
     // of throwaway objects and dozens of throwaway arrays per frame — sixty
     // times a second, on a phone, which pays for it in collections mid-fight.
     caps.length = 0;
+    // ACTORS FIRST. The gpu draws at most MAX_CAPS capsules and silently drops
+    // the rest of the array — and this array used to open with the title (up
+    // to 496 capsules) and the scenery (337 since the rim), so for the whole
+    // ten seconds of the title every creature, relic and plant was past the
+    // cut, and the cut moved every frame as the letters arrived. THAT was the
+    // load: the pit flickering in and out of existence behind its own name.
+    // The cap is now far above anything the pit produces and the renderer
+    // culls what is off-screen before it counts, but the order stays as a
+    // budget rule — if it is ever hit again, the scenery goes, not the fight.
+    for (const a of sim.agents) {
+      add(agentCapsules(a, sim.t));
+      add(sigilCapsules(a, sim.t));
+      add(healthCapsules(a, a.by === ME));
+    }
+    for (const s of sim.shots) add(shotCapsules(s));
+    for (const r of sim.relics) add(relicCapsules(r));
+    for (const f of sim.flora) add(floraCapsules(f));
     if (title && !title.done) add(title.caps(dt, cam.yaw));
     else if (title) {
       // the title has died. A first visitor gets the introduction NEXT, in
@@ -1438,14 +1455,6 @@ async function boot() {
       for (const pr of sim.props) for (const c of pr.caps) propCaps.push(c);
     }
     add(propCaps);
-    for (const r of sim.relics) add(relicCapsules(r));
-    for (const f of sim.flora) add(floraCapsules(f));
-    for (const a of sim.agents) {
-      add(agentCapsules(a, sim.t));
-      add(sigilCapsules(a, sim.t));
-      add(healthCapsules(a, a.by === ME));
-    }
-    for (const s of sim.shots) add(shotCapsules(s));
     // the sim, the camera and the live clock all keep running while the
     // renderer decides — only the drawing waits, so the first visible frame
     // is a world already in motion rather than one starting from cold
@@ -1499,7 +1508,7 @@ async function boot() {
       tagAt = now;
       fpsTag.textContent =
         `${medianMs ? Math.round(1000 / medianMs) : 0}fps  ${medianMs.toFixed(1)}ms  ${view.mode}  `
-        + `${view.size.W}x${view.size.H}  x${perfScale.toFixed(2)}  ${caps.length}caps`;
+        + `${view.size.W}x${view.size.H}  x${perfScale.toFixed(2)}  ${view.drawn}/${caps.length}caps`;
     }
     requestAnimationFrame(frame);
   }
@@ -1512,7 +1521,7 @@ async function boot() {
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
     sim, cam, look, director, live, pit, view, get title() { return title; },
-    get perf() { return { medianMs, fps: medianMs ? 1000 / medianMs : 0, scale: perfScale, mode: view.mode, buffer: view.size, caps: caps.length }; },
+    get perf() { return { medianMs, fps: medianMs ? 1000 / medianMs : 0, scale: perfScale, mode: view.mode, buffer: view.size, caps: caps.length, drawn: view.drawn }; },
     govern,
     tick,
     refit: fitCanvas,

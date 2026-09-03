@@ -54,6 +54,12 @@ export class PixelView {
     return { W: this.W, H: this.H };
   }
 
+  /** How many capsules the last frame actually drew, after culling and the cap. */
+  get drawn(): number {
+    return this.gpu ? this.gpu.drawn : this.cpuDrawn;
+  }
+  private cpuDrawn = 0;
+
   render(caps: Capsule[], cam: Camera, scroll: number): void {
     let src: HTMLCanvasElement;
     if (this.gpu) {
@@ -61,6 +67,7 @@ export class PixelView {
       src = this.gpu.canvas;
     } else {
       this.cpu.render(this.img.data, caps, cam, scroll);
+      this.cpuDrawn = caps.length;
       this.cpuCtx.putImageData(this.img, 0, 0);
       src = this.cpuCanvas;
     }
