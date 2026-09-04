@@ -199,6 +199,10 @@ export class Pit {
   step(mass: number, pan = 0, dist = 0.3, hard = 0.5): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    // AN AUDIOPARAM WILL NOT TAKE A NaN — Chrome throws a TypeError, and one
+    // non-finite number arriving here ended the frame loop and the page. Any
+    // input that is not a number is not a sound.
+    if (![mass, pan, dist, hard].every(Number.isFinite)) return;
     const now = ctx.currentTime;
     const m = Math.max(0.3, Math.min(2.6, mass));
 
@@ -276,6 +280,9 @@ export class Pit {
   say(bank: Bank, body: VoiceBody, pan = 0, dist = 0.3, force = 1): void {
     const ctx = this.ctx;
     if (!ctx || !this.ready) return;
+    // a NaN reaching an AudioParam is a TypeError in Chrome; a body with a
+    // number missing has no voice rather than a fatal one (see step)
+    if (![body.mass, body.girth, body.grit, pan, dist, force].every(Number.isFinite)) return;
     // never let a scrum turn into a wall of noise
     const now = ctx.currentTime;
     if (now - this.lastAt < 0.035) return;

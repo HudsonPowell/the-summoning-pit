@@ -135,6 +135,9 @@ export default defineConfig({
   plugins: [genomeStore(), jsonStore('/api/characters', 'characters')],
   // Every page is an entry point. Vite builds index.html and nothing else by
   // default, so a deploy shipped a pit with no /void.html in it.
+  // a minified stack still names its functions — an error surfaced from a
+  // browser we do not own is only useful if it says WHERE
+  esbuild: { keepNames: true },
   build: {
     rollupOptions: {
       input: {

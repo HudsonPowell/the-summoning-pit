@@ -72,6 +72,32 @@ const DEFAULT_LOOK: Look = {
  */
 const LOOK_VERSION = 2;
 
+// A STORED LOOK IS DATA, NOT TRUTH. One non-finite slider value, persisted
+// (JSON writes NaN as null), came back and overrode a default with null —
+// which is 0 in every sum and Infinity under every division — and the boot
+// died on it. Every number is checked against the range its own slider
+// allows; anything else is the default, silently.
+const LOOK_RANGE: Partial<Record<keyof Look, [number, number]>> = {
+  res: [160, 1600], zoom: [0.4, 2.4], blend: [0, 8], blendShape: [0, 1], blendMix: [0, 1],
+  floorRadius: [3, 25], floorPower: [0.3, 5], floorLift: [0, 1.4], tile: [0.25, 4],
+  round: [0, 1], closeness: [0, 1], response: [0.12, 1.6], lead: [0, 1.4],
+  pitch: [0, 0.9], orbit: [0, 0.8], population: [0, 8], peace: [0, 1],
+};
+function sanitiseLook(saved: any): Look {
+  const out: Look = { ...DEFAULT_LOOK };
+  for (const k of Object.keys(DEFAULT_LOOK) as (keyof Look)[]) {
+    const v = saved?.[k], d = DEFAULT_LOOK[k];
+    if (typeof d === 'number') {
+      const [lo, hi] = LOOK_RANGE[k] ?? [-Infinity, Infinity];
+      if (typeof v === 'number' && Number.isFinite(v)) (out as any)[k] = Math.min(hi, Math.max(lo, v));
+    } else if (typeof d === 'boolean') {
+      if (typeof v === 'boolean') (out as any)[k] = v;
+    } else if (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) {
+      (out as any)[k] = v;
+    }
+  }
+  return out;
+}
 function loadLook(): Look {
   try {
     const raw = localStorage.getItem(KEY);
@@ -79,7 +105,7 @@ function loadLook(): Look {
       const saved = JSON.parse(raw);
       if (saved?.v === LOOK_VERSION) {
         // the drawer is not a preference — `c` opens it, and it starts shut
-        return { ...DEFAULT_LOOK, ...saved, panel: false };
+        return { ...sanitiseLook(saved), panel: false };
       }
     }
   } catch { /* fresh */ }
@@ -654,6 +680,18 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
 const director = new Director();
 
 function driveCamera(sim: VoidSim, dt: number) {
+  // A CAMERA THAT HAS GONE NON-FINITE HEALS ITSELF. One NaN in the rig and
+  // every projection is NaN — a black canvas — and it feeds NaN into every
+  // pan and distance the sound asks for. Rather than trust it never happens,
+  // check, and if it has, start the camera cold again: one clean cut beats a
+  // dead page.
+  if (![cam.cx ?? 0, cam.cz ?? 0, cam.yaw, cam.ppm, cam.cy].every(Number.isFinite)) {
+    console.warn('[pit] camera went non-finite; restarting it cold');
+    cam.cx = 0; cam.cz = 0; cam.cy = 0.9; cam.yaw = 0.6; cam.ppm = look.zoom * 40;
+    rig.ax = 0; rig.az = 0;
+    rig.vx.v = 0; rig.vz.v = 0; rig.vy.v = 0; rig.vppm.v = 0; rig.vyaw.v = 0;
+    camCold = true;
+  }
   const you = yourAgent(sim);
   // While the title stands the camera frames the stage for EVERYONE — the
   // follow rig was still dragging owners off to their hero mid-word.
@@ -1169,7 +1207,10 @@ function placeOf(x: number, z: number): { pan: number; dist: number } {
   const c = Math.cos(-cam.yaw), s = Math.sin(-cam.yaw);
   const sx = dx * c - dz * s;
   const d = Math.hypot(dx, dz);
-  return { pan: Math.max(-1, Math.min(1, sx / 4)), dist: Math.min(1, d / 9) };
+  // a camera that has gone non-finite must not reach an AudioParam — Chrome
+  // throws on a NaN there, and that throw was the whole page
+  const pan = Math.max(-1, Math.min(1, sx / 4)), dist = Math.min(1, d / 9);
+  return { pan: Number.isFinite(pan) ? pan : 0, dist: Number.isFinite(dist) ? dist : 1 };
 }
 
 function speak(sim: VoidSim, e: import('./sim').VoidEvent): void {
@@ -1493,11 +1534,26 @@ async function boot() {
   let fontsIn = false;
   document.fonts.ready.then(() => { fontsIn = true; }, () => { fontsIn = true; });
   const bootAt = performance.now();
+  // A FRAME THAT FAILS MUST NOT KILL THE PIT. One throw inside a tick used to
+  // end the loop for good — no more frames, ever — and the whole page died on
+  // whichever bad number reached it first. The frame is caught, reported once
+  // where the lord line goes (with where it happened), and the next frame runs.
+  let frameFault = false;
   function frame(now: number) {
     const raw = now - last;
     const dt = Math.min(0.05, raw / 1000);
     last = now;
-    tick(dt);
+    try { tick(dt); } catch (e) {
+      if (!frameFault) {
+        frameFault = true;
+        console.error('[pit] a frame failed', e);
+        // on the build tag, not the lord line: the loop rewrites that one
+        // every frame, and a diagnosis that lasts one frame is no diagnosis
+        const w = document.getElementById('buildTag');
+        const where = String((e as Error)?.stack ?? '').split('\n')[1]?.trim() ?? '';
+        if (w) w.textContent = `A FRAME FAILED — ${(e as Error)?.message ?? e} ${where} · ${w.textContent}`.slice(0, 240);
+      }
+    }
     if (!lit && rendererReady
       && (((live ? live.hasWorld : true) && fontsIn) || now - bootAt > 4000)) {
       lit = true;
@@ -1569,6 +1625,7 @@ function buildPanel(sim: VoidSim, live: LiveVoid | null) {
     val.textContent = get().toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0);
     input.addEventListener('input', () => {
       const v = parseFloat(input.value);
+      if (!Number.isFinite(v)) return;   // a bad value is not a value
       set(v);
       val.textContent = v.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0);
       applyLook();

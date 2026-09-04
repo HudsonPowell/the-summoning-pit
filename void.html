@@ -223,7 +223,9 @@
           if (e.target.tagName === 'SCRIPT') surface('failed to load ' + String(e.target.src || '').split('/').pop());
           return;
         }
-        surface(e.message || 'error');
+        // and WHERE: a minified location is still a location
+        var at = e.filename ? ' @ ' + String(e.filename).split('/').pop() + ':' + e.lineno + ':' + e.colno : '';
+        surface((e.message || 'error') + at);
       }, true);
       addEventListener('unhandledrejection', function (e) {
         surface((e.reason && e.reason.message) || String(e.reason));
