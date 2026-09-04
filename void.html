@@ -31,9 +31,17 @@
     body { font: 12px/1.5 'SF Mono', ui-monospace, Menlo, monospace; color: var(--ink); }
     /* the stage is only ever what you can actually see — never under the drawer */
     #shell { position: relative; width: 100%; height: 100%; display: flex; }
-    /* dark until the world has actually arrived; main.ts lifts it, once */
-    #stage { position: relative; flex: 1; min-width: 0; opacity: 0; transition: opacity 1.1s ease; }
-    #stage.lit { opacity: 1; }
+    /* dark until the world has actually arrived; main.ts lifts it, once.
+       And if nothing ever does — the script never arrived, or died before
+       its first frame — the page lifts itself at five seconds with no script
+       involved, so there is always SOMETHING to look at, never a dark page. */
+    @keyframes stage-lift { to { opacity: 1; } }
+    #stage {
+      position: relative; flex: 1; min-width: 0; opacity: 0;
+      transition: opacity 1.1s ease;
+      animation: stage-lift 1.1s ease 5s forwards;
+    }
+    #stage.lit { opacity: 1; animation: none; }
     #view { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; display: block; }
     /* the drawer sits beside the stage, never over it */
     #panel {
@@ -197,6 +205,31 @@
     </div>
     <aside id="panel"><div id="panelInner"></div></aside>
   </div>
+  <script>
+    // A page that fails must SAY SO. If the pit's script cannot be fetched or
+    // dies before its first frame, lift the stage at once and put the reason
+    // where the lord line goes — so a blank screen on a device we do not own
+    // arrives as a sentence we can act on, not a shrug.
+    (function () {
+      var said = false;
+      function surface(msg) {
+        if (said) return; said = true;
+        var st = document.getElementById('stage'); if (st) st.classList.add('lit');
+        var w = document.getElementById('watchTag');
+        if (w) w.textContent = 'THE PIT COULD NOT START — ' + String(msg).slice(0, 160);
+      }
+      addEventListener('error', function (e) {
+        if (e.target && e.target !== window) {
+          if (e.target.tagName === 'SCRIPT') surface('failed to load ' + String(e.target.src || '').split('/').pop());
+          return;
+        }
+        surface(e.message || 'error');
+      }, true);
+      addEventListener('unhandledrejection', function (e) {
+        surface((e.reason && e.reason.message) || String(e.reason));
+      });
+    })();
+  </script>
   <script type="module" src="/src/void/main.ts"></script>
 </body>
 </html>

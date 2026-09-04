@@ -313,7 +313,11 @@ async function loadRoster(): Promise<Character[]> {
  * cast goes wild — still standing, still killable, owned by no one.
  */
 const KEY_STORE = 'pit-key2';
-let myKey = localStorage.getItem(KEY_STORE) ?? '';
+// READING storage throws too. The write below was guarded for private windows;
+// this read was not, and in a Chrome profile that blocks the site's data it
+// threw here — at module scope, before boot — and the page stayed dark with
+// nothing running to lift it. No key is just a first visit.
+let myKey = (() => { try { return localStorage.getItem(KEY_STORE) ?? ''; } catch { return ''; } })();
 // no key yet = never been here: the pit introduces itself, once
 const FIRST_VISIT = !myKey;
 let saidIntro = false;
