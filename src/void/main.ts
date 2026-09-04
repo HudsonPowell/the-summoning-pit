@@ -423,7 +423,9 @@ function myModel(): { model?: string; url?: string } {
   const q = new URLSearchParams(location.search);
   for (const k of ['model', 'ollama'] as const) {
     const v = q.get(k);
-    if (v) { try { localStorage.setItem('pit-' + k, v); } catch { /* private */ } }
+    // remembered until you say otherwise: ?model=off / ?ollama=off forgets it
+    if (v === 'off') { try { localStorage.removeItem('pit-' + k); } catch { /* private */ } }
+    else if (v) { try { localStorage.setItem('pit-' + k, v); } catch { /* private */ } }
   }
   const get = (k: string) => {
     try { return localStorage.getItem('pit-' + k) ?? undefined; } catch { return undefined; }
@@ -624,11 +626,23 @@ function buildSummon(sim: VoidSim, live: LiveVoid | null): void {
     settle = window.setTimeout(done, 45000);
     try {
       const mine = myModel();
+      // A PUBLIC PAGE DOES NOT KNOCK ON LOCALHOST. Without a model of your
+      // own named, this used to try a local Ollama first on EVERY summon and
+      // only then send the words to the pit — a silent failure on a dev box,
+      // but on the live site Chrome now asks every visitor whether the pit
+      // may "access other apps and services on this device". Bring-your-own
+      // stays exactly as it was; it just has to be asked for.
       let g;
+      // (a dev page on localhost is already local: it keeps the old default)
+      if (!mine.model && !mine.url && !DEV_PORT) {
+        if (!live) { done(); return; }
+        live.send({ t: 'summon', key: myKey, desc });
+        return;
+      }
       try {
         g = await hatchGenome(desc, mine.model, mine.url);
       } catch {
-        // No local model — the words go to the pit and it hatches for them.
+        // the model you named is not answering — the pit hatches for you
         if (!live) { done(); return; }
         live.send({ t: 'summon', key: myKey, desc });
         return;
