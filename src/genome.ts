@@ -459,6 +459,65 @@ export const PRESETS: Record<string, () => Genome> = {
 // --- migration -------------------------------------------------------------
 
 /** v1 (body/thigh/shin) and v2 (spine/hip/chest chains) both land here. */
+/**
+ * A HEAD IS A HEAD, NOT A DOME.
+ *
+ * Nothing ever related a head to the body under it. `r` is an absolute radius
+ * in metres that the model picks on its own, bounded only by 0.01..0.35, so
+ * the live pit ran from heads half the width of the shoulders they sat on to
+ * heads two and a half times them.
+ *
+ * Both ends fail, and they fail as the same complaint. Too big and the
+ * creature IS a head. Too small on a short neck and the field fuses head and
+ * shoulders into one smooth dome — which is what a swollen head actually
+ * looks like on a screen, and is the more common of the two.
+ *
+ * So: two ratios against the shoulder it is carried on. Neither invents a
+ * shape. A big head stays big and a small head stays small; they only have to
+ * read as heads. Done on migrate rather than on hatch so every creature
+ * already standing in the pit is healed on the next read, not just the ones
+ * summoned after this.
+ */
+function headProportion(sk: Skeleton): void {
+  const body = sk.body, girth = sk.girth;
+  if (!Array.isArray(body) || !Array.isArray(girth) || !girth.length) return;
+  for (const c of sk.chains ?? []) {
+    if (c?.role !== 'head' || !Array.isArray(c.seg) || !c.seg.length) continue;
+    const shoulder = girthAt(sk, (c.at ?? 1) * Math.max(1, body.length));
+    if (!(shoulder > 0)) continue;
+    // nothing balloons past half again the body carrying it
+    c.r = Math.min(c.r, shoulder * 1.5);
+    // and the neck holds it clear: more than half the ball has to stand
+    // outside the shoulder's own silhouette, plus the distance across which
+    // the field fuses, or the two melt together. That last figure is really a
+    // screen distance — the blend is in pixels — so it is a world number, and
+    // it is calibrated on the one creature nobody has ever complained about:
+    // the hand-drawn biped every default is cut from. It reads correctly, so
+    // the threshold sits just under it and leaves it alone. Anything the rule
+    // does touch is, by construction, worse proportioned than that. The neck grows rather than the head shrinking
+    // — the size was the model's idea, the clearance is ours — and it grows by
+    // at most half, because a neck that solves this by becoming a giraffe has
+    // traded one wrong silhouette for another.
+    //
+    // IT MUST BE A FIXED POINT. This runs on every read of every genome, so a
+    // rule that moves a neck a little each time gives the pit giraffes over a
+    // week of saves and reloads — which is exactly what a growth cap did: it
+    // could not reach the target in one pass, so it set off toward it again
+    // on the next read, and again, and again. Either the neck goes all the
+    // way to what it needs in one step, or it is not touched at all.
+    const need = shoulder + c.r * 0.55 + 0.035;
+    const have = c.seg.reduce((a: number, b: number) => a + b, 0);
+    // and only when lengthening actually solves it. A small head on a broad
+    // body cannot be lifted clear without a giraffe's neck, and a giraffe's
+    // neck is a worse silhouette than a small head, so that one is left as
+    // the model wrote it.
+    if (have > 0 && have < need && need <= have * 1.6) {
+      const k = need / have;
+      c.seg = c.seg.map((v: number) => v * k);
+    }
+  }
+}
+
 export function migrateGenome(raw: any): Genome {
   if (raw?.skeleton?.body && Array.isArray(raw.skeleton.body)) {
     // Models love boundary values: a head chain at the schema's extreme
@@ -473,6 +532,7 @@ export function migrateGenome(raw: any): Genome {
           : Math.max(-1.1, Math.min(1.3, c.angle));
       }
     }
+    headProportion(raw.skeleton);
     return raw as Genome;
   }
 
