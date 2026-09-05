@@ -44,6 +44,7 @@ interface Physics {
   grow: number;      // radius gained per second of life, as a fraction
   shrink: number;    // radius lost by the end of life, as a fraction
   flicker: number;   // radius wobble
+  sail: number;      // how much the wind owns it
 }
 
 /**
@@ -52,9 +53,9 @@ interface Physics {
  */
 const PHYSICS: Record<MoteKind, Physics> = {
   // struck metal and burning grit: fast, falls hard, skips off the floor
-  spark:  { gravity: -11, drag: 0.9, bounce: 0.34, swirl: 0.4, hot: 0.72, fade: 1.5, stretch: 0.028, grow: 0, shrink: 0.75, flicker: 0 },
+  spark:  { gravity: -11, drag: 0.9, bounce: 0.34, swirl: 0.4, hot: 0.72, fade: 1.5, stretch: 0.028, grow: 0, shrink: 0.75, flicker: 0, sail: 0.12 },
   // what is left of a spark: slower, heavier, and it pulses as it cools
-  ember:  { gravity: -3.4, drag: 1.7, bounce: 0.22, swirl: 1.1, hot: 0.32, fade: 1.2, stretch: 0.014, grow: 0, shrink: 0.55, flicker: 0.3 },
+  ember:  { gravity: -3.4, drag: 1.7, bounce: 0.22, swirl: 1.1, hot: 0.32, fade: 1.2, stretch: 0.014, grow: 0, shrink: 0.55, flicker: 0.3, sail: 0.5 },
   // SMOKE IS THE HARD ONE. In a field with no alpha a big soft mass is not
   // translucent, it is SOLID — a dark blob reads as a hole cut in the pit
   // rather than as vapour. So smoke here is small, pale and plural: wisps
@@ -62,20 +63,20 @@ const PHYSICS: Record<MoteKind, Physics> = {
   // and it leaves by SHRINKING, not by darkening. Fading a pale puff toward
   // the void turns it black halfway through its life — a hole again, just a
   // slower one. It swells, thins, and is gone, holding its colour throughout.
-  smoke:  { gravity: 0.42, drag: 2.1, bounce: 0, swirl: 2.2, hot: 0, fade: 2.4, stretch: 0, grow: 1.4, shrink: 0.85, flicker: 0.08 },
+  smoke:  { gravity: 0.42, drag: 2.1, bounce: 0, swirl: 2.2, hot: 0, fade: 2.4, stretch: 0, grow: 1.4, shrink: 0.85, flicker: 0.08, sail: 1 },
   // the flash itself: no weight, no travel, gone before you can look at it.
   // Near-white, because a flash that is merely a lighter version of its own
   // colour reads as a solid ball rather than as light
-  flare:  { gravity: 0, drag: 6, bounce: 0, swirl: 0, hot: 0.97, fade: 0.6, stretch: 0.01, grow: 2.4, shrink: 0.2, flicker: 0 },
+  flare:  { gravity: 0, drag: 6, bounce: 0, swirl: 0, hot: 0.97, fade: 0.6, stretch: 0.01, grow: 2.4, shrink: 0.2, flicker: 0, sail: 0 },
   // magic does not fall. It hangs, drifts, and goes out
-  mote:   { gravity: 0.15, drag: 1.2, bounce: 0, swirl: 3.4, hot: 0.4, fade: 1.8, stretch: 0.012, grow: 0, shrink: 0.6, flicker: 0.45 },
+  mote:   { gravity: 0.15, drag: 1.2, bounce: 0, swirl: 3.4, hot: 0.4, fade: 1.8, stretch: 0.012, grow: 0, shrink: 0.6, flicker: 0.45, sail: 0.35 },
   // thrown pieces of something solid, tumbling
-  shard:  { gravity: -10, drag: 0.5, bounce: 0.3, swirl: 0.2, hot: 0.15, fade: 1.6, stretch: 0.05, grow: 0, shrink: 0.25, flicker: 0 },
+  shard:  { gravity: -10, drag: 0.5, bounce: 0.3, swirl: 0.2, hot: 0.15, fade: 1.6, stretch: 0.05, grow: 0, shrink: 0.25, flicker: 0, sail: 0.08 },
   // WHAT A BLAST LEAVES. Not a scorch decal — a capsule has a round section,
   // so a flat mark of any size is a buried DOME, and a two-metre one is a
   // hill in the middle of the pit. Scattered specks instead: the medium can
   // say "something burned here" honestly, and an explosion does leave grit.
-  ash:    { gravity: 0, drag: 0, bounce: 0, swirl: 0, hot: 0, fade: 0.6, stretch: 0, grow: 0, shrink: 0.55, flicker: 0 },
+  ash:    { gravity: 0, drag: 0, bounce: 0, swirl: 0, hot: 0, fade: 0.6, stretch: 0, grow: 0, shrink: 0.55, flicker: 0, sail: 0 },
 };
 
 export interface Burst {
@@ -180,7 +181,7 @@ export class Motes {
    * rather than real turbulence: enough that no two motes travel the same line,
    * and no memory at all.
    */
-  step(dt: number, t: number): void {
+  step(dt: number, t: number, windX = 0, windZ = 0): void {
     if (dt <= 0) return;
     const h = Math.min(0.05, dt);
     for (let i = 0; i < this.n; i++) {
@@ -199,6 +200,12 @@ export class Motes {
         }
         i--;
         continue;
+      }
+      // WHAT THE WIND OWNS. Smoke is entirely at its mercy, an ember partly,
+      // a spark hardly at all — it is going too fast to be argued with.
+      if (p.sail) {
+        this.vx[i] += (windX - this.vx[i]) * p.sail * h * 1.6;
+        this.vz[i] += (windZ - this.vz[i]) * p.sail * h * 1.6;
       }
       if (p.swirl) {
         const s = this.salt[i];

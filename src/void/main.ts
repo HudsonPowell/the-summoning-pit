@@ -10,6 +10,7 @@ import { Camera } from '../render';
 import { makeProp, PropKind } from '../props';
 import { Motes, muzzle, wake, impact, spatter, undoing, dust, streak, gather } from '../particles';
 import { Critters } from '../critters';
+import { conditionsAt, rainCaps, Conditions } from '../conditions';
 import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, rangedOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
@@ -957,6 +958,8 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       // a blow to the head SNAPS it aside; the spring brings it back
       lookYaw: Math.max(-1.1, Math.min(1.1, a.sec.head + idle.lookYaw
         + (a.flinch && a.flinch.h > 0.75 ? a.flinch.side * 0.8 * (a.flinch.t / 0.5) : 0))),
+      windFwd: cond.windX * Math.cos(a.heading) + cond.windZ * Math.sin(a.heading),
+      windSide: -cond.windX * Math.sin(a.heading) + cond.windZ * Math.cos(a.heading),
       lean: a.sec.lean + idle.lean,
       twist: a.sec.twist + idle.twist,
       bob: a.sec.bob + idle.bob,
@@ -1263,6 +1266,15 @@ const handAt = new Map<number, { x: number; y: number; z: number }>();
 const critters = new Critters();
 
 /**
+ * The weather, the hour and the wind — all three a pure function of the pit's
+ * own clock, which is the server's and is already in every snapshot. So every
+ * screen has the same weather at the same moment with nothing sent about it.
+ */
+let cond: Conditions = conditionsAt(0);
+/** The pit's clock, where module-scope drawing can reach it. */
+let pitT = 0;
+
+/**
  * Shots are watched rather than told about. A projectile arriving in the
  * snapshots gets a wake behind it; one that VANISHES has landed, and the
  * client knows where, what colour, how big and whether it goes off — so an
@@ -1404,7 +1416,16 @@ function floraCapsules(f: import('./relics').Flora): Capsule[] {
       const y = p.y * grown * (1 - bend * 0.55);
       const shear = p.y * bend * 0.6;
       const lx = p.x * grown + shear, lz = p.z * grown;
-      return v3(f.x + lx * c - lz * sn, Math.max(0.01, y), f.z + lx * sn + lz * c);
+      // AND THE SAME WIND BENDS THE GRASS. Height is leverage, so the tips
+      // lean and the roots do not, and a gust runs across the whole pit at
+      // once rather than each plant deciding for itself.
+      const lean = y * y * 0.55;
+      const gustAt = Math.sin(pitT * 1.7 + f.x * 0.8 + f.z * 0.6) * 0.25 + 1;
+      return v3(
+        f.x + lx * c - lz * sn + cond.windX * lean * gustAt * 0.09,
+        Math.max(0.01, y),
+        f.z + lx * sn + lz * c + cond.windZ * lean * gustAt * 0.09,
+      );
     };
     return { ...cp, a: bendAt(cp.a), b: bendAt(cp.b), r: cp.r * grown * (1 - bend * 0.3) };
   });
@@ -1547,6 +1568,22 @@ async function boot() {
     // draws and the cheapest to do without, so the governor spends them
     // first — a phone that has begun to struggle loses sparks long before
     // it loses sharpness, and loses them gradually rather than all at once.
+    pitT = sim.t;
+    cond = conditionsAt(sim.t);
+    // THE HOUR LIGHTS THE PIT. Night is dimmer and bluer but never dark: this
+    // is a place you have to be able to read, so the floor loses warmth before
+    // it loses legibility, and the pool of light narrows rather than dying.
+    const lit = cond.light;
+    const dim = (c: [number, number, number]): [number, number, number] => [
+      c[0] * lit * (0.78 + 0.22 * lit),
+      c[1] * lit * (0.86 + 0.14 * lit),
+      c[2] * lit * (0.96 + 0.04 * lit),
+    ];
+    cam.floorColorA = dim(hexRgb(look.floorColA));
+    cam.floorColorB = dim(hexRgb(look.floorColB));
+    cam.floorLift = look.floorLift * (0.5 + 0.5 * lit);
+    cam.floorRadius = look.floorRadius * (0.72 + 0.28 * lit);
+
     motes.budget = Math.max(0, Math.min(1, (perfScale - 0.5) / 0.5));
     // THE DRAW, BEFORE THE SHOT. A ranged creature announces its windup —
     // 'strike' fires when the swing begins and 'loose' when it lets go — so
@@ -1564,7 +1601,7 @@ async function boot() {
       gather(motes, hand.x, hand.y, hand.z, hexRgb3(r.color), 0.1 + r.size * 1.4, charge, dt);
     }
     shotEffects(sim, dt);
-    motes.step(dt, sim.t);
+    motes.step(dt, sim.t, cond.windX, cond.windZ);
     critters.budget = motes.budget;
     critters.step(dt, sim.agents);
     driveCamera(sim, dt);
@@ -1633,6 +1670,9 @@ async function boot() {
     // rocks go before the sparks do
     motes.caps(caps, hexRgb(look.voidCol), sim.t);
     critters.caps(caps, sim.t);
+    // rain is drawn in a box that follows the camera, because rain nobody can
+    // see is the most expensive rain there is
+    rainCaps(caps, sim.t, cond, cam.cx ?? 0, cam.cz ?? 0, motes.budget);
     for (const r of sim.relics) add(relicCapsules(r));
     for (const f of sim.flora) add(floraCapsules(f));
     if (title && !title.done) add(title.caps(dt, cam.yaw));

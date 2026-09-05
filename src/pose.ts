@@ -55,6 +55,13 @@ export interface PoseExtras {
    * weight landing, and flesh still moving after the frame stopped.
    */
   gear?: GearPiece[];
+  /**
+   * The wind, resolved into this creature's own frame: how much of it is
+   * blowing the way the body faces, and how much across. Cloth is the only
+   * thing that cares, and it cares a lot.
+   */
+  windFwd?: number;
+  windSide?: number;
   lean?: number;
   twist?: number;
   bob?: number;
@@ -719,12 +726,15 @@ export function solvePose(
         const snap = strikeW * 0.55;                           // so does a swing of the arm
         const ripple = Math.sin(TAU * phase * 2 + k * 4.5) * 0.12 * mv
           + Math.sin(idleT * 1.15 + k * 2.6 + personality.offset) * 0.055 * (1 - mv);
+        // and the weather has an opinion too: cloth goes where it is blown
+        const blowX = (extras?.windFwd ?? 0) * 0.075;
+        const blowZ = (extras?.windSide ?? 0) * 0.075;
         return [
-          q[0] - (stream + snap) * k,
+          q[0] - (stream + snap) * k + blowX * k,
           // cloth does not merely trail, it LIFTS — that is the difference
           // between a cape and a dead weight nailed to a shoulder
           q[1] + (stream * 0.52 + Math.abs(swing) * 0.35) * k,
-          q[2] + (swing + ripple) * k,
+          q[2] + (swing + ripple) * k + blowZ * k,
         ];
       };
 
