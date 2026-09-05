@@ -168,6 +168,20 @@ function watching(): number {
  */
 const cast: Character[] = [];
 const catalogue = new Map<Character, number>();
+/**
+ * A CREATURE THAT CHANGES MUST BE SENT AGAIN. castId caches by object
+ * identity, so a character was broadcast exactly once and never again — and
+ * a kill mutates the victor's own genome to graft on the trophy it took. The
+ * sim has been growing horns onto champions for as long as it has existed and
+ * not one watching screen has ever seen it. Same family as the springs that
+ * never ran: it works perfectly where nobody is looking.
+ */
+function recast(ch: Character): void {
+  const id = catalogue.get(ch);
+  if (id === undefined) { castId(ch); return; }
+  broadcast({ t: 'cast', id, ch });
+}
+
 function castId(ch: Character): number {
   const known = catalogue.get(ch);
   if (known !== undefined) return known;
@@ -671,6 +685,12 @@ async function handleSummon(ws: WebSocket, m: any): Promise<void> {
   if (!day.owners.includes(owner)) day.owners.push(owner);
   console.log(`[pit] ${owner} summoned ${g.name}`);
   ws.send(JSON.stringify({ t: 'yours', id: a.id, name: g.name, owner }));
+  // a spoil changed a body: send that creature again so the watchers see it
+  for (const e of sim.events) {
+    if (e.kind !== 'spoil' || !e.actor) continue;
+    const won = sim.agents.find(a => a.id === e.actor!.id);
+    if (won) recast(won.ch);
+  }
   broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
 }
 
@@ -696,7 +716,13 @@ setInterval(() => {
   // events go out the instant they happen — they are sparse and they carry
   // the story, so they must not wait for the next position tick
   if (sim.events.length) {
-    broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
+    // a spoil changed a body: send that creature again so the watchers see it
+  for (const e of sim.events) {
+    if (e.kind !== 'spoil' || !e.actor) continue;
+    const won = sim.agents.find(a => a.id === e.actor!.id);
+    if (won) recast(won.ch);
+  }
+  broadcast({ t: 'ev', list: sim.events as VoidEvent[] });
     for (const e of sim.events) {
       log(e);
       // A hero that barely arrived costs its owner a wait, so a bad summon

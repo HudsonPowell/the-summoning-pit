@@ -82,3 +82,23 @@ for (const desc of ['a knight in full plate', 'a hooded assassin in a cloak',
 }
 
 console.log('Gear: rigid stays rigid, cloth streams and swings, hems outswing yokes, sockets stay single.');
+
+// --- scars are earned, placed by name, and never wander -----------------------
+{
+  const bare = solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, 1, undefined, 0, {});
+  const marked = solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, 1, undefined, 0, { scars: 5 });
+  const scars = marked.filter(c => c.part === 'scar');
+  assert.equal(bare.filter(c => c.part === 'scar').length, 0, 'an unhurt creature carries none');
+  assert.equal(scars.length, 5, 'and a veteran carries one per wound');
+  assert.ok(scars.every(c => [c.a.x, c.a.y, c.a.z, c.r].every(Number.isFinite) && c.r > 0), 'all finite');
+
+  // the same creature must scar identically on every screen, forever
+  const again = solvePose(g, { tired: 0, angry: 0 }, 0.9, 1, 7, undefined, 0, { scars: 5 })
+    .filter(c => c.part === 'scar');
+  assert.equal(scars.length, again.length, 'the same count in any pose');
+  // and an older wound never moves when a newer one is taken
+  const fewer = solvePose(g, { tired: 0, angry: 0 }, 0.2, 0, 1, undefined, 0, { scars: 2 })
+    .filter(c => c.part === 'scar');
+  fewer.forEach((c, i) => assert.deepEqual(c.a, scars[i].a, 'old scars stay where they were'));
+  console.log(`  scars: ${scars.length} placed by name, and the first ${fewer.length} never move`);
+}

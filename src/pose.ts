@@ -55,6 +55,8 @@ export interface PoseExtras {
    * weight landing, and flesh still moving after the frame stopped.
    */
   gear?: GearPiece[];
+  /** How many wounds no rest has closed. Where they sit is derived, not sent. */
+  scars?: number;
   /**
    * The wind, resolved into this creature's own frame: how much of it is
    * blowing the way the body faces, and how much across. Cloth is the only
@@ -749,6 +751,44 @@ export function solvePose(
           });
         }
       }
+    }
+  }
+
+  // WHAT IT HAS SURVIVED, WRITTEN ON IT. The count of scars already crosses
+  // the wire, and a count is all that is needed: WHERE each one sits is a hash
+  // of the creature's own name and that scar's number, so every screen draws
+  // the same wounds in the same places for nothing, and they never move once
+  // earned. A veteran should be legible before you read its tally.
+  const scars = Math.min(7, Math.round(extras?.scars ?? 0));
+  if (scars > 0) {
+    let seed = 2166136261;
+    for (const ch of genome.name) seed = Math.imul(seed ^ ch.charCodeAt(0), 16777619);
+    const scarInk: [number, number, number] = [
+      cTorso[0] * 0.42 + 26, cTorso[1] * 0.34 + 10, cTorso[2] * 0.34 + 12,
+    ];
+    for (let i = 0; i < scars; i++) {
+      const h = Math.imul(seed ^ Math.imul(i + 1, 0x9e3779b1), 0x85ebca6b);
+      const u = ((h >>> 9) & 0xffff) / 0xffff;
+      const v = ((h >>> 21) & 0x7ff) / 0x7ff;
+      const at = 0.22 + u * 0.66;              // somewhere down the body
+      const side = (h & 1) ? 1 : -1;
+      const centreOf = curveAt(at);
+      const rad = Math.max(0.03, girthAt(sk, at * N));
+      const tw = twistAt(at);
+      // out to the flank, and lying just proud of the surface so the field
+      // fuses it into the skin rather than floating it above
+      const out = v3(-side * Math.sin(tw), 0, side * Math.cos(tw));
+      const tilt = (v - 0.5) * 1.6;
+      const dir = norm(add(scale(fwdAt(at), Math.cos(tilt)), v3(0, Math.sin(tilt), 0)));
+      const mid = add(centreOf, scale(out, rad * 0.86));
+      const half = rad * (0.34 + v * 0.5);
+      caps.push({
+        a: sub(mid, scale(dir, half)),
+        b: add(mid, scale(dir, half)),
+        r: rad * 0.13,
+        color: scarInk,
+        part: 'scar',
+      });
     }
   }
 

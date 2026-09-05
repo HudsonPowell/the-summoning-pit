@@ -958,6 +958,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       // a blow to the head SNAPS it aside; the spring brings it back
       lookYaw: Math.max(-1.1, Math.min(1.1, a.sec.head + idle.lookYaw
         + (a.flinch && a.flinch.h > 0.75 ? a.flinch.side * 0.8 * (a.flinch.t / 0.5) : 0))),
+      scars: a.scars,
       windFwd: cond.windX * Math.cos(a.heading) + cond.windZ * Math.sin(a.heading),
       windSide: -cond.windX * Math.sin(a.heading) + cond.windZ * Math.cos(a.heading),
       lean: a.sec.lean + idle.lean,

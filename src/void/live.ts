@@ -10,7 +10,7 @@
 import { newPacts } from './pacts';
 import { pitScenery } from '../props';
 import { Character, migrateCharacter } from '../character';
-import { effectiveGait } from '../genome';
+import { effectiveGait, heightOf } from '../genome';
 import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
 import { stepSecondary, jolt } from '../secondary';
 
@@ -68,6 +68,8 @@ export class LiveVoid {
   private next?: Snap;
   private clock = 0;
   private byId = new Map<number, Agent>();
+  /** Bumped every time a character is sent again, so agents can catch up. */
+  private castRev: number[] = [];
   // when each floor item was first seen, so it can arrive instead of pop
   private relicBorn = new Map<number, number>();
   private floraBorn = new Map<number, number>();
@@ -128,8 +130,15 @@ export class LiveVoid {
     // the cast grows: every summon anyone makes adds one, and it arrives
     // before any agent that refers to it
     if (m.t === 'cast') {
-      try { this.cast[m.id] = migrateCharacter(m.ch); this.sim.roster = this.cast.filter(Boolean); }
-      catch { /* a creature we cannot read is one we do not draw */ }
+      try {
+        this.cast[m.id] = migrateCharacter(m.ch);
+        // A RE-SENT CHARACTER IS A CHANGED ONE. Creatures already standing in
+        // the pit were built from the older version and would keep wearing it
+        // forever, so bump the revision and let the next snapshot rebuild them
+        // — which is how a champion's new trophy appears on a watching screen.
+        this.castRev[m.id] = (this.castRev[m.id] ?? 0) + 1;
+        this.sim.roster = this.cast.filter(Boolean);
+      } catch { /* a creature we cannot read is one we do not draw */ }
       return;
     }
     if (m.t === 'key')   { this.onKey?.(m.key, m.owner); return; }
@@ -230,8 +239,25 @@ export class LiveVoid {
       a = makeAgent(ch, row.x, row.z, row.by);
       a.id = row.i;
       a.by = row.by;
+      (a as any).rev = this.castRev[row.c] ?? 0;
       this.byId.set(row.i, a);
       this.sim.agents.push(a);
+      return a;
+    }
+    // ITS BODY CHANGED UNDER IT. A champion that has just taken a trophy is
+    // sent again by the pit; the creature standing here was built from the
+    // version before that and would wear the old body until it died. Swap in
+    // the new one and keep everything else — where it is, what it is doing,
+    // and every spring mid-flight.
+    const rev = this.castRev[row.c] ?? 0;
+    if ((a as any).rev !== rev) {
+      const ch = this.cast[row.c];
+      if (ch) {
+        (a as any).rev = rev;
+        a.ch = ch;
+        a.genome = ch.genome;
+        a.bulk = heightOf(ch.genome);
+      }
     }
     return a;
   }

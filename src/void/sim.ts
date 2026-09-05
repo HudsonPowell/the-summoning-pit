@@ -11,7 +11,7 @@ import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
 import { Pacts, newPacts, stanceOf } from './pacts';
 import { Prop, pitScenery } from '../props';
 import { Relic, Flora, leaveRemains, seedFlora, stepRelics, stepFlora, takeRelicId } from './relics';
-import { Record as Deeds, takeSpoil } from './spoils';
+import { Record as Deeds, takeSpoil, takeTrophy } from './spoils';
 
 export type AgentState = 'wander' | 'think' | 'approach' | 'fight' | 'flee' | 'down' | 'rest';
 
@@ -668,10 +668,16 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
       by.scars = scarsOf(sim, by);
       by.hp = Math.min(Math.max(by.hp, by.maxHp - by.scars), by.hp + 1);
       by.bulk = heightOf(by.genome);
-      if (took) {
+      // AND IT TAKES SOMETHING TO WEAR. The graft is a limb bolted on; this
+      // is the proof hung at the belt, in the dead thing's colours. It goes
+      // on the agent's OWN character object — the roster's copy is the shelf
+      // every future summon spawns off, and a trophy is not hereditary.
+      const trophy = takeTrophy(a.genome, (by.ch.gear ?? []).length);
+      if (trophy) by.ch = { ...by.ch, gear: [...(by.ch.gear ?? []), trophy] };
+      if (took || trophy) {
         sim.events.push({
           kind: 'spoil', t: sim.t, x: by.x, z: by.z,
-          actor: whoOf(by), target: whoOf(a), how: took,
+          actor: whoOf(by), target: whoOf(a), how: took ?? trophy?.name,
         });
       }
     }
