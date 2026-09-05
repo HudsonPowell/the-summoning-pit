@@ -162,7 +162,13 @@ export class LiveVoid {
     const a = ev.actor ? this.byId.get(ev.actor.id) : undefined;
     // the dead swing nothing: a late strike event landing on a corpse had it
     // re-playing the start of its last draw forever — the dead man's bow
-    if ((ev.kind === 'strike' || ev.kind === 'loose') && a && a.deadT < 0) {
+    // A LOOSE IS THE MIDDLE OF A SWING, NOT THE START OF ONE. Both kinds used
+    // to reset the clock, so a ranged attack played its draw, and then at the
+    // exact moment the arrow left the server's hand the client started the
+    // draw AGAIN — the release pose never once coincided with the shot
+    // appearing. The windup is announced by 'strike'; 'loose' only restarts
+    // anything if this screen never saw the windup at all.
+    if ((ev.kind === 'strike' || (ev.kind === 'loose' && a && a.strikeT < 0)) && a && a.deadT < 0) {
       a.strikeT = 0;
       a.struck = false;
       a.heavy = false;

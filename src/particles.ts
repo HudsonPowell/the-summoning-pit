@@ -319,6 +319,39 @@ export function streak(out: Capsule[], hx: number, hy: number, hz: number,
   });
 }
 
+/**
+ * ANTICIPATION. Every effect above is a consequence — something has already
+ * happened and this is the noise it made. This one is the opposite: it is the
+ * moment BEFORE, and it is the only one an audience can read as intent. Motes
+ * fall inward out of the dark and collect at the hand, faster and brighter as
+ * the draw fills, so a bolt is expected rather than merely survived.
+ *
+ * There is no attractor in the pool and there does not need to be: a mote born
+ * on a shell, aimed at the centre and given just enough speed to arrive as it
+ * dies, converges on its own. Drag and the drift field curl it on the way in,
+ * which is the difference between a spell gathering and a vacuum cleaner.
+ */
+export function gather(m: Motes, x: number, y: number, z: number,
+  color: [number, number, number], reach: number, charge: number, dt: number): void {
+  const rate = (5 + charge * 30) * dt;
+  const n = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const e = (Math.random() - 0.5) * 1.7;
+    const R = reach * (0.65 + Math.random() * 0.7);
+    const ox = Math.cos(a) * Math.cos(e) * R, oy = Math.sin(e) * R, oz = Math.sin(a) * Math.cos(e) * R;
+    const life = 0.3;
+    m.emit('mote', 1, {
+      x: x + ox, y: y + oy, z: z + oz,
+      dx: -ox, dy: -oy, dz: -oz,
+      speed: (R / life) * 1.25,          // drag eats a third of it on the way
+      r: 0.011 + charge * 0.012, life, color,
+    });
+  }
+  // and the hand fills: a small light that is brightest just before release
+  if (charge > 0.4) m.emit('flare', 1, { x, y, z, r: 0.014 * charge, life: 0.06, color });
+}
+
 /** The instant of release: a flash at the hand, a cough of smoke, a few sparks. */
 export function muzzle(m: Motes, x: number, y: number, z: number,
   dx: number, dz: number, color: [number, number, number], size: number): void {

@@ -8,9 +8,9 @@ import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { makeProp, PropKind } from '../props';
-import { Motes, muzzle, wake, impact, spatter, undoing, dust, streak } from '../particles';
+import { Motes, muzzle, wake, impact, spatter, undoing, dust, streak, gather } from '../particles';
 import { PixelView } from '../view';
-import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
+import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, rangedOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
 import { Pit, Bank } from './voice';
 import { WireTitle } from './wiretitle';
@@ -982,7 +982,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     ? (a.recalled ? Math.max(0, 1 - a.deadT / 0.9) : Math.max(0, 1 - Math.max(0, a.deadT - 2) / 1.5))
     : 1;
   const yaw = -(a.heading + a.sec.spin);
-  return caps.map(c => {
+  const world = caps.map(c => {
     const p = rotY(c.a, yaw);
     const q = rotY(c.b, yaw);
     let col: [number, number, number] = [c.color[0] * fade, c.color[1] * fade, c.color[2] * fade];
@@ -1002,6 +1002,15 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       color: col,
     };
   });
+  // THE HAND, IN WORLD SPACE. Only the pose solver knows where it ended up —
+  // it is the far end of a swing, a carry pose, two springs and a living
+  // idle — so anything that belongs AT the hand has to read it back out of
+  // the body that was drawn. The last one is the weapon hand; a one-armed
+  // thing has only the one.
+  for (let i = world.length - 1; i >= 0; i--) {
+    if (world[i].part === 'hand') { handAt.set(a.id, world[i].a); break; }
+  }
+  return world;
 }
 
 /**
@@ -1242,6 +1251,9 @@ function placeOf(x: number, z: number): { pan: number; dist: number } {
  */
 const motes = new Motes();
 
+/** Where each creature's weapon hand is this frame, read off the drawn body. */
+const handAt = new Map<number, { x: number; y: number; z: number }>();
+
 /**
  * Shots are watched rather than told about. A projectile arriving in the
  * snapshots gets a wake behind it; one that VANISHES has landed, and the
@@ -1280,8 +1292,15 @@ function sparks(sim: VoidSim, e: import('./sim').VoidEvent): void {
     const a = at(e.actor?.id);
     if (!a) return;
     const dx = Math.cos(a.heading), dz = Math.sin(a.heading);
-    muzzle(motes, a.x + dx * a.bulk * 0.34, a.bulk * 0.62, a.z + dz * a.bulk * 0.34,
-      dx, dz, hexRgb3(a.ch.genome.palette.accent), 0.05);
+    // at the hand the gather has been filling, in the shot's own colour, so
+    // the flash is plainly the release of the thing that was building
+    const hand = handAt.get(a.id);
+    const r = rangedOf(a);
+    muzzle(motes,
+      hand?.x ?? a.x + dx * a.bulk * 0.34,
+      hand?.y ?? a.bulk * 0.62,
+      hand?.z ?? a.z + dz * a.bulk * 0.34,
+      dx, dz, hexRgb3(r?.color ?? a.ch.genome.palette.accent), r?.size ?? 0.05);
     return;
   }
   if (e.kind === 'hit') {
@@ -1517,6 +1536,21 @@ async function boot() {
     // first — a phone that has begun to struggle loses sparks long before
     // it loses sharpness, and loses them gradually rather than all at once.
     motes.budget = Math.max(0, Math.min(1, (perfScale - 0.5) / 0.5));
+    // THE DRAW, BEFORE THE SHOT. A ranged creature announces its windup —
+    // 'strike' fires when the swing begins and 'loose' when it lets go — so
+    // a watching screen has the whole draw to fill the hand with light. It
+    // is the one effect in the pit that is a promise rather than a report.
+    for (const a of sim.agents) {
+      if (a.deadT >= 0 || a.strikeT < 0) continue;
+      const r = rangedOf(a);
+      if (!r) continue;
+      const spec = strikeSpecOf(a);
+      const release = spec.duration * (spec.windup + spec.strike * 0.5);
+      const charge = a.strikeT / Math.max(0.05, release);
+      const hand = handAt.get(a.id);
+      if (!hand || charge >= 1) continue;      // let go: the wake has it now
+      gather(motes, hand.x, hand.y, hand.z, hexRgb3(r.color), 0.1 + r.size * 1.4, charge, dt);
+    }
     shotEffects(sim, dt);
     motes.step(dt, sim.t);
     driveCamera(sim, dt);
