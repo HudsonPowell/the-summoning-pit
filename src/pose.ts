@@ -199,6 +199,11 @@ export function solvePose(
   interface AnchorPoint { at: V3; size: number; dir: V3; side: number }
   const anchors: { head?: AnchorPoint } = {};
   const shoulders: AnchorPoint[] = [];
+  // forearms and shins, so a bracer or a greave can find a limb to sit on.
+  // Bounded: a spider in greaves is a delight, a spider in eight PAIRS of
+  // greaves is a capsule bill nobody asked for.
+  const forearms: AnchorPoint[] = [];
+  const shins: AnchorPoint[] = [];
 
   const legs = sk.chains.filter(c => c.role === 'leg').sort((a, b) => a.at - b.at);
   const N = Math.max(1, sk.body.length);
@@ -437,7 +442,10 @@ export function solvePose(
         caps.push({ a: hip, b: knee, r: chain.r * 1.15, color: mul(ink, shade), part: 'thigh' });
         caps.push({ a: knee, b: ankle, r: chain.r, color: mul(ink, shade * 0.9), part: 'shin' });
       }
-      caps.push({ a: ankle, b: toe, r: chain.r * 0.9, color: mul(inks[3], shade), part: 'foot' });
+      caps.push({ a: ankle, b: toe, r: chain.r * 0.9, color: mul(inks[3], shade) , part: 'foot' });
+      if (shins.length < 4) {
+        shins.push({ at: vlerp(knee, ankle, 0.5), size: chain.r * 3.2, dir: norm(sub(ankle, knee)), side: side === 0 ? 1 : side });
+      }
     }
   });
 
@@ -523,6 +531,9 @@ export function solvePose(
       const shade = (s < 0 ? 0.8 : 1.0) * (1 - pair * 0.12);
       const ink = inkOf(chain);
       if (pair === 0) shoulders.push({ at: shoulder, size: chain.r * 2.6, dir: fwdAt(chain.at), side: s });
+      if (forearms.length < 4) {
+        forearms.push({ at: vlerp(elbow, hand, 0.45), size: chain.r * 3.4, dir: norm(sub(hand, elbow)), side: s });
+      }
       if (hose) {
         const bow = v3(-rubber * armLength * 0.22 * Math.sin(TAU * (pArm - 0.12)) * mv,
           0, rubber * s * armLength * 0.065 * (0.25 + 0.75 * mv));
@@ -674,20 +685,54 @@ export function solvePose(
       ));
     };
 
+    const waistAt = curveAt(sk.upright ? 0.5 : 0.42);
+
     for (const piece of worn) {
       const spots: { at: V3; size: number; dir: V3; side: number }[] =
         piece.at === 'head' ? (anchors.head ? [anchors.head] : [])
         : piece.at === 'shoulder' ? shoulders
+        : piece.at === 'arm' ? forearms
+        : piece.at === 'leg' ? shins
+        : piece.at === 'hip'
+          ? [1, -1].map(side => ({ at: waistAt, size: chestSize * 0.85, dir: facing, side }))
         : piece.at === 'back'
           ? [{ at: add(chestAt, scale(facing, -chestSize * 0.3)), size: chestSize, dir: facing, side: 1 }]
         : piece.at === 'waist'
-          ? [{ at: curveAt(sk.upright ? 0.5 : 0.42), size: chestSize * 0.9, dir: facing, side: 1 }]
+          ? [{ at: waistAt, size: chestSize * 0.9, dir: facing, side: 1 }]
           : [{ at: chestAt, size: chestSize, dir: facing, side: 1 }];
+
+      // CLOTH IS NOT WELDED ON. A helm should ride the skull exactly; a cloak
+      // that does the same is a painted board. Everything a hem needs to know
+      // is already here — how fast the body is going, how hard it is turning,
+      // where it is in its stride, whether it is mid-swing — so the drape is
+      // a function of this frame and nothing else: no simulation, no memory,
+      // no state to keep in step across screens, nothing on the wire.
+      const cloth = clamp(piece.drape ?? 0, 0, 1);
+      const flow = (q: [number, number, number]): [number, number, number] => {
+        if (!cloth) return q;
+        // pinned at the anchor, free at the hem: how far this point hangs
+        // below the fixing is exactly how much licence it has
+        const k = Math.pow(clamp(-q[1] / 1.4, 0, 1), 1.25) * cloth;
+        if (k <= 0.001) return q;
+        const stream = mv * 1.15;                              // running drags it back
+        const swing = clamp(turnRate, -3.5, 3.5) * 0.24;       // and a turn throws it wide
+        const snap = strikeW * 0.55;                           // so does a swing of the arm
+        const ripple = Math.sin(TAU * phase * 2 + k * 4.5) * 0.12 * mv
+          + Math.sin(idleT * 1.15 + k * 2.6 + personality.offset) * 0.055 * (1 - mv);
+        return [
+          q[0] - (stream + snap) * k,
+          // cloth does not merely trail, it LIFTS — that is the difference
+          // between a cape and a dead weight nailed to a shoulder
+          q[1] + (stream * 0.52 + Math.abs(swing) * 0.35) * k,
+          q[2] + (swing + ripple) * k,
+        ];
+      };
+
       for (const spot of spots) {
         for (const part of piece.parts) {
           caps.push({
-            a: place(spot.at, spot.size, spot.dir, spot.side, part.a),
-            b: place(spot.at, spot.size, spot.dir, spot.side, part.b),
+            a: place(spot.at, spot.size, spot.dir, spot.side, flow(part.a)),
+            b: place(spot.at, spot.size, spot.dir, spot.side, flow(part.b)),
             r: part.r * spot.size,
             color: hex(part.color),
             part: 'gear',
