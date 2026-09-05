@@ -53,10 +53,19 @@ export function conditionsAt(t: number): Conditions {
   const gustNoise = Math.max(0, smoothNoise(t / 7.5, 0x77c1));
   const gust = Math.min(1.4, strength * (1 + gustNoise * 0.85));
 
-  // fronts come through: mostly dry, occasionally not, and it takes a while
-  // to arrive and a while to clear
+  // Fronts come through: mostly dry, occasionally not, and it takes a while to
+  // arrive and a while to clear.
+  //
+  // THE SHAPE MATTERS MORE THAN THE THRESHOLD. A straight ramp off the front
+  // spent half the pit's life in rain and reached a full downpour whenever the
+  // noise merely went above average, which is often — the pit was standing in
+  // a wall of water most of the time anyone looked at it. Squaring a late,
+  // narrow ramp gives the distribution weather actually has: usually dry, a
+  // shower you notice now and then, and a real downpour only when the front
+  // goes near its own maximum, which is rare.
   const front = smoothNoise(t / WEATHER, 0x9e37);
-  const rain = Math.max(0, Math.min(1, (front - 0.46) * 3.1));
+  const wet = Math.max(0, Math.min(1, (front - 0.6) * 2.4));
+  const rain = wet * wet;
 
   // rain arrives on the wind, and hard
   const push = gust * (1 + rain * 0.8);
@@ -87,18 +96,21 @@ export function rainCaps(
   t: number, c: Conditions, cx: number, cz: number, budget = 1,
 ): void {
   if (c.rain <= 0.02) return;
-  // 150 at the worst of it, not 230: rain lands on top of a pit that is
-  // already drawing seven hundred capsules, and a downpour must not be the
-  // thing that costs a phone its frame rate. Fewer, longer, thicker reads the
-  // same at a glance and costs a third less.
-  const n = Math.round(150 * c.rain * budget);
+  // 90 at the worst of it. This was 150, and 230 before that, and both were
+  // wrong in the same way: rain drawn dense enough to be unmistakable stops
+  // being weather and becomes a curtain hung between the viewer and the
+  // fight. It also lands on top of a pit already drawing seven hundred
+  // capsules, and must never be the thing that costs a phone its frame rate.
+  const n = Math.round(90 * c.rain * budget);
   if (n <= 0) return;
   const SPAN = 11;                       // metres of pit the rain covers
   const TOP = 5.4;
   const fall = 13 + c.rain * 5;          // metres per second
   // it comes down at an angle, and the streak lies along the way it travels
   const dx = c.windX * 0.09, dz = c.windZ * 0.09;
-  const lit = 150 + c.rain * 40;
+  // Pale, not bright. Rain the colour of lit water on a dark pit reads as
+  // scratches on the lens; it should sit just above the floor it falls on.
+  const lit = 92 + c.rain * 34;
   const col: [number, number, number] = [lit * 0.62, lit * 0.72, lit * 0.9];
 
   for (let i = 0; i < n; i++) {
@@ -112,11 +124,11 @@ export function rainCaps(
     const y = TOP * (1 - u);
     const x = cx + (a - 0.5) * SPAN + dx * y;
     const z = cz + (b - 0.5) * SPAN + dz * y;
-    const len = 0.34 + b * 0.36 + c.gust * 0.12;
+    const len = 0.24 + b * 0.26 + c.gust * 0.1;
     out.push({
       a: { x: x - dx * len, y: y + len, z: z - dz * len },
       b: { x, y, z },
-      r: 0.013 + c.rain * 0.005,
+      r: 0.0095 + c.rain * 0.004,
       color: col,
       part: 'rain',
     });

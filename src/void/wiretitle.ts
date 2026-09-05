@@ -9,7 +9,7 @@
 import { WireText } from '../type/typeset';
 import { GAUGE } from '../type/alphabet';
 import { Capsule } from '../pose';
-import { v3, rotY } from '../vec';
+import { v3, rotY, rotX } from '../vec';
 
 const HOLD = 2.1;
 const FALL_EACH = 1.6;
@@ -62,6 +62,15 @@ function forgeInks(r: () => number): [number, number, number][] {
 
 interface Line { wire: WireText; beads: number }
 
+/** Everything the word needs to know about where it is being looked at from. */
+export interface TitleCam { yaw: number; pitch: number; cx: number; cz: number }
+
+/** How much punishment one glyph takes before it comes away from the word. */
+const CUT = 0.8;
+
+/** The word stands this far toward the camera, clear of the creatures' plane. */
+const FWD = 4.6;
+
 /**
  * How a word arrives or leaves. Rolling only the SEED gave the same ceremony
  * with the letters relabelled; the pit picks a different manner each time, and
@@ -96,8 +105,15 @@ export class WireTitle {
   private hold = HOLD;
   private gustAt = 1.5;
   private inks: [number, number, number][];
+  private glyphAt = new Map<string, { x: number; y: number; r: number }>(); // metres, in the word's own plane
+  private wound = new Map<string, number>();       // how much punishment each glyph has taken
+  private cutAt = new Map<string, number>();       // and the moment it gave way
   private r = rng(Date.now() | 0);
   done = false;
+
+  /** How many glyphs the fight has taken off the word, out of how many. */
+  get cuts(): number { return this.cutAt.size; }
+  get glyphs(): number { return this.glyphAt.size; }
 
   constructor(text = 'the summoning pit', maxWidth = 12, baseline = 1.15, sizeCap = 0.62) {
     const words = text.split(/\s+/);
@@ -139,6 +155,8 @@ export class WireTitle {
       this.lines.push({ wire, beads });
     });
 
+    this.measure();
+
     // Two rolls, taken independently: the word need not leave the way it came.
     // The recording runs backwards to arrive, so the arrival roll is inverted
     // — a letter that must land FIRST is the one that falls LAST.
@@ -147,6 +165,129 @@ export class WireTitle {
     this.hold = HOLD + this.r() * 0.7;
 
     this.record();
+  }
+
+  /**
+   * Where each glyph sits and how big it is, in the word's own flat space.
+   * Taken once from the settled word: a letter shifts by millimetres while it
+   * hangs, and a circle per glyph is all a blow needs to know what it crossed.
+   */
+  private measure(): void {
+    this.lines.forEach((ln, li) => {
+      const em = ln.wire.opts.size;
+      const box = new Map<number, { x0: number; y0: number; x1: number; y1: number }>();
+      for (const p of ln.wire.pieces) {
+        let b = box.get(p.glyph);
+        if (!b) { b = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }; box.set(p.glyph, b); }
+        for (let i = 0; i < p.rod.n; i++) {
+          const x = p.rod.x[i] * em, y = p.rod.y[i] * em;
+          if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x;
+          if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
+        }
+      }
+      for (const [g, b] of box) {
+        this.glyphAt.set(`${li}:${g}`, {
+          x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2,
+          r: Math.max(b.x1 - b.x0, b.y1 - b.y0) / 2,
+        });
+      }
+    });
+  }
+
+  /**
+   * SOMETHING SWUNG THROUGH THE WORD.
+   *
+   * The word hangs 4.6m nearer the camera than the floor the creatures fight
+   * on, so nothing in the pit can literally reach it — that gap is deliberate,
+   * it is what stops the pit lord standing inside the O. What a blade CAN do
+   * is cross the word on screen, and under an orthographic camera that has an
+   * exact answer: where would this world point have to sit on the word's own
+   * plane to land on the same pixel?
+   *
+   * Rather than derive that by hand and get a sign wrong the day someone
+   * changes the pitch convention, the word measures it. Its plane is flat and
+   * the camera is affine, so three probes — the origin and one metre along
+   * each axis — give the 2x2 that takes any world point to a letter position,
+   * and it stays right by construction.
+   */
+  strike(cam: TitleCam, ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number, radius: number, power: number,
+  ): { x: number; y: number; z: number; ink: [number, number, number] } | null {
+    // while the word is still pouring in, the recording owns every bead and
+    // any shove would be overwritten on the next frame — let it arrive first
+    if (this.done || this.t < ARRIVE || !this.lines.length) return null;
+
+    const view = (x: number, y: number, z: number) =>
+      rotX(rotY(v3(x - cam.cx, y, z - cam.cz), cam.yaw), cam.pitch);
+    const onPlane = (lx: number, ly: number) => {
+      const w = rotY(v3(lx, 0, FWD), -cam.yaw);
+      return view(w.x, ly, w.z);
+    };
+    const o = onPlane(0, 0), ex = onPlane(1, 0), ey = onPlane(0, 1);
+    const xx = ex.x - o.x, xy = ex.y - o.y, yx = ey.x - o.x, yy = ey.y - o.y;
+    const det = xx * yy - yx * xy;
+    if (Math.abs(det) < 1e-9) return null;      // looking straight down the plane
+
+    let best: { x: number; y: number } | null = null;
+    let bite = 0;
+    let ink: [number, number, number] = [150, 140, 130];
+
+    // THE SHOVE IS SAMPLED; THE DAMAGE IS MEASURED. Shoving wants several
+    // points along the blade, so the word bends around it rather than pivoting
+    // about one pinprick. Damage does not: summing what each sample happened
+    // to be near made a blow's power depend on how the segment fell across the
+    // sample grid, so a sword through the middle of a letter scored the same
+    // 0.24 as a graze and nothing was ever cut. What matters is how close the
+    // blade actually came, which is one segment-to-point distance.
+    const N = 4;
+    const ends: { x: number; y: number }[] = [];
+    for (let i = 0; i < N; i++) {
+      const u = i / (N - 1);
+      const v = view(ax + (bx - ax) * u, ay + (by - ay) * u, az + (bz - az) * u);
+      const dx = v.x - o.x, dy = v.y - o.y;
+      const lx = (dx * yy - dy * yx) / det;
+      const ly = (xx * dy - xy * dx) / det;
+      // ONE NUMBER, TWO CONSEQUENCES. `power` is how hard the blow was, and
+      // the shove and the damage are both read off it, so they can never
+      // drift apart into a word that flails without breaking or breaks
+      // without flinching. The shove is deliberately of the same order as the
+      // gusts that already move the word — a sword should disturb it like
+      // strong weather, not like an explosion.
+      for (const ln of this.lines) ln.wire.push(lx, ly, radius, power * 0.11);
+      if (i === 0 || i === N - 1) ends.push({ x: lx, y: ly });
+    }
+
+    const [p0, p1] = ends;
+    const sx = p1.x - p0.x, sy = p1.y - p0.y;
+    const span = sx * sx + sy * sy;
+    for (const [key, g] of this.glyphAt) {
+      if (this.cutAt.has(key)) continue;
+      // how near the blade came to this letter, at its closest
+      const u = span < 1e-9 ? 0 : Math.max(0, Math.min(1,
+        ((g.x - p0.x) * sx + (g.y - p0.y) * sy) / span));
+      const nx = p0.x + sx * u, ny = p0.y + sy * u;
+      const reach = g.r + radius;
+      const d = Math.hypot(g.x - nx, g.y - ny);
+      if (d > reach) continue;
+      const b = power * (1 - d / reach);
+      const w = (this.wound.get(key) ?? 0) + b;
+      this.wound.set(key, w);
+      if (w >= CUT) this.sever(key);
+      if (b > bite) { bite = b; best = { x: nx, y: ny }; ink = this.inks[0]; }
+    }
+    if (!best) return null;
+    const w = rotY(v3(best.x, 0, FWD), -cam.yaw);
+    return { x: w.x, y: best.y, z: w.z, ink };
+  }
+
+  /** A glyph comes away from the word and takes the rest of its fall alone. */
+  private sever(key: string): void {
+    this.cutAt.set(key, this.t);
+    // a word beaten to pieces should not leave an invisible corpse standing
+    // for the rest of its welcome: once nothing is left, bring the end forward
+    if (this.cutAt.size >= this.glyphAt.size) {
+      this.hold = Math.min(this.hold, Math.max(0, this.t - ARRIVE) + 0.25);
+    }
   }
 
   private pickManner(): Manner {
@@ -276,7 +417,10 @@ export class WireTitle {
       const h = dt / sub;
       this.lines.forEach((ln, li) => {
         for (const p of ln.wire.pieces) {
-          const dying = t >= dieBase + (this.deathAt.get(`${li}:${p.glyph}`) ?? 0);
+          // a glyph that was struck loose is already falling, whatever the
+          // clock says the word's own ending was going to be
+          const dying = this.cutAt.has(`${li}:${p.glyph}`)
+            || t >= dieBase + (this.deathAt.get(`${li}:${p.glyph}`) ?? 0);
           const o = dying
             ? { dt: h, gravity: -2.4 - this.r() * 1.2, damp: 0.955, home: 0, bend: 0.1, iters: 5, absorb: 0.7 }
             : { dt: h, gravity: 0, damp: 0.93, home: 0.09, bend: 0.8, iters: 5, absorb: 0.86 };
@@ -310,8 +454,11 @@ export class WireTitle {
           const back = ARRIVE - t;                 // where we are in the fall
           fade = 1 - Math.max(0, Math.min(1, (back - stagger) / FALL_EACH)) ** 2;
         } else {
-          const stagger = this.deathAt.get(`${li}:${gi}`) ?? FALL_SPREAD * 0.5;
-          const fall = Math.max(0, Math.min(1, (t - dieBase - stagger) / FALL_EACH));
+          const cut = this.cutAt.get(`${li}:${gi}`);
+          const start = cut !== undefined
+            ? cut
+            : dieBase + (this.deathAt.get(`${li}:${gi}`) ?? FALL_SPREAD * 0.5);
+          const fall = Math.max(0, Math.min(1, (t - start) / FALL_EACH));
           fade = 1 - fall * fall;
         }
         if (fade <= 0.02) continue;

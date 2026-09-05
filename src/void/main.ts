@@ -5,7 +5,7 @@ import { Character, makeCharacter, migrateCharacter } from '../character';
 import { defaultBiped, Genome } from '../genome';
 import { hatchGenome } from '../hatch';
 import { solvePose, slashWeight, Capsule, Intent } from '../pose';
-import { rotY, v3, TAU } from '../vec';
+import { rotY, v3, TAU, V3 } from '../vec';
 import { Camera } from '../render';
 import { makeProp, PropKind } from '../props';
 import { Motes, muzzle, wake, impact, spatter, undoing, dust, streak, gather } from '../particles';
@@ -1042,6 +1042,18 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
   for (let i = world.length - 1; i >= 0; i--) {
     if (world[i].part === 'hand') { handAt.set(a.id, world[i].a); break; }
   }
+  // AND THE BLADE. The weapon is what actually crosses the title, and a
+  // longsword is a metre of it: taking the hand alone had a creature nick the
+  // word while the sword swept clean through three letters. The far end of
+  // the last weapon capsule is the tip.
+  let wa: V3 | undefined, wb: V3 | undefined;
+  for (const c of world) {
+    if (c.part !== 'weapon') continue;
+    if (!wa) wa = c.a;
+    wb = c.b;
+  }
+  if (wa && wb) armAt.set(a.id, { a: wa, b: wb });
+  else armAt.delete(a.id);
 
   // ARRIVING. Nothing about this crosses the wire: how long a creature has
   // been visible on THIS screen is enough, and each part swells out of
@@ -1306,6 +1318,17 @@ const motes = new Motes();
 
 /** Where each creature's weapon hand is this frame, read off the drawn body. */
 const handAt = new Map<number, { x: number; y: number; z: number }>();
+
+/** And the length of blade coming off it, for the frames where that matters. */
+const armAt = new Map<number, { a: V3; b: V3 }>();
+
+/**
+ * How far through its swing each creature was last frame, as a fraction of the
+ * move. Only used to catch the single frame a blow lands on: a swing that has
+ * just crossed out of its windup is a blow, and one that crossed last frame is
+ * the same blow still in flight.
+ */
+const swungTo = new Map<number, number>();
 
 /**
  * The pit's own wildlife: rats, beetles and the occasional column of ants.
@@ -1798,6 +1821,34 @@ async function boot() {
     rainCaps(caps, sim.t, cond, cam.cx ?? 0, cam.cz ?? 0, motes.budget);
     for (const r of sim.relics) add(relicCapsules(r));
     for (const f of sim.flora) add(floraCapsules(f));
+    // THE WORD IS IN THE WAY. Nobody in the pit decides to attack the title:
+    // the sim does not know there is one and could not be told: the word is
+    // this screen's alone, it stands at a different moment for every visitor,
+    // and none of it crosses the wire. What happens instead is better than
+    // aiming would have been. The creatures fight exactly as they always do,
+    // and for the ten seconds the word hangs in front of them they are
+    // swinging through it — so it comes apart under a fight that was never
+    // about it, which is the whole joke of the place.
+    if (title && !title.done) {
+      const tc = { yaw: cam.yaw, pitch: cam.pitch, cx: cam.cx ?? 0, cz: cam.cz ?? 0 };
+      for (const a of sim.agents) {
+        const spec = strikeSpecOf(a);
+        if (a.deadT >= 0 || a.strikeT < 0) { swungTo.set(a.id, 0); continue; }
+        const u = a.strikeT / Math.max(0.05, spec.duration);
+        const was = swungTo.get(a.id) ?? 0;
+        swungTo.set(a.id, u);
+        // exactly once per swing, on the frame the blow leaves its windup
+        if (was > spec.windup || u <= spec.windup) continue;
+        const arm = armAt.get(a.id), hand = handAt.get(a.id);
+        const from = arm?.a ?? hand, to = arm?.b ?? hand;
+        if (!from || !to) continue;
+        // a heavy swing off a big thing takes a letter clean off; a jab from
+        // something small rattles the word and has to come back for more
+        const power = (0.45 + Math.min(1.1, a.bulk * 0.55)) * (0.7 + spec.duration);
+        const hit = title.strike(tc, from.x, from.y, from.z, to.x, to.y, to.z, 0.3, power);
+        if (hit) spatter(motes, hit.x, hit.y, hit.z, 0, 0, hit.ink, 0.9);
+      }
+    }
     if (title && !title.done) add(title.caps(dt, cam.yaw));
     else if (title) {
       // the title has died. A first visitor gets the introduction NEXT, in
