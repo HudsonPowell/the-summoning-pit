@@ -1274,6 +1274,9 @@ const critters = new Critters();
 let cond: Conditions = conditionsAt(0);
 /** The pit's clock, where module-scope drawing can reach it. */
 let pitT = 0;
+/** How much is at stake right now, eased. Drives the room's held breath. */
+let stakes = 0;
+let violence = 0;      // decays; every blow tops it back up
 
 /**
  * Shots are watched rather than told about. A projectile arriving in the
@@ -1554,7 +1557,8 @@ async function boot() {
         if (e.target && yours && e.target.id === yours.id && e.actor?.name) {
           myKiller = e.actor.name.split(' ')[0];
         }
-      } else if (e.kind === 'hit') director.punch(0.45);
+      } else if (e.kind === 'hit') { director.punch(0.45); violence = Math.min(1.6, violence + 0.34); }
+      if (e.kind === 'kill') violence = Math.min(1.8, violence + 0.7);
       sparks(sim, e);
       speak(sim, e);
     }
@@ -1571,6 +1575,27 @@ async function boot() {
     // it loses sharpness, and loses them gradually rather than all at once.
     pitT = sim.t;
     cond = conditionsAt(sim.t);
+
+    // WHAT IS AT STAKE. Nothing else in the pit says a fight matters — the
+    // voices are per creature and the footfalls per step, so a duel to the
+    // death sounds like two things walking about. Count what is actually
+    // happening: who is committed, how close they are, and how recently
+    // somebody was hit.
+    violence = Math.max(0, violence - dt * 0.42);
+    let fighting = 0, closest = 99;
+    for (const a of sim.agents) {
+      if (a.deadT >= 0) continue;
+      if (a.state === 'fight') fighting++;
+      else if (a.state === 'approach') fighting += 0.4;
+      if (a.target && a.target.deadT < 0) {
+        closest = Math.min(closest, Math.hypot(a.target.x - a.x, a.target.z - a.z));
+      }
+    }
+    const near = closest < 9 ? Math.max(0, 1 - closest / 6) : 0;
+    const want = Math.min(1, fighting * 0.34 + near * 0.3 + violence * 0.5);
+    // it arrives quickly and lets go slowly, like the room it is describing
+    stakes += (want - stakes) * Math.min(1, dt * (want > stakes ? 3.4 : 0.5));
+    pit.mood(stakes);
     // THE HOUR LIGHTS THE PIT. Night is dimmer and bluer but never dark: this
     // is a place you have to be able to read, so the floor loses warmth before
     // it loses legibility, and the pool of light narrows rather than dying.

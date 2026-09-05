@@ -898,11 +898,35 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         // fighters strafing mid-blow with their gait ignoring it.
         const busy = a.strikeT >= 0 || a.guardT > 0;
         if (!busy) {
-          const circling = Math.sin(sim.t * 1.3 + a.phase * 6) * 0.5;
+          // WHICH WAY IT CIRCLES IS A DECISION, NOT A WOBBLE. Every fighter
+          // strafed on the same shared sine, so a whole pit swayed together
+          // like weather and none of it read as intent. Each one picks a
+          // side now, holds it for a few seconds, and changes its mind at
+          // its own rate — and an aggressive thing circles less, because it
+          // would rather be closing.
+          const own = motionOf(a.genome);
+          const spell = 2.4 + own.spring * 2.6;
+          const way = ((Math.floor(sim.t / spell + own.offset) ^ a.id) & 1) ? 1 : -1;
+          const circling = way * (0.62 - a.temper.aggression * 0.3);
           a.move += (0.45 - a.move) * Math.min(1, 5 * dt);
           a.x += Math.cos(a.heading + Math.PI / 2) * circling * dt * 0.8;
           a.z += Math.sin(a.heading + Math.PI / 2) * circling * dt * 0.8;
-          if (!rangedOf(a) && d < reachOf(a) * 0.75) walk(a, dt, -0.35); // too close, give ground
+
+          // REACH IS THE ARGUMENT. A thing with a longer weapon wins by
+          // keeping the distance it already owns; a thing with a shorter one
+          // only ever wins inside. They used to fight at whatever range they
+          // happened to drift to, which handed every exchange to nobody.
+          if (!rangedOf(a)) {
+            const mine = reachOf(a), theirs = reachOf(t);
+            if (mine > theirs + 0.12) {
+              // hold the edge: close only to where it can still hit first
+              if (d < mine * 0.82) walk(a, dt, -0.5);
+            } else if (d > mine * 0.85) {
+              walk(a, dt, 0.55 + a.temper.aggression * 0.4);   // get inside it
+            } else if (d < reachOf(a) * 0.7) {
+              walk(a, dt, -0.35);
+            }
+          }
         } else {
           a.move += (0.1 - a.move) * Math.min(1, 8 * dt);
         }
@@ -918,8 +942,16 @@ export function stepVoid(sim: VoidSim, dt: number): void {
           });
           break;
         }
-        // an aggressive thing swings oftener, and swings heavy
-        const period = STRIKE_PERIOD * (1.5 - a.temper.aggression * 0.85);
+        // AN OPENING IS WORTH TAKING. Something staggered, or still
+        // recovering from a blow it has already thrown, cannot answer — and a
+        // fighter that swings at the same rate whether or not its opponent can
+        // defend itself is not fighting, it is taking turns.
+        const open = t.staggerT > 0 || (t.strikeT >= 0 && t.struck);
+        // and something badly hurt gets careful, unless it is too brave to
+        const hurt = 1 - a.hp / Math.max(1, a.maxHp);
+        const wary = 1 + hurt * 0.9 * (1 - a.temper.bravery);
+        const period = STRIKE_PERIOD * (1.5 - a.temper.aggression * 0.85)
+          * (open ? 0.55 : 1) * wary;
         if (a.strikeT < 0 && a.stateT > 0.35 && Math.random() < dt / period) {
           const seed = strikeSeed(sim.t, a.id);
           beginStrike(a, Math.random() < 0.15 + a.temper.aggression * 0.4, seed);

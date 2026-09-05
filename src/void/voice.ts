@@ -37,6 +37,10 @@ export class Pit {
   private lastStepAt = 0;
   private dripTimer = 0;
   private scuff: AudioBuffer | null = null;
+  /** The room's held breath: silent when nothing is happening, and not quiet when it is. */
+  private bedGain: GainNode | null = null;
+  private bedFilter: BiquadFilterNode | null = null;
+  private bedDetune: OscillatorNode | null = null;
   ready = false;
 
   /** Nothing starts until a person has touched the page — browsers insist. */
@@ -93,6 +97,7 @@ export class Pit {
     drift.start();
 
     this.wind();
+    this.tensionBed();
     this.dripLoop();
 
     await this.load(manifest);
@@ -143,6 +148,68 @@ export class Pit {
       g.connect(send).connect(this.verb!);
     }
     src.start();
+  }
+
+  /**
+   * THE ROOM HOLDS ITS BREATH. Nothing in the pit tells you a fight is about
+   * to matter — the voices are per-creature and the footfalls are per-step, so
+   * a duel to the death sounds exactly like two things walking around. This is
+   * the layer that knows: a low pair of detuned oscillators, dead silent when
+   * the pit is quiet, opening up as the violence does.
+   *
+   * It is a filter and a gain, not a piece of music. There is no score to
+   * write and nothing to load — the pit already synthesises every sound it
+   * makes, and tension is two oscillators and a cutoff.
+   */
+  private tensionBed(): void {
+    const ctx = this.ctx!;
+    const a = ctx.createOscillator();
+    a.type = 'sawtooth';
+    a.frequency.value = 38.5;
+    const b = ctx.createOscillator();
+    b.type = 'sawtooth';
+    b.frequency.value = 38.5;
+    b.detune.value = 11;                 // the beating between them IS the unease
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = 25.7;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 80;         // shut, until something happens
+    filter.Q.value = 3.4;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0;                 // and silent: a bed you can hear is a drone
+
+    a.connect(filter); b.connect(filter); sub.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.toneIn!);
+    const send = ctx.createGain();
+    send.gain.value = 0.4;
+    gain.connect(send).connect(this.verb!);
+
+    a.start(); b.start(); sub.start();
+    this.bedGain = gain;
+    this.bedFilter = filter;
+    this.bedDetune = b;
+  }
+
+  /**
+   * How much is at stake, 0..1. Eased rather than set, because tension that
+   * snaps is a switch and tension that leans is a room.
+   */
+  mood(x: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.bedGain || !this.bedFilter || !this.bedDetune) return;
+    const t = Math.max(0, Math.min(1, x));
+    const now = ctx.currentTime;
+    // it rises quickly and lets go slowly: a fight starting should be felt at
+    // once, and the room should take its time settling afterwards
+    const ease = t > 0.5 ? 0.5 : 2.2;
+    this.bedGain.gain.setTargetAtTime(t * t * 0.075, now, ease);
+    this.bedFilter.frequency.setTargetAtTime(85 + t * 460, now, ease);
+    this.bedDetune.detune.setTargetAtTime(9 + t * 26, now, 1.4);
   }
 
   /** Water off stone: rare, irregular, and always wetter than anything else. */
