@@ -2,16 +2,16 @@
 // composes capsule parts in grip space; clamps keep it holdable; a small
 // authored armoury answers instantly when the model is missing or wrong.
 
-import { WeaponSpec, WeaponPart } from './character';
+import type { WeaponSpec, WeaponPart } from './character';
 import { OLLAMA_URL, HATCH_MODEL } from './ollama';
 
 const SMITH_NOTES = `
 You design a held weapon for a small game character as JSON.
 Grip space: the hand is at [0,0,0]; +x runs away from the hand along the
-weapon (the "blade" direction, max 1.1); +y is knuckle-side (up when held
+weapon (the "blade" direction, max 1.4); +y is knuckle-side (up when held
 forward); +z is out to the side. Each part is a capsule:
   { "a": [x,y,z], "b": [x,y,z], "r": radius, "color": "#rrggbb" }
-- 2 to 6 parts. Shaft parts thin (r 0.015-0.03), heads chunky (r up to 0.09).
+- 2 to 10 connected parts. A handle must pass through [0,0,0]. Every decoration must touch the handle or another part. Use one clear functional silhouette, with at most three colours. Shaft parts thin (r 0.015-0.03), heads chunky (r up to 0.09).
 - A staff: long thin shaft + something at the far end. An axe: shaft + a
   broad head offset in y. A hammer: shaft + heavy symmetric head. Be
   inventive with silhouette and colour — this is the character's signature.
@@ -29,7 +29,8 @@ const ARMOURY: Record<string, WeaponSpec> = {
     name: 'axe',
     parts: [
       { a: [0, 0, 0], b: [0.5, 0, 0], r: 0.024, color: '#6b4a2f' },
-      { a: [0.42, 0.09, 0], b: [0.46, -0.07, 0], r: 0.05, color: '#9aa1ab' },
+      { a: [0.42, 0, 0], b: [0.47, 0.15, 0], r: 0.052, color: '#9aa1ab' },
+      { a: [0.36, 0.19, 0], b: [0.56, 0.16, 0], r: 0.025, color: '#c8cdd4' },
     ],
   },
   sword: {
@@ -69,20 +70,51 @@ const clampN = (x: unknown, lo: number, hi: number, fb: number): number => {
 const hexOk = (c: unknown, fb: string) =>
   typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fb;
 
+type Point = [number, number, number];
+const point = (value: unknown): value is Point => Array.isArray(value) && value.length === 3 && value.every(v => typeof v === 'number' && Number.isFinite(v));
+const minus = (a: Point, b: Point): Point => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const product = (a: Point, b: Point) => a.reduce((sum, v, i) => sum + v * b[i], 0);
+const nearest = (p: Point, a: Point, b: Point): Point => {
+  const d = minus(b, a), t = Math.max(0, Math.min(1, product(minus(p, a), d) / Math.max(1e-12, product(d, d))));
+  return a.map((v, i) => v + d[i] * t) as Point;
+};
+const distance = (a: Point, b: Point) => Math.hypot(...minus(a, b));
+function partGap(a: WeaponPart, b: WeaponPart): number {
+  // Alternating projection catches interior intersections as well as end caps.
+  let p = nearest(a.a, b.a, b.b), q = a.a;
+  for (let i = 0; i < 8; i++) { q = nearest(p, a.a, a.b); p = nearest(q, b.a, b.b); }
+  return Math.min(distance(p, q), distance(a.a, nearest(a.a, b.a, b.b)),
+    distance(a.b, nearest(a.b, b.a, b.b)), distance(b.a, nearest(b.a, a.a, a.b)), distance(b.b, nearest(b.b, a.a, a.b))) - a.r - b.r;
+}
+
 export function validateWeapon(raw: any, desc: string): WeaponSpec {
-  const parts: WeaponPart[] = (Array.isArray(raw?.parts) ? raw.parts : [])
-    .slice(0, 6)
-    .map((p: any): WeaponPart => ({
-      a: [clampN(p?.a?.[0], -0.3, 1.1, 0), clampN(p?.a?.[1], -0.25, 0.25, 0), clampN(p?.a?.[2], -0.25, 0.25, 0)],
-      b: [clampN(p?.b?.[0], -0.3, 1.1, 0.4), clampN(p?.b?.[1], -0.25, 0.25, 0), clampN(p?.b?.[2], -0.25, 0.25, 0)],
-      r: clampN(p?.r, 0.012, 0.09, 0.025),
-      color: hexOk(p?.color, '#9aa1ab'),
-    }));
-  if (parts.length < 1) return armoury(desc);
-  const name =
-    typeof raw?.name === 'string' && raw.name.length < 30 && raw.name.length > 0
-      ? raw.name
-      : desc.slice(0, 24);
+  const fallback = () => {
+    const named = weaponsFromWords(desc);
+    return structuredClone(named.main ?? named.off ?? armoury(desc));
+  };
+  let parts: WeaponPart[] = (Array.isArray(raw?.parts) ? raw.parts : []).slice(0, 12)
+    .filter((p: any) => point(p?.a) && point(p?.b) && typeof p.r === 'number' && Number.isFinite(p.r) && p.r > 0)
+    .map((p: any): WeaponPart => ({ a: [...p.a] as Point, b: [...p.b] as Point,
+      r: clampN(p.r, 0.005, 0.13, 0.025), color: hexOk(p.color, '#9aa1ab') }));
+  if (!parts.length) return fallback();
+  // Uniform fitting preserves blades, bow arcs, strings and connected joints.
+  let extent = 1;
+  for (const part of parts) for (const p of [part.a, part.b])
+    extent = Math.max(extent, p[0] / 1.4, -p[0] / 0.4, Math.abs(p[1]) / 0.9, Math.abs(p[2]) / 0.5);
+  parts = parts.map(p => ({ ...p, a: p.a.map(v => v / extent) as Point, b: p.b.map(v => v / extent) as Point, r: p.r / extent }));
+  const origin: Point = [0, 0, 0];
+  const connected = new Set<number>();
+  parts.forEach((p, i) => { if (distance(origin, nearest(origin, p.a, p.b)) <= p.r + 0.035) connected.add(i); });
+  if (!connected.size) return fallback(); // nothing the hand can actually hold
+  for (let pass = 0; pass < parts.length; pass++) {
+    parts.forEach((p, i) => {
+      if ([...connected].some(j => partGap(p, parts[j]) <= 0.045)) connected.add(i);
+    });
+  }
+  // Floating fragments are not ornamentation. Keep the assembly attached to the grip.
+  parts = parts.filter((_, i) => connected.has(i));
+  if (!parts.length) return fallback();
+  const name = typeof raw?.name === 'string' && raw.name.trim() && raw.name.length < 30 ? raw.name : desc.slice(0, 24);
   return { name, parts };
 }
 
@@ -175,6 +207,7 @@ const A2: Record<string, WeaponSpec> = {
   trident: { name: 'trident', parts: [
     { a: [-0.2, 0, 0], b: [0.78, 0, 0], r: 0.02, color: '#6b5a3f' },
     { a: [0.78, 0, 0], b: [1.0, 0, 0], r: 0.022, color: '#cfd6e4' },
+    { a: [0.78, 0, -0.1], b: [0.78, 0, 0.1], r: 0.022, color: '#9aa1ab' },
     { a: [0.78, 0, -0.09], b: [0.96, 0, -0.11], r: 0.018, color: '#cfd6e4' },
     { a: [0.78, 0, 0.09], b: [0.96, 0, 0.11], r: 0.018, color: '#cfd6e4' },
   ]},
@@ -425,8 +458,8 @@ export function priceWeapon(spec: WeaponSpec): WeaponSpec {
     return v + len * q.r * q.r;
   }, 0);
   if (vol <= BUDGET) return spec;
-  const k = Math.sqrt(BUDGET / vol);
-  return { ...spec, parts: spec.parts.map(q => ({ ...q, r: q.r * k })) };
+  const k = Math.cbrt(BUDGET / vol);
+  return { ...spec, parts: spec.parts.map(q => ({ ...q, a: q.a.map(v => v * k) as Point, b: q.b.map(v => v * k) as Point, r: q.r * k })) };
 }
 
 /** Mix two #rrggbb colours; t=1 is all the second. */

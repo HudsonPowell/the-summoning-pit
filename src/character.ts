@@ -1,3 +1,4 @@
+import { validateWeapon, priceWeapon } from './smith';
 // A character is a genome plus everything it can DO: named behaviour sets
 // (each one a small driver-parameter object — data, never code), a crafted
 // weapon, and the look of its blast. Heroes and beasts share the schema;
@@ -448,7 +449,7 @@ export function migrateWeapon(w: any): WeaponSpec | undefined {
     // dropped here once and no model-styled weapon ever fired a shot;
     // attack was dropped here once and no tune ever applied.)
     return {
-      name: w.name ?? 'weapon', parts: w.parts,
+      name: w.name ?? 'weapon', parts: priceWeapon(validateWeapon(w, w.name ?? 'weapon')).parts,
       ...(w.style ? { style: w.style } : {}),
       ...(w.attack ? { attack: w.attack } : {}),
     };

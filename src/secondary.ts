@@ -1,3 +1,6 @@
+import { Genome, Gait } from './genome';
+import { landingWeight, motionOf } from './motion';
+
 // The difference between animated and alive is what the body does AFTER it is
 // told to move. A driver-posed creature hits every target exactly, on the frame
 // it was asked to — which is why it reads as a puppet. This is the lag: a set
@@ -13,6 +16,8 @@ export interface Secondary {
   jiggle: number; jiggleV: number; // mass carrying on after the frame stops
   head: number; headV: number;     // the head arriving last
   spin: number; spinV: number;     // knocked off its axis entirely
+  ready: boolean;
+  lastSpeed: number;
   lastPhase: number;               // to catch each footfall as it lands
 }
 
@@ -20,14 +25,14 @@ export function newSecondary(): Secondary {
   return {
     lean: 0, leanV: 0, twist: 0, twistV: 0, bob: 0, bobV: 0,
     jiggle: 0, jiggleV: 0, head: 0, headV: 0, spin: 0, spinV: 0,
-    lastPhase: 0,
+    lastPhase: 0, ready: false, lastSpeed: 0,
   };
 }
 
 /** One under-damped spring step. k is stiffness, z is damping ratio (<1 rings). */
 function spring(x: number, v: number, target: number, k: number, z: number, dt: number): [number, number] {
   // sub-step so a slow frame cannot blow the spring up
-  const steps = dt > 1 / 45 ? 2 : 1;
+  const steps = Math.max(1, Math.ceil(dt * 120));
   const h = dt / steps;
   for (let i = 0; i < steps; i++) {
     const a = -k * (x - target) - 2 * z * Math.sqrt(k) * v;
@@ -45,6 +50,9 @@ export interface SecondaryDrive {
   lookYaw: number;    // where the head is being asked to point
   phase: number;      // gait phase, so the wobble rides the footfalls
   dead: boolean;
+  genome?: Genome;
+  gait?: Gait;
+  phaseDelta?: number;
 }
 
 /**
@@ -52,8 +60,10 @@ export interface SecondaryDrive {
  * longer than an imp, which is most of what tells you it is heavy.
  */
 export function stepSecondary(s: Secondary, dt: number, d: SecondaryDrive): void {
+  dt = Math.max(0, Math.min(0.25, dt));
+  if (!dt) return;
   const m = Math.max(0.4, Math.min(2.4, d.mass));
-  const soft = 1 / (0.55 + m * 0.45);     // 1 = light and snappy, <1 = heavy
+  const soft = (d.genome ? motionOf(d.genome).spring : 1) / (0.55 + m * 0.45);     // 1 = light and snappy, <1 = heavy
 
   // banking: lean into the turn, overshoot coming out of it.
   // THESE GAINS WERE TUNED BLIND. The springs never ran on a live screen until
@@ -71,27 +81,26 @@ export function stepSecondary(s: Secondary, dt: number, d: SecondaryDrive): void
   const twistWant = Math.max(-0.28, Math.min(0.28, -d.turnRate * 0.075));
   [s.twist, s.twistV] = spring(s.twist, s.twistV, twistWant, 26 * soft, 0.3, dt);
 
-  // weight: driven by the gait, so it lands rather than floats
-  const bobWant = d.dead ? -0.02 : Math.sin(Math.PI * 2 * (d.phase - 0.15)) * 0.012 * d.move * m;
+  // Acceleration compresses the body; individual foot contacts supply the landing beat.
+  const acceleration = s.ready ? Math.max(-5, Math.min(5, (d.speed - s.lastSpeed) / dt)) : 0;
+  s.lastSpeed = d.speed;
+  const bobWant = d.dead ? -0.02 : -Math.abs(acceleration) * 0.002;
   [s.bob, s.bobV] = spring(s.bob, s.bobV, bobWant, 90 * soft, 0.3, dt);
 
   // flesh: never has a target, only ever settling toward still
   [s.jiggle, s.jiggleV] = spring(s.jiggle, s.jiggleV, 0, 34 * soft, 0.12, dt);
 
-  // FOOTFALLS ARE EVENTS, not a waveform. This used to feed the jiggle a
-  // continuous cosine of phase, so mass wobbled smoothly THROUGH each step
-  // instead of being struck by it — weight that never lands. A foot lands
-  // every half cycle (phase crossing 0 and 0.5, whatever the leg count:
-  // that is the gait's beat), and each landing puts its energy in as an
-  // impulse. The springs do the rest, which is what they are for.
-  const beats = 2;
-  const wrapped = d.phase < s.lastPhase ? d.phase + 1 : d.phase;
-  if (Math.floor(wrapped * beats) > Math.floor(s.lastPhase * beats) && d.move > 0.12 && !d.dead) {
-    const strike = Math.min(1.5, 0.3 + d.speed * 0.4) * d.move * m;
+  // Actual leg contacts drive the springs; reverse steps must not look like wraps.
+  const delta = d.phaseDelta ?? ((d.phase - s.lastPhase + 1.5) % 1 - 0.5);
+  const contact = s.ready && d.genome
+    ? landingWeight(d.genome, d.gait ?? d.genome.gait, d.phase, delta) : 0;
+  if (contact && d.move > 0.12 && !d.dead) {
+    const strike = Math.min(1.5, 0.3 + d.speed * 0.4) * d.move * m * contact;
     s.bobV -= strike * 0.05;
     s.jiggleV += strike * 0.06;
   }
   s.lastPhase = d.phase;
+  s.ready = true;
 
   // the head arrives last, and overshoots when it does — but a neck has an
   // end: the ask is capped short of the pose's own limit so the overshoot

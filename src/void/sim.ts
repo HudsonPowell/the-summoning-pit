@@ -1,3 +1,4 @@
+import { motionOf, livingMotion } from '../motion';
 // THE VOID — an attract mode. Nobody is playing: the creatures off the
 // bestiary shelf wander an empty plane, think, notice each other, and pick
 // fights. Continuous space, no grid, no walls; the only rules are wanting
@@ -54,6 +55,7 @@ export interface Agent {
   turnRate: number;          // radians/sec, for secondary motion
   bulk: number;              // rough size, for reach and shoving
   speed: number;             // metres/sec walking
+  vx: number; vz: number;    // carried momentum between decisions
 }
 
 export type EventKind =
@@ -141,6 +143,7 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     aim: rnd(-Math.PI, Math.PI),
     phase: Math.random(),
     move: 0,
+    vx: 0, vz: 0,
     idleT: Math.random() * 10,
     state: 'wander',
     stateT: 0,
@@ -258,7 +261,7 @@ function walk(a: Agent, dt: number, scale = 1): void {
   while (mis > Math.PI) mis -= Math.PI * 2;
   while (mis < -Math.PI) mis += Math.PI * 2;
   const grip = 1 - 0.5 * Math.min(1, Math.abs(mis) / Math.PI);
-  const step = a.speed * scale * dt * pulse * grip;
+  const step = a.speed * scale * dt * pulse * grip * livingMotion(a.genome, a.idleT).pace;
   a.x += Math.cos(a.heading) * step;
   a.z += Math.sin(a.heading) * step;
   // The homeward drift at the pit's edge must NEVER fire during a pursuit:
@@ -730,6 +733,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
 
     if (a.deadT >= 0) {
       a.deadT += dt;
+      a.vx = a.vz = 0;
       a.move += (0 - a.move) * Math.min(1, 8 * dt);
       stepSecondary(a.sec, dt, {
         turnRate: 0, move: 0, speed: 0, mass: a.bulk,
@@ -973,6 +977,24 @@ export function stepVoid(sim: VoidSim, dt: number): void {
 
     turnToward(a, dt);
 
+    // Ease the requested travel, including sidesteps. Attacks, blocks and
+    // stagger retain their planted stance instead of drifting through a blow.
+    if (dt > 0) {
+      const planted = a.strikeT >= 0 || a.guardT > 0 || a.staggerT > 0 || a.state === 'rest';
+      if (planted) {
+        a.vx = a.vz = 0;
+      } else {
+        const wantX = (a.x - wasX) / dt, wantZ = (a.z - wasZ) / dt;
+        const response = motionOf(a.genome).response * (0.75 + Math.min(2, a.bulk) * 0.25);
+        const blend = 1 - Math.exp(-dt / response);
+        const oldX = a.vx, oldZ = a.vz;
+        a.vx += (wantX - a.vx) * blend;
+        a.vz += (wantZ - a.vz) * blend;
+        a.x = wasX + wantX * dt + (oldX - wantX) * response * blend;
+        a.z = wasZ + wantZ * dt + (oldZ - wantZ) * response * blend;
+      }
+    }
+
     // The legs cycle on DISTANCE, not on a clock. Advancing the phase by
     // cadence*dt meant a creature backing off, circling, chasing at 1.25x or
     // fleeing at 1.4x all cycled its legs at exactly the same rate as one
@@ -984,7 +1006,10 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     const lat = -dx * Math.sin(a.heading) + dz * Math.cos(a.heading);
     const stride = Math.max(0.08, eff.stride);
     // backing up runs the cycle backwards; sidestepping still lifts the feet
-    a.phase = (a.phase + (fwd + Math.abs(lat) * 0.5) / stride + 1) % 1;
+    const phaseDelta = (fwd + Math.abs(lat) * 0.5) / stride;
+    a.phase = ((a.phase + phaseDelta) % 1 + 1) % 1;
+    const actualSpeed = dt > 0 ? Math.hypot(dx, dz) / dt : 0;
+    a.move = Math.max(a.move, Math.min(1, actualSpeed / Math.max(0.2, stride * eff.cadence)));
 
     // a target holds the head; otherwise it rests where the scan left it
     if (a.target && a.target.deadT < 0 && (a.state === 'fight' || a.state === 'approach')) {
@@ -994,7 +1019,8 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     stepSecondary(a.sec, dt, {
       turnRate: a.turnRate,
       move: a.move,
-      speed: a.speed,
+      speed: actualSpeed,
+      genome: a.genome, gait: eff, phaseDelta,
       mass: a.bulk,
       lookYaw: Math.max(-1.0, Math.min(1.0, rel)),
       phase: a.phase,

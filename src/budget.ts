@@ -61,7 +61,7 @@ export function fitBudget(g: Genome, lo = MASS_MIN, hi = MASS_MAX): Genome {
       ...sk,
       body: sk.body.map(v => v * k),
       girth: sk.girth.map(v => v * k),
-      chains: sk.chains.map(c => ({ ...c, seg: c.seg.map(v => v * k), r: c.r * k })),
+      chains: sk.chains.map(c => ({ ...c, seg: c.seg.map(v => v * k), r: c.r * k, spread: c.spread * k })),
     },
   };
 }

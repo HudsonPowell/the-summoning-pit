@@ -1,3 +1,4 @@
+import { anatomyStudy, variationBrief } from './diversity';
 // Text -> genome, shared by the studio (browser) and the farm CLI (node).
 //
 // Three things carry the quality: a vocabulary rich enough to describe a
@@ -35,8 +36,8 @@ skeleton.girth: radius at each point down that body — THIS is where bulk lives
   [0.04, 0.10, 0.08, 0.05]. A wiry imp is [0.07, 0.075].
 skeleton.upright: true = stands like a person, false = body runs level like an
   animal. Most beasts are false.
-skeleton.locomotion: "walk" | "slither" | "fly" | "hop". Legless things MUST be
-  "slither". Winged things that stay airborne are "fly".
+skeleton.locomotion: "walk" | "slither" | "fly" | "hop". Ground-dwelling legless things use
+  "slither"; levitating bodies may use "fly" without wings. Winged things that stay airborne are "fly".
 
 skeleton.chains: everything that hangs off the body. Each has:
   role: "leg" | "arm" | "wing" | "tail" | "head" | "horn" | "fin"
@@ -51,6 +52,9 @@ skeleton.chains: everything that hangs off the body. Each has:
         single by default — set mirror:true on a head chain for TWO HEADS.
   ink:  0 torso colour, 1 limb colour, 2 head colour, 3 accent.
   angle: pitch. Head carriage, horn rake, fin lean.
+  side: -1 to 1; positions an unpaired appendage on either side, including offset heads.
+  yaw: -3.14 to 3.14; fans appendages around the body. taper: 0.1 pointed to 1.6 clubbed.
+  Spike and tentacle are fully supported roles. Up to 24 chains, including several independent heads.
 
 Ideas the vocabulary can express, so use it: barrel-bodied beasts, long
 serpents with no legs at all, many-legged scuttlers, two-headed things, horns
@@ -74,7 +78,7 @@ shades of one. Give ONE feature the accent ink (3) so it pops — the horns,
 the tentacles, one arm — not everything.
 
 held: if the words name ANYTHING carried in a hand — a weapon, a tool, an
-  instrument, however strange — DESIGN IT from 1-6 capsules. You are the
+  instrument, however strange — DESIGN IT from 2-10 connected capsules. A handle passes through the origin; every other part touches the assembly. Use a clean silhouette with at most three colours. You are the
   smith: nunchucks are two sticks and a thin chain link, a net is a wide
   sparse fan of thin strands, a censer is a chain and a hanging ball. Grip
   space: the hand is at [0,0,0]; +x runs away from the hand along the thing
@@ -178,7 +182,7 @@ export const GENOME_SCHEMA = {
         body: { type: 'array', minItems: 1, maxItems: 8, items: num(0.05, 0.8) },
         girth: { type: 'array', minItems: 1, maxItems: 10, items: num(0.02, 0.4) },
         chains: {
-          type: 'array', minItems: 1, maxItems: 12,
+          type: 'array', minItems: 1, maxItems: 24,
           items: {
             type: 'object',
             required: ['role', 'at', 'seg', 'r', 'spread'],
@@ -186,11 +190,11 @@ export const GENOME_SCHEMA = {
               role: { type: 'string', enum: ['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin', 'spike', 'tentacle'] },
               at: num(0, 1),
               seg: { type: 'array', minItems: 1, maxItems: 4, items: num(0.03, 0.9) },
-              r: num(0.01, 0.15),
+              r: num(0.01, 0.35),
               spread: num(0, 0.5),
               mirror: { type: 'boolean' },
               ink: { type: 'integer', minimum: 0, maximum: 3 },
-              angle: num(-1.6, 1.6),
+              angle: num(-1.6, 1.6), side: num(-1, 1), yaw: num(-3.14, 3.14), taper: num(0.1, 1.6),
             },
           },
         },
@@ -236,13 +240,13 @@ export const GENOME_SCHEMA = {
           },
         },
         parts: {
-          type: 'array', minItems: 1, maxItems: 6,
+          type: 'array', minItems: 1, maxItems: 10,
           items: {
             type: 'object',
             required: ['a', 'b', 'r', 'color'],
             properties: {
-              a: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
-              b: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
+              a: { type: 'array', minItems: 3, maxItems: 3, items: num(-1.4, 1.4) },
+              b: { type: 'array', minItems: 3, maxItems: 3, items: num(-1.4, 1.4) },
               r: num(0.012, 0.1),
               color: { type: 'string' },
             },
@@ -286,9 +290,9 @@ export const GENOME_SCHEMA = {
             type: 'object',
             required: ['a', 'b', 'r', 'color'],
             properties: {
-              a: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
-              b: { type: 'array', minItems: 3, maxItems: 3, items: num(-0.4, 1.1) },
-              r: num(0.012, 0.12),
+              a: { type: 'array', minItems: 3, maxItems: 3, items: num(-1.4, 1.4) },
+              b: { type: 'array', minItems: 3, maxItems: 3, items: num(-1.4, 1.4) },
+              r: num(0.005, 0.13),
               color: { type: 'string' },
             },
           },
@@ -298,10 +302,10 @@ export const GENOME_SCHEMA = {
   },
 } as const;
 
-export function buildPrompt(desc: string): string {
-  const ex = pickExemplars(desc);
+export function buildPrompt(desc: string, seed = Math.floor(Math.random() * 0x100000000)): string {
+  const ex = [pickExemplars(desc, 2)[0], anatomyStudy(seed), anatomyStudy(seed ^ 0x51ed270b)];
   const shown = ex.map(g => `${g.name}:\n${JSON.stringify(g)}`).join('\n\n');
-  return `${SCHEMA_NOTES}\n\nExamples:\n\n${shown}\n\nNow write the genome for: "${desc}"\nJSON:`;
+  return `${SCHEMA_NOTES}\n\n${variationBrief(seed)}\n\nExamples:\n\n${shown}\n\nNow write the genome for: "${desc}"\nJSON:`;
 }
 
 /**
@@ -327,6 +331,7 @@ export async function askOpenAI(
   apiKey: string,
   temperature = 0.8,
 ): Promise<string> {
+  const prompt = buildPrompt(desc);
   const endpoint = `${url.replace(/\/$/, '')}/chat/completions`;
   const ask = async (format: unknown) => {
     const res = await fetch(endpoint, {
@@ -335,9 +340,9 @@ export async function askOpenAI(
       body: JSON.stringify({
         model,
         temperature,
-        max_tokens: 3400,
+        max_tokens: 4800,
         response_format: format,
-        messages: [{ role: 'user', content: buildPrompt(desc) }],
+        messages: [{ role: 'user', content: prompt }],
       }),
     });
     return { ok: res.ok, status: res.status, body: await res.text() };
@@ -384,7 +389,7 @@ export async function askOllama(
       model,
       stream: true,
       format: GENOME_SCHEMA,   // token-level shape guarantee, not just "json"
-      options: { temperature, num_predict: 2000 },
+      options: { temperature, num_predict: 3600, num_ctx: 12288 },
       prompt: buildPrompt(desc),
     }),
   });
@@ -419,7 +424,7 @@ const clampN = (x: unknown, lo: number, hi: number, fb: number): number => {
 const hexOk = (c: unknown, fb: string) =>
   typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fb;
 
-const ROLES = new Set<ChainRole>(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin']);
+const ROLES = new Set<ChainRole>(['leg', 'arm', 'wing', 'tail', 'head', 'horn', 'fin', 'spike', 'tentacle']);
 // Words that name a PERSON. A knight, a dwarf, a pirate captain is a body plan
 // before it is anything else, and the model loses that constantly: six of the
 // twenty heroes in roster run 001 came back as `llth` — a mirrored leg pair, a
@@ -469,7 +474,7 @@ export function validateGenome(raw: any, desc: string): Genome {
 
   let chains: ChainSpec[] = (Array.isArray(sk.chains) ? sk.chains : [])
     .filter((c: any) => ROLES.has(c?.role))
-    .slice(0, 12)
+    .slice(0, 24)
     .map((c: any): ChainSpec => {
       const seg = (Array.isArray(c.seg) && c.seg.length ? c.seg : [0.3, 0.3])
         .slice(0, 4).map((s: unknown) => clampN(s, 0.03, 0.9, 0.25));
@@ -478,22 +483,21 @@ export function validateGenome(raw: any, desc: string): Genome {
         role: c.role,
         at: clampN(c.at, 0, 1, 0.5),
         seg,
-        r: clampN(c.r, 0.01, 0.15, 0.05),
+        r: clampN(c.r, 0.01, 0.35, 0.05),
         spread: clampN(c.spread, 0, 0.5, 0.1),
         ...(typeof c.mirror === 'boolean' ? { mirror: c.mirror } : {}),
         ...(typeof c.ink === 'number' ? { ink: Math.min(3, Math.max(0, Math.round(c.ink))) } : {}),
+        ...(typeof c.side === 'number' ? { side: clampN(c.side, -1, 1, 0) } : {}),
+        ...(typeof c.yaw === 'number' ? { yaw: clampN(c.yaw, -Math.PI, Math.PI, 0) } : {}),
+        ...(typeof c.taper === 'number' ? { taper: clampN(c.taper, 0.1, 1.6, 0.5) } : {}),
         ...(typeof c.angle === 'number' ? { angle: clampN(c.angle, -1.6, 1.6, 0) } : {}),
       };
     });
 
-  // budgets: generous enough for a spider, tight enough that a dwarf doesn't
-  // sprout extra limbs the words never asked for
+  // Preserve designed topology. A global cap bounds work without making
+  // every unnamed creature a two-legged, one-headed template.
   const budget: Record<ChainRole, number> = {
-    leg: MANY_LEGGED.test(desc) ? 5 : 2,
-    arm: MANY_ARMED.test(desc) ? 3 : 1,
-    wing: 1, tail: 1,
-    head: MANY_HEADED.test(desc) ? 2 : 1,
-    horn: 2, fin: 2, spike: 4, tentacle: 3,
+    leg: 8, arm: 4, wing: 3, tail: 4, head: 4, horn: 6, fin: 6, spike: 8, tentacle: 8,
   };
   const used: Partial<Record<ChainRole, number>> = {};
   chains = chains.filter(c => {
@@ -503,27 +507,14 @@ export function validateGenome(raw: any, desc: string): Genome {
     return true;
   });
 
-  // `at` has a meaning: 1 is the head end, 0 is the tail end. A model that
-  // puts a head at 0 has misread the axis, not invented a new creature.
-  for (const c of chains) {
-    if (c.role === 'head') c.at = Math.max(0.78, c.at);
-    if (c.role === 'tail') c.at = Math.min(0.22, c.at);
-    if (c.role === 'wing') c.at = Math.min(0.95, Math.max(0.55, c.at));
-  }
-
-  // heads stacked at the same spot read as a single head — separate them
+  // Multiple independent heads retain their lengths and thicknesses.
   const heads = chains.filter(c => c.role === 'head');
-  if (heads.length > 1) {
-    heads.forEach((h, i) => {
-      h.spread = Math.max(h.spread, 0.12);
-      h.mirror = false;
-      h.at = Math.min(1, h.at - i * 0.04);
-      h.angle = (h.angle ?? 0) + (i === 0 ? 0.25 : -0.15);
-    });
-    // one pair of necks leaning apart, rather than two heads in one place
-    heads[0].mirror = heads.length === 2;
-    if (heads.length === 2) chains = chains.filter(c => c !== heads[1]);
-  }
+  if (heads.length > 1) heads.forEach((h, i) => {
+    h.spread = Math.max(h.spread, 0.12);
+    h.mirror = false;
+    h.side ??= i / (heads.length - 1) * 2 - 1;
+    h.yaw ??= h.side * 0.45;
+  });
 
   // A person is a person. The words won this argument before the model was
   // asked: two legs, arms that can hold the thing they were described holding,
@@ -546,7 +537,7 @@ export function validateGenome(raw: any, desc: string): Genome {
     }
     // a person has two arms — and without the left one there is no hand for
     // the shield to be in
-    for (const a of arms) a.mirror = true;
+    if (!/one[- ]arm|single arm|asymmetr|unequal/.test(desc.toLowerCase())) for (const a of arms) a.mirror = true;
     if (!arms.length) {
       chains.push({ role: 'arm', at: 1, seg: [0.3, 0.28], r: 0.05, spread: 0.18, mirror: true });
     }
@@ -555,7 +546,8 @@ export function validateGenome(raw: any, desc: string): Genome {
   }
 
   // every creature needs a head to read as a creature
-  if (!chains.some(c => c.role === 'head')) {
+  if (!chains.some(c => c.role === 'head') && (humanoid || NOT_A_PERSON.test(desc) || chains.length === 0)
+      && !/headless|no head|faceless/.test(desc.toLowerCase())) {
     chains.push({ role: 'head', at: 1, seg: [0.09, 0.12], r: 0.11, spread: 0, ink: 2 });
   }
 
@@ -571,13 +563,14 @@ export function validateGenome(raw: any, desc: string): Genome {
 
   // Flying is a claim wings have to back. Without them it's just a hovering
   // blob, which is the same failure wearing a different word.
-  if (locomotion === 'fly' && !chains.some(c => c.role === 'wing')) locomotion = 'walk';
+  if (locomotion === 'fly' && !chains.some(c => c.role === 'wing' || c.role === 'tentacle')
+      && !/float|hover|levitat|orb|balloon|ghost|cloud/.test(desc.toLowerCase())) locomotion = 'walk';
 
   if (!chains.some(c => c.role === 'leg') && locomotion !== 'fly') {
     // Leglessness has to be earned by the words. Trusting the model's own
     // `locomotion: slither` is not enough — it reaches for it whenever the
     // prompt gives it nothing, and a shrug is not a body plan.
-    const serpentine = SERPENTINE.test(desc) && !humanoid;
+    const serpentine = !humanoid && (SERPENTINE.test(desc) || sk.locomotion === 'slither' && body.length >= 3);
     if (serpentine) {
       locomotion = 'slither';
     } else {
@@ -598,7 +591,7 @@ export function validateGenome(raw: any, desc: string): Genome {
   // A head on a body with nothing else is a lollipop, not a creature. Anything
   // that stands up gets arms; anything that doesn't gets a tail to steer with.
   const limbs = chains.filter(c => c.role !== 'head').length;
-  if (limbs < 2) {
+  if (limbs < 2 && humanoid) {
     chains.push(upright
       ? { role: 'arm', at: 1, seg: [0.3, 0.28], r: 0.05, spread: 0.18 }
       : { role: 'tail', at: 0, seg: [0.22, 0.18, 0.13], r: 0.04, spread: 0 });
@@ -627,13 +620,13 @@ export function validateGenome(raw: any, desc: string): Genome {
   const fattest = Math.max(...girth);
 
   // a person is taller than they are wide, and stands on legs not stumps
-  const maxGirth = humanoid ? span * 0.34 : span * 0.55;
+  const maxGirth = humanoid ? span * 0.9 : span * 1.8;
   if (fattest > maxGirth) {
     const k = maxGirth / fattest;
     for (let i = 0; i < girth.length; i++) girth[i] = Math.max(0.02, girth[i] * k);
   }
   if (humanoid) {
-    const minLeg = span * 0.85;
+    const minLeg = span * 0.35;
     for (const c of chains) {
       if (c.role !== 'leg') continue;
       const total = c.seg.reduce((a, b) => a + b, 0);
@@ -644,12 +637,17 @@ export function validateGenome(raw: any, desc: string): Genome {
     }
   }
   // and nothing is longer than the room it stands in, unless it's a snake
-  if (locomotion !== 'slither' && span > 1.8) {
-    const k = 1.8 / span;
+  if (locomotion !== 'slither' && span > 3.0) {
+    const k = 3.0 / span;
     for (let i = 0; i < body.length; i++) body[i] *= k;
   }
 
   const skeleton: Skeleton = { upright, body, girth, locomotion, chains };
+  // The final proportions, not the raw model's width, determine attachment room.
+  for (const c of chains) {
+    const radius = girthAt(skeleton, c.at * body.length);
+    c.spread = Math.min(c.spread, radius + c.r * (c.role === 'head' ? 0.3 : 0.65));
+  }
 
   const gs = raw?.gait ?? {};
   const gait: Gait = {

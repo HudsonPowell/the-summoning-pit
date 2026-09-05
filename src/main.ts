@@ -1,9 +1,11 @@
+import { newSecondary, stepSecondary } from './secondary';
+import { motionOf, livingMotion } from './motion';
 // The FORGE: one character on screen, moving, changeable while it moves.
 // Everything the character is — body, palette, behaviours, weapon, blast —
 // is data on the right; the canvas never stops.
 
 import {
-  defaultBiped, effectiveGait, migrateGenome, Mood,
+  defaultBiped, heightOf, effectiveGait, migrateGenome, Mood,
   PRESETS, Skeleton, SkeletonScales, scaleSkeleton, Gait, Genome,
 } from './genome';
 import {
@@ -16,7 +18,7 @@ import { forgeWeapon, armoury } from './smith';
 import { Camera } from './render';
 import { PixelView } from './view';
 import { group, slider, button, toggle, select, color } from './ui';
-import { v3 } from './vec';
+import { v3, rotX, rotY } from './vec';
 
 // --- state ----------------------------------------------------------------
 
@@ -316,7 +318,7 @@ slider(gMood, 'angry', 0, 1, 0.01, mood.angry, v => { mood.angry = v; });
 const gCam = group(panel, 'camera — drag the canvas to orbit');
 const camYawSet = slider(gCam, 'yaw', -Math.PI, Math.PI, 0.001, cam.yaw, v => { cam.yaw = v; });
 const camPitchSet = slider(gCam, 'pitch', -0.1, 0.9, 0.001, cam.pitch, v => { cam.pitch = v; });
-const camZoomSet = slider(gCam, 'zoom', 24, 140, 1, zoomPpm, v => { zoomPpm = v; applyCamScale(); });
+const camZoomSet = slider(gCam, 'zoom', 8, 140, 1, zoomPpm, v => { zoomPpm = v; applyCamScale(); });
 
 const gRender = group(panel, 'render');
 slider(gRender, 'resolution', 96, 400, 16, REF_RES, v => {
@@ -438,7 +440,7 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerup', () => { dragging = false; });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  zoomPpm = Math.min(140, Math.max(24, zoomPpm * (e.deltaY < 0 ? 1.06 : 0.94)));
+  zoomPpm = Math.min(140, Math.max(8, zoomPpm * (e.deltaY < 0 ? 1.06 : 0.94)));
   applyCamScale();
   camZoomSet(zoomPpm);
 }, { passive: false });
@@ -545,6 +547,10 @@ function blastCapsules(t: number): Capsule[] {
 // --- the loop: it never stops ---------------------------------------------------
 
 let phase = 0;
+let previewMove = 0;
+let previewSpeed = 0;
+let previewSecondary = newSecondary();
+let previewGenome = genome;
 let scroll = 0;
 let idleT = 0;
 let strikeClock = 0;
@@ -554,34 +560,70 @@ let fpsAcc = 0, fpsN = 0, fpsT = 0;
 function tick(dt: number) {
   orbitTick(dt);
   const b = currentBehavior();
-  const extras: PoseExtras = { weapon: character.weapon, offhand: character.offhand };
+  const extras: PoseExtras = { weapon: character.weapon, offhand: character.offhand, gear: character.gear };
   let caps: Capsule[];
   let speed = 0;
 
+  const newlyLoaded = previewGenome !== genome;
+  if (newlyLoaded) {
+    previewGenome = genome;
+    previewSecondary = newSecondary();
+    previewMove = previewSpeed = phase = 0;
+  }
+  idleT += dt;
+  const personality = motionOf(genome);
+  if (b.type === 'gait') genome.gait = b.gait;
+  const eff = effectiveGait(genome.gait, mood);
+  const life = livingMotion(genome, idleT);
+  const targetSpeed = b.type === 'gait' ? eff.stride * eff.cadence * life.pace : 0;
+  const blend = 1 - Math.exp(-dt / personality.response);
+  previewSpeed += (targetSpeed - previewSpeed) * blend;
+  previewMove += ((b.type === 'gait' ? 1 : 0) - previewMove) * blend;
+  speed = previewSpeed;
+  const phaseDelta = speed * dt / Math.max(0.08, eff.stride);
+  phase = (phase + phaseDelta) % 1;
+  scroll += speed * dt;
+  stepSecondary(previewSecondary, dt, {
+    turnRate: 0, move: previewMove, speed, mass: heightOf(genome),
+    lookYaw: life.gaze,
+    phase, phaseDelta, genome, gait: eff, dead: b.type === 'still' && b.still.collapse >= 1,
+  });
+  Object.assign(extras, {
+    lean: previewSecondary.lean, twist: previewSecondary.twist,
+    bob: previewSecondary.bob, jiggle: previewSecondary.jiggle,
+    lookYaw: previewSecondary.head,
+  });
+
   if (b.type === 'gait') {
-    genome.gait = b.gait;
-    const eff = effectiveGait(b.gait, mood);
-    speed = eff.stride * eff.cadence;
-    phase = (phase + eff.cadence * dt) % 1;
-    scroll += speed * dt;
-    caps = solvePose(genome, mood, phase, 1, 0, undefined, 0, extras);
+    caps = solvePose(genome, mood, phase, previewMove, idleT, undefined, 0, extras);
   } else if (b.type === 'still') {
-    idleT += dt;
     extras.breatheAmp = b.still.breatheAmp;
     extras.breatheRate = b.still.breatheRate;
     const m: Mood = {
       tired: Math.min(1, b.still.tired + mood.tired),
       angry: Math.min(1, b.still.angry + mood.angry),
     };
-    caps = solvePose(genome, m, 0, 0, idleT, undefined, b.still.collapse, extras);
+    caps = solvePose(genome, m, phase, previewMove, idleT, undefined, b.still.collapse, extras);
   } else {
     strikeClock += dt;
     const cycle = b.strike.duration + 0.5;
-    const t = Math.min(1, (strikeClock % cycle) / b.strike.duration);
-    const intent: Intent = { slash: { t, weight: slashWeight(t), spec: b.strike } };
-    caps = solvePose(genome, mood, 0.12, 0, idleT += dt, intent, 0, extras);
+    const strikeT = Math.min(1, (strikeClock % cycle) / b.strike.duration);
+    const intent: Intent = { slash: { t: strikeT, weight: slashWeight(strikeT), spec: b.strike } };
+    caps = solvePose(genome, mood, phase, previewMove, idleT, intent, 0, extras);
   }
 
+  if (newlyLoaded && caps.length) {
+    // A new silhouette gets its own framing; subsequent manual camera edits stay put.
+    const points = caps.flatMap(c => [c.a, c.b].map(p => ({ p, r: c.r })));
+    cam.cx = (Math.min(...points.map(q => q.p.x - q.r)) + Math.max(...points.map(q => q.p.x + q.r))) / 2;
+    cam.cz = (Math.min(...points.map(q => q.p.z - q.r)) + Math.max(...points.map(q => q.p.z + q.r))) / 2;
+    const projected = points.map(q => ({ p: rotX(rotY(v3(q.p.x - cam.cx!, q.p.y, q.p.z - cam.cz!), cam.yaw), cam.pitch), r: q.r }));
+    const minX = Math.min(...projected.map(q => q.p.x - q.r)), maxX = Math.max(...projected.map(q => q.p.x + q.r));
+    const minY = Math.min(...projected.map(q => q.p.y - q.r)), maxY = Math.max(...projected.map(q => q.p.y + q.r));
+    cam.cy = (minY + maxY) / 2;
+    zoomPpm = Math.max(8, Math.min(140, REF_RES * 0.72 / Math.max(0.1, maxX - minX, maxY - minY)));
+    applyCamScale(); camZoomSet(zoomPpm);
+  }
   if (showBlast) caps.push(...blastCapsules(performance.now() / 1000));
   view.render(caps, cam, scroll);
 

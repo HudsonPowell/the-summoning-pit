@@ -3,6 +3,7 @@
 
 import { Character, migrateCharacter } from './character';
 import { effectiveGait, heightOf } from './genome';
+import { livingMotion } from './motion';
 import { solvePose } from './pose';
 import { PixelRenderer, Camera } from './render';
 
@@ -13,6 +14,7 @@ interface Card {
   ctx: CanvasRenderingContext2D;
   img: ImageData;
   phase: number;
+  time: number;
 }
 
 const SIZE = 64;
@@ -88,6 +90,7 @@ async function load() {
       ctx: null as unknown as CanvasRenderingContext2D,
       img: new ImageData(SIZE, SIZE),
       phase: Math.random(),
+      time: Math.random() * 20,
     });
   };
   try {
@@ -107,14 +110,16 @@ function frame(now: number) {
   for (const card of cards) {
     if (!card.ctx) continue;
     const eff = effectiveGait(card.ch.genome.gait, { tired: 0, angry: 0 });
-    card.phase = (card.phase + eff.cadence * dt) % 1;
+    card.time += dt;
+    card.phase = (card.phase + eff.cadence * livingMotion(card.ch.genome, card.time).pace * dt) % 1;
     const h = heightOf(card.ch.genome);
     const cam: Camera = {
       yaw: 0.5, pitch: 0.24, ppm: (SIZE * 0.62) / h, cy: h * 0.5, floor: false, flat: false,
     };
-    const caps = solvePose(card.ch.genome, { tired: 0, angry: 0 }, card.phase, 1, 0, undefined, 0, {
+    const caps = solvePose(card.ch.genome, { tired: 0, angry: 0 }, card.phase, 1, card.time, undefined, 0, {
       weapon: card.ch.weapon,
       offhand: card.ch.offhand,
+      gear: card.ch.gear,
     });
     card.renderer.render(card.img.data, caps, cam, 0);
     card.ctx.putImageData(card.img, 0, 0);

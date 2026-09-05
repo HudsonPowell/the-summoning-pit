@@ -5,6 +5,7 @@
 
 import { Genome, migrateGenome } from '../src/genome';
 import { fitBudget } from '../src/budget';
+import { validateWeapon, priceWeapon } from '../src/smith';
 import { temperOf } from '../src/temper';
 
 const num = (v: unknown, lo: number, hi: number, fb: number): number =>
@@ -34,16 +35,19 @@ export function sanitiseGenome(raw: unknown): Genome | null {
 
   sk.chains = sk.chains
     .filter((c: any) => c && ROLES.has(c.role))
-    .slice(0, 14)
+    .slice(0, 24)
     .map((c: any) => ({
       role: c.role,
       at: num(c.at, 0, 1, 0.5),
       seg: (Array.isArray(c.seg) && c.seg.length ? c.seg : [0.3, 0.3])
         .slice(0, 4).map((v: unknown) => num(v, 0.03, 0.9, 0.25)),
-      r: num(c.r, 0.01, 0.15, 0.05),
+      r: num(c.r, 0.01, 0.35, 0.05),
       spread: num(c.spread, 0, 0.5, 0.1),
       ...(typeof c.mirror === 'boolean' ? { mirror: c.mirror } : {}),
       ...(typeof c.ink === 'number' ? { ink: Math.min(9, Math.max(0, Math.round(c.ink))) } : {}),
+      ...(typeof c.side === 'number' ? { side: num(c.side, -1, 1, 0) } : {}),
+      ...(typeof c.yaw === 'number' ? { yaw: num(c.yaw, -Math.PI, Math.PI, 0) } : {}),
+      ...(typeof c.taper === 'number' ? { taper: num(c.taper, 0.1, 1.6, 0.5) } : {}),
       ...(typeof c.angle === 'number' ? { angle: num(c.angle, -1.6, 1.6, 0) } : {}),
     }));
   if (!sk.chains.length) return null;
@@ -63,13 +67,7 @@ export function sanitiseGenome(raw: unknown): Genome | null {
     const w: any = (g as any)[slot];
     if (!w || typeof w !== 'object') continue;
     if (Array.isArray(w.parts)) {
-      // roomy enough for a 1.4x 'huge' weapon; still nothing absurd
-      w.parts = w.parts.slice(0, 10).map((q: any) => ({
-        a: [num(q?.a?.[0], -0.6, 1.7, 0), num(q?.a?.[1], -0.6, 0.6, 0), num(q?.a?.[2], -0.6, 0.6, 0)],
-        b: [num(q?.b?.[0], -0.6, 1.7, 0.4), num(q?.b?.[1], -0.6, 0.6, 0), num(q?.b?.[2], -0.6, 0.6, 0)],
-        r: num(q?.r, 0.01, 0.15, 0.03),
-        color: hex(q?.color, '#9aa1ab'),
-      }));
+      w.parts = priceWeapon(validateWeapon(w, typeof w.name === 'string' ? w.name : 'relic')).parts;
       if (typeof w.name === 'string') w.name = w.name.slice(0, 24);
       // how it is used is an enum, not a string off the wire
       if (typeof w.style !== 'string' || !STYLE_OK.includes(w.style)) delete w.style;

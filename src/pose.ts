@@ -1,3 +1,4 @@
+import { motionOf, legSides, legOffset, hopHeight, livingMotion, swingVariation } from './motion';
 // Drivers -> joints, every frame, for any body plan.
 //
 // The body is a curve of segments. Everything else hangs off a POSITION along
@@ -27,6 +28,10 @@ export interface Intent {
 }
 
 export interface PoseExtras {
+  /** Zero is useful for comparing the underlying gait with its living variation. */
+  variation?: number;
+  /** Rubber-hose silhouette; 0 keeps the articulated rig for comparison. */
+  hose?: number;
   weapon?: WeaponSpec;
   offhand?: WeaponSpec;
   breatheAmp?: number;
@@ -69,6 +74,41 @@ function twoBoneIK(root: V3, target: V3, l1: number, l2: number, pole: V3): V3 {
   return add(add(root, scale(dir, a)), scale(perp, h));
 }
 
+/** A continuous flexible limb, with fixed endpoints and volume-aware thickness. */
+function hoseLimb(caps: Capsule[], root: V3, joint: V3, tip: V3, bow: V3,
+  r0: number, r1: number, color: [number, number, number], parts: [string, string], restLength: number) {
+  const c1 = add(vlerp(root, joint, 0.88), bow);
+  const c2 = sub(vlerp(tip, joint, 0.88), scale(bow, 0.4));
+  const points = [root];
+  const segments = 6;
+  let arcLength = 0;
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments, u = 1 - t;
+    const p = add(add(scale(root, u * u * u), scale(c1, 3 * u * u * t)),
+      add(scale(c2, 3 * u * t * t), scale(tip, t * t * t)));
+    arcLength += len(sub(p, points[i - 1]));
+    points.push(p);
+  }
+  const thickness = clamp(Math.sqrt(restLength / Math.max(0.01, arcLength)), 0.85, 1.2);
+  for (let i = 0; i < segments; i++) {
+    const t = (i + 0.5) / segments;
+    caps.push({ a: points[i], b: points[i + 1], r: (r0 + (r1 - r0) * t) * thickness,
+      color, part: parts[i < segments / 2 ? 0 : 1] });
+  }
+}
+
+/** Hermite curve shared by torso drawing and its attachments. */
+function softSpine(nodes: V3[], t: number, softness: number): V3 {
+  const count = nodes.length - 1, f = clamp(t, 0, 1) * count;
+  const i = Math.min(count - 1, Math.floor(f)), u = f - i;
+  const a = nodes[i], b = nodes[i + 1];
+  const m0 = i === 0 ? sub(b, a) : scale(sub(b, nodes[i - 1]), 0.5);
+  const m1 = i + 2 >= nodes.length ? sub(b, a) : scale(sub(nodes[i + 2], a), 0.5);
+  const smooth = add(add(scale(a, 2 * u ** 3 - 3 * u * u + 1), scale(m0, u ** 3 - 2 * u * u + u)),
+    add(scale(b, -2 * u ** 3 + 3 * u * u), scale(m1, u ** 3 - u * u)));
+  return vlerp(vlerp(a, b, u), smooth, softness);
+}
+
 function footTrack(p: number, g: Gait): { x: number; y: number } {
   const S = g.stance;
   const travel = g.stride * S;
@@ -78,7 +118,7 @@ function footTrack(p: number, g: Gait): { x: number; y: number } {
   }
   const u = (p - S) / (1 - S);
   const e = (1 - Math.cos(Math.PI * u)) / 2;
-  return { x: (-0.5 + e) * travel, y: g.lift * Math.sin(Math.PI * u) };
+  return { x: (-0.5 + e) * travel, y: g.lift * Math.pow(Math.sin(Math.PI * u), 2) * (1.15 - 0.3 * u) };
 }
 
 function slashDir(u: number, s: StrikeSpec): V3 {
@@ -117,9 +157,13 @@ export function solvePose(
   const caps: Capsule[] = [];
   const co = clamp(collapse, 0, 1);
   const mv = clamp(move, 0, 1) * (1 - co);
+  const hose = clamp(extras?.hose ?? 1, 0, 1);
+  const rubber = hose * (1 - co);
+  const personality = motionOf(genome);
+  const life = livingMotion(genome, idleT, (extras?.variation ?? 1) * (1 - co) * (1 - (intent?.slash?.weight ?? 0) * 0.85));
   const breathe =
-    (1 - mv) * 0.012 * (extras?.breatheAmp ?? 1) *
-    Math.sin(TAU * (extras?.breatheRate ?? 0.35) * idleT);
+    (1 - mv * 0.65) * 0.012 * (extras?.breatheAmp ?? 1) * (1 + life.breath * 0.22) *
+    Math.sin(TAU * (extras?.breatheRate ?? personality.breath) * idleT + personality.offset + life.breath * 0.35);
 
   const inks = inkList(genome.palette).map(hex);
   const inkOf = (c: ChainSpec) => inks[c.ink ?? defaultInk(c.role)] ?? inks[1];
@@ -127,7 +171,7 @@ export function solvePose(
 
   const slumpCo = g.slump + co * 1.0;
   const leanCo = g.lean + co * 0.3;
-  const headCo = g.headPitch + co * 0.8;
+  const headCo = g.headPitch + co * 0.8 + life.drift(5, 0.42) * 0.065;
 
   // the strike is resolved before the body, because a lunge moves the body
   const slash0 = intent?.slash;
@@ -151,6 +195,11 @@ export function solvePose(
   const legs = sk.chains.filter(c => c.role === 'leg').sort((a, b) => a.at - b.at);
   const N = Math.max(1, sk.body.length);
   const slither = sk.locomotion === 'slither' || legs.length === 0;
+  const hopping = sk.locomotion === 'hop';
+  const hop = hopping ? hopHeight(phase, g) * mv * (1 + life.effort * 0.18) : 0;
+  const hopCrouch = hopping && frac(phase) < g.stance
+    ? Math.sin(Math.PI * frac(phase) / Math.max(0.01, g.stance)) * Math.min(0.09, g.lift * 0.65) * mv : 0;
+  const bounce = hopping ? 0 : g.bounce;
   const flying = sk.locomotion === 'fly';
 
   // --- the body curve --------------------------------------------------
@@ -172,42 +221,44 @@ export function solvePose(
   };
 
   const waveAt = (i: number) => {
-    const amp = g.bodyWave * (slither ? 0.35 + 0.65 * mv : mv);
+    const amp = g.bodyWave * (slither ? (0.35 + 0.65 * mv) * (1 + life.effort * 0.22) : mv);
     // several bends travelling down a long body, few down a short one — a
     // snake needs to READ as a snake, and one lazy curve does not
     const cycles = slither ? 5.6 : 2.4;
     const reach = slither ? 0.3 : 0.12;
-    return Math.sin(TAU * phase - (i / N) * cycles) * amp * reach;
+    const drift = slither ? life.drift(170, 0.47, i * 0.13) * 0.35 : 0;
+    return Math.sin(TAU * phase - (i / N) * cycles + drift) * amp * reach;
   };
 
   if (sk.upright) {
     const hipH = supportH(0) * (1 - 0.72 * co);
     let p = v3(leanCo * 0.12,
-      hipH + g.bounce * Math.cos(2 * TAU * (phase - 0.3)) * mv + breathe + sBob,
+      hipH + bounce * Math.cos(2 * TAU * (phase - 0.3)) * mv + breathe + sBob + hop - hopCrouch,
       -g.sway * Math.cos(TAU * (phase - 0.3)) * mv);
     nodes.push(p);
     for (let i = 0; i < N; i++) {
       // lean rises up the spine, slump concentrates at the top
       const u = (i + 1) / N;
-      const ang = leanCo * (0.6 + 0.7 * u) + slumpCo * u * u;
+      const ang = leanCo * (0.6 + 0.7 * u) + slumpCo * u * u + life.posture * u * u;
       p = add(p, v3(Math.sin(ang) * sk.body[i], Math.cos(ang) * sk.body[i], waveAt(i)));
       // banking into a turn, strongest at the top of the spine — and the
       // spring carries it past the turn and back
       nodes.push(add(p, v3(
         lungeAmt * u + sTwist * 0.09 * u,
-        jigAt(u) * 0.35,
+        jigAt(u) * 0.35 + life.drift(6, 0.55) * 0.008 * u,
         -turnRate * 0.06 * u + sLean * 0.16 * u * u + jigAt(u),
       )));
     }
   } else {
     const total = sk.body.reduce((a, b) => a + b, 0);
-    const hover = flying ? 0.25 * mv : 0;
+    const hangingLength = Math.max(0, ...sk.chains.filter(c => c.role === 'tentacle').map(c => c.seg.reduce((a, b) => a + b, 0)));
+    const hover = flying ? Math.max(0.25, hangingLength * 0.85) : 0;
     let x = -total * 0.5;
     for (let i = 0; i <= N; i++) {
       const at = i / N;
       const h = supportH(at) * (1 - 0.72 * co) + hover
-        + g.bounce * Math.cos(2 * TAU * (phase - 0.3 - at * 0.25)) * mv
-        + breathe - slumpCo * 0.12 * at + sBob + jigAt(at) * 0.4;
+        + bounce * Math.cos(2 * TAU * (phase - 0.3 - at * 0.25)) * mv
+        + breathe + hop - hopCrouch - slumpCo * 0.12 * at + sBob + jigAt(at) * 0.4;
       nodes.push(v3(
         x + lungeAmt * (0.35 + 0.65 * at) + sTwist * 0.06 * at,
         h,
@@ -218,13 +269,48 @@ export function solvePose(
     }
   }
 
-  // draw the body as tapering capsules
-  for (let i = 0; i < N; i++) {
+  // Keep foot targets on the undeformed support frame. The flesh can sway,
+  // compress and stretch around it without carrying the planted feet along.
+  const supportNodes = nodes.map(p => ({ ...p }));
+  const bodyLength = sk.body.reduce((sum, value) => sum + value, 0);
+  const pulse = Math.sin(2 * TAU * (phase - 0.12));
+  const squash = rubber * mv * 0.075 * pulse;
+  const stretch = 1 + squash;
+  const hipY = nodes[0].y;
+  for (let i = 0; i <= N; i++) {
+    const u = i / N;
+    const delayed = Math.sin(TAU * (phase - u * 0.22) + life.effort * 0.2);
+    if (sk.upright) {
+      nodes[i].y = hipY + (nodes[i].y - hipY) * stretch
+        - rubber * mv * Math.min(0.075, hipY * 0.075) * pulse;
+      nodes[i].x += rubber * mv * bodyLength * 0.12 * u * delayed;
+      nodes[i].z += rubber * mv * bodyLength * 0.055 * u * u * Math.sin(TAU * (phase - u * 0.3));
+    } else {
+      nodes[i].y += rubber * mv * Math.min(0.08, bodyLength * 0.075)
+        * Math.sin(2 * TAU * (phase - u * 0.18));
+      nodes[i].z += rubber * mv * bodyLength * 0.04 * Math.sin(TAU * (phase - u * 0.28));
+    }
+  }
+
+  // Even a one-segment torso gets a flexible centre, not just a tilted rod.
+  const bodyPoint = (t: number): V3 => {
+    const p = softSpine(nodes, t, hose);
+    const bend = Math.sin(Math.PI * t) * rubber * mv * bodyLength;
+    return add(p, sk.upright
+      ? v3(bend * 0.13 * Math.sin(TAU * (phase - t * 0.2)), 0,
+          bend * 0.055 * Math.sin(TAU * (phase - t * 0.3)))
+      : v3(0, bend * 0.065 * Math.sin(TAU * (phase - t * 0.2)),
+          bend * 0.075 * Math.sin(TAU * (phase - t * 0.3))));
+  };
+
+  // Smooth curvature and gentle thickness changes replace the hinged torso.
+  const bodySteps = hose ? Math.max(5, N * 3) : N;
+  for (let i = 0; i < bodySteps; i++) {
+    const u = i / bodySteps, v = (i + 1) / bodySteps;
     caps.push({
-      a: nodes[i], b: nodes[i + 1],
-      r: (girthAt(sk, i) + girthAt(sk, i + 1)) * 0.5,
-      color: mul(cTorso, 0.94 + 0.12 * (i / N)),
-      part: 'body',
+      a: bodyPoint(u), b: bodyPoint(v),
+      r: (girthAt(sk, u * N) + girthAt(sk, v * N)) * 0.5 / Math.sqrt(stretch),
+      color: mul(cTorso, 0.94 + 0.12 * u), part: 'body',
     });
   }
 
@@ -241,17 +327,12 @@ export function solvePose(
   const slashTw = sw2 * spec.twist * (su < 0.3 ? -su / 0.3 : Math.sin((Math.PI * (su - 0.3)) / 0.7));
   const chestTwist = -g.shoulderTwist * Math.sin(TAU * phase) * mv - slashTw;
 
-  const curveAt = (t: number): V3 => {
-    const f = clamp(t, 0, 1) * N;
-    const i = Math.min(N - 1, Math.floor(f));
-    return vlerp(nodes[i], nodes[i + 1], f - i);
-  };
+  const curveAt = bodyPoint;
   const twistAt = (t: number) => hipTwist + (chestTwist - hipTwist) * clamp(t, 0, 1);
   /** forward along the body at t, in world terms */
   const fwdAt = (t: number): V3 => {
-    const f = clamp(t, 0, 1) * N;
-    const i = Math.min(N - 1, Math.floor(f));
-    return norm(sub(nodes[i + 1], nodes[i]));
+    const lo = clamp(t - 0.001, 0, 1), hi = clamp(t + 0.001, 0, 1);
+    return norm(sub(bodyPoint(hi), bodyPoint(lo)));
   };
 
   const attachPoint = (c: ChainSpec, side: number, yOff = 0): V3 => {
@@ -261,19 +342,22 @@ export function solvePose(
   };
 
   const sidesOf = (c: ChainSpec): number[] =>
-    (c.mirror ?? mirrorsByDefault(c.role)) ? [-1, 1] : [0];
+    (c.mirror ?? mirrorsByDefault(c.role)) ? [-1, 1] : [c.side ?? 0];
 
   // --- locomotion: claims every leg -------------------------------------
   // One rule sets the whole gait library. Few legs: offset by where they sit
   // on the body (the lateral-sequence walk). Many legs: a wave down the body.
   legs.forEach((chain, li) => {
-    for (const side of [-1, 1] as const) {
-      const spreadOff = legs.length >= 3
-        ? (li / legs.length) * 0.5
-        : chain.at * 0.25;
-      const p = frac(phase + spreadOff + (side < 0 ? 0 : 0.5));
-      const t = footTrack(p, g);
+    for (const side of legSides(chain)) {
+      const p = frac(phase + legOffset(genome, chain, li, legs.length, side));
+      const variation = swingVariation(p, g,
+        life.drift(20 + li * 3 + side, 0.83), life.drift(50 + li * 3 + side, 0.72));
+      const t = footTrack(variation.phase, g);
+      t.y *= variation.lift;
       const hip = attachPoint(chain, side);
+      const support = softSpine(supportNodes, chain.at, 0);
+      const plantHip = add(support, v3(-side * chain.spread * Math.sin(twistAt(chain.at)),
+        0, side * chain.spread * Math.cos(twistAt(chain.at))));
       // A PLANTED FOOT DOES NOT MOVE. During stance the track retreats by
       // exactly stride*stance, which is exactly how far the body travels in
       // that time — so the foot holds its place in the world and the body
@@ -297,8 +381,8 @@ export function solvePose(
       const swayDrift = p < g.stance
         ? -swayAmp * (Math.cos(TAU * (phase - 0.3)) - Math.cos(TAU * (phase - p - 0.3)))
         : 0;
-      const hipZPlant = hip.z - swayDrift;
-      let ankle = v3(hip.x + t.x * settle, t.y * settle + ANKLE_H, hipZPlant * 0.94);
+      const hipZPlant = plantHip.z - swayDrift;
+      let ankle = v3(plantHip.x + t.x * settle, (hopping ? hop : t.y * settle) + ANKLE_H, hipZPlant * 0.94);
       // A PLANTED FOOT DOES NOT TURN EITHER. The stance rule above holds the
       // foot still while the body advances in a straight line, but when the
       // body YAWS the local frame rotates and dragged every planted foot
@@ -314,7 +398,7 @@ export function solvePose(
         const trav = (t0.x - t.x) * settle;               // metres since plant
         // the same plant-time z as above: the chord must pivot the foot the
         // sway-held position, or the turn fix would reintroduce the skate
-        const px = hip.x + t0.x * settle, pz = hipZPlant * 0.94;  // plant-time local
+        const px = plantHip.x + t0.x * settle, pz = hipZPlant * 0.94;  // plant-time local
         const ca = Math.cos(dh), sa = Math.sin(dh);
         const rx = px * ca + pz * sa, rz = -px * sa + pz * ca;
         const half = dh / 2;
@@ -326,6 +410,8 @@ export function solvePose(
           rz - chord * -Math.sin(half),
         );
       }
+      // Side clearance fades to zero at both ends, so stance feet never inherit noise.
+      ankle.z += (hopping ? 0 : variation.arc) * life.drift(80 + li * 3 + side, 0.61) * 0.025 * mv;
       const knee = twoBoneIK(hip, ankle, chain.seg[0], chain.seg[1] ?? chain.seg[0], v3(1, 0, 0));
       const swingU = p < g.stance ? 0 : (p - g.stance) / (1 - g.stance);
       const toePitch = (p < g.stance ? 0 : 0.5 * Math.sin(Math.PI * swingU)) * mv;
@@ -333,8 +419,16 @@ export function solvePose(
       const toe = add(ankle, v3(footLen * Math.cos(toePitch), footLen * Math.sin(toePitch), 0));
       const shade = side < 0 ? 0.82 : 1.0;
       const ink = inkOf(chain);
-      caps.push({ a: hip, b: knee, r: chain.r * 1.15, color: mul(ink, shade), part: 'thigh' });
-      caps.push({ a: knee, b: ankle, r: chain.r, color: mul(ink, shade * 0.9), part: 'shin' });
+      if (hose) {
+        const legLength = chain.seg[0] + (chain.seg[1] ?? chain.seg[0]);
+        const bow = v3(rubber * legLength * (0.12 + 0.15 * Math.sin(TAU * (p - 0.12))) * (0.25 + 0.75 * mv),
+          0, rubber * side * legLength * 0.035 * Math.sin(TAU * (p - 0.2)) * mv);
+        hoseLimb(caps, hip, knee, ankle, bow, chain.r * 1.15, chain.r * 0.9,
+          mul(ink, shade), ['thigh', 'shin'], legLength);
+      } else {
+        caps.push({ a: hip, b: knee, r: chain.r * 1.15, color: mul(ink, shade), part: 'thigh' });
+        caps.push({ a: knee, b: ankle, r: chain.r, color: mul(ink, shade * 0.9), part: 'shin' });
+      }
       caps.push({ a: ankle, b: toe, r: chain.r * 0.9, color: mul(inks[3], shade), part: 'foot' });
     }
   });
@@ -343,17 +437,18 @@ export function solvePose(
   for (const chain of sk.chains.filter(c => c.role === 'head')) {
     for (const side of sidesOf(chain)) {
       let p = attachPoint(chain, side);
+      p.y -= (sBob + breathe) * 0.6 * (1 - co);
       let lastHeadDir = v3(0, 1, 0);
       const ink = inkOf(chain);
       // a bite rears the head back, then snaps it forward and down
       const bite = headStrike * (spec.reachMin +
         (spec.reachMax - spec.reachMin) * Math.sin(Math.PI * su));
       const biteAng = headStrike * (su < 0.3 ? 0.55 : -0.75 * Math.sin(Math.PI * (su - 0.3) / 0.7));
-      const look = (extras?.lookYaw ?? 0) * (1 - headStrike * 0.5);
+      const look = ((extras?.lookYaw ?? 0) + life.gaze * (extras?.lookYaw == null ? 1 : 0.35)) * (1 - headStrike * 0.5);
       const baseAng = (chain.angle ?? 0) + headCo + (sk.upright ? 0 : -slumpCo * 0.4) + biteAng;
       const fwd = fwdAt(chain.at);
       // splay multiple heads apart, and carry them along the body's direction
-      const yawOff = side * 1.0 * (chain.spread > 0 ? 1 : 0) + look;
+      const yawOff = side * 1.0 * (chain.spread > 0 ? 1 : 0) + (chain.yaw ?? 0) + look;
       chain.seg.forEach((segLen, i) => {
         const ang = baseAng - i * 0.12 + (sk.upright ? 0 : 0);
         lastHeadDir = sk.upright
@@ -364,13 +459,13 @@ export function solvePose(
         const taper = 1 - 0.18 * (i / Math.max(1, chain.seg.length));
         caps.push({
           a: p, b: q,
-          r: chain.r * (i === 0 ? 0.5 : 0.8) * taper,
+          r: chain.r * (i === 0 ? 0.5 : 0.8) * taper * (1 + ((chain.taper ?? 1) - 1) * i / Math.max(1, chain.seg.length - 1)),
           color: mul(ink, i === 0 ? 0.85 : 1),
           part: i === 0 ? 'neck' : 'skull',
         });
         p = q;
       });
-      caps.push({ a: p, b: p, r: chain.r, color: ink, part: 'head' });
+      caps.push({ a: p, b: p, r: chain.r * (chain.taper ?? 1), color: ink, part: 'head' });
       // where a helmet goes, and how big it has to be
       if (!anchors.head) anchors.head = { at: p, size: chain.r * 2.1, dir: sk.upright ? v3(1, 0, 0) : lastHeadDir, side: 1 };
     }
@@ -383,14 +478,29 @@ export function solvePose(
       const s = side === 0 ? 1 : side;
       const hunch = 0.03 * mood.angry;
       const shoulder = attachPoint(chain, s, -0.02 - pair * 0.13 + hunch * 0.7);
-      const pArm = frac(phase + (s < 0 ? 0.5 : 0) + pair * 0.06);
-      const alpha = g.armSwing * Math.sin(TAU * pArm) * mv + g.lean;
+      const armDrift = life.drift(110 + pair * 3 + s, 0.56, 0.16);
+      const pArm = frac(phase + (s < 0 ? 0.5 : 0) + pair * 0.06 + armDrift * 0.055);
+      const alpha = g.armSwing * (1 + life.effort * 0.16 + armDrift * 0.22) * Math.sin(TAU * pArm) * mv + g.lean + armDrift * 0.055;
       const beta =
-        g.elbowBase + g.elbowAmp * 0.5 * (1 + Math.sin(TAU * (pArm - g.elbowLag))) * mv;
+        g.elbowBase + life.drift(130 + pair * 3 + s, 0.44, 0.28) * 0.085 + g.elbowAmp * 0.5 * (1 + Math.sin(TAU * (pArm - g.elbowLag - armDrift * 0.03))) * mv;
       const dU = v3(Math.sin(alpha), -Math.cos(alpha), s * 0.12);
       let elbow = add(shoulder, scale(norm(dU), chain.seg[0]));
       const dF = v3(Math.sin(alpha + beta), -Math.cos(alpha + beta), s * 0.16);
       let hand = add(elbow, scale(norm(dF), chain.seg[1] ?? chain.seg[0]));
+
+      const armLength = chain.seg[0] + (chain.seg[1] ?? chain.seg[0]);
+      const armStretch = 1 + rubber * mv * 0.09 * Math.sin(TAU * (pArm - 0.18));
+      hand = add(shoulder, scale(sub(hand, shoulder), armStretch));
+
+      const rawHeld = pair === 0 ? (s > 0 ? (extras && 'weapon' in extras ? extras.weapon : genome.weapon) : (extras && 'offhand' in extras ? extras.offhand : genome.offhand)) : undefined;
+      const held = rawHeld?.parts?.length ? { ...rawHeld, name: rawHeld.name ?? 'relic', parts: rawHeld.parts } : undefined;
+      const heldStrike = s > 0 ? sw2 : 0;
+      if (held) {
+        const shield = /shield|buckler/.test(held.name.toLowerCase());
+        const carryTarget = add(shoulder, v3(armLength * (shield ? 0.8 : 0.4), -armLength * 0.4, s * armLength * 0.18));
+        hand = vlerp(hand, carryTarget, 0.88 * (1 - heldStrike));
+        elbow = twoBoneIK(shoulder, hand, chain.seg[0], chain.seg[1] ?? chain.seg[0], v3(-0.2, -0.4, s));
+      }
 
       // intent claims the first right arm only
       if (pair === 0 && s > 0 && sw2 > 0) {
@@ -405,13 +515,20 @@ export function solvePose(
       const shade = (s < 0 ? 0.8 : 1.0) * (1 - pair * 0.12);
       const ink = inkOf(chain);
       if (pair === 0) shoulders.push({ at: shoulder, size: chain.r * 2.6, dir: fwdAt(chain.at), side: s });
-      caps.push({ a: shoulder, b: elbow, r: chain.r, color: mul(ink, shade * 1.05), part: 'upperArm' });
-      caps.push({ a: elbow, b: hand, r: chain.r * 0.9, color: mul(ink, shade * 0.95), part: 'forearm' });
+      if (hose) {
+        const bow = v3(-rubber * armLength * 0.22 * Math.sin(TAU * (pArm - 0.12)) * mv,
+          0, rubber * s * armLength * 0.065 * (0.25 + 0.75 * mv));
+        hoseLimb(caps, shoulder, elbow, hand, bow, chain.r, chain.r * 0.88,
+          mul(ink, shade), ['upperArm', 'forearm'], armLength);
+      } else {
+        caps.push({ a: shoulder, b: elbow, r: chain.r, color: mul(ink, shade * 1.05), part: 'upperArm' });
+        caps.push({ a: elbow, b: hand, r: chain.r * 0.9, color: mul(ink, shade * 0.95), part: 'forearm' });
+      }
       caps.push({ a: hand, b: hand, r: chain.r * 1.05, color: mul(inks[2], shade * 0.95), part: 'hand' });
 
       // the right hand holds the weapon, the left holds the shield
       if (pair === 0) {
-        const w = s > 0 ? extras?.weapon : extras?.offhand;
+        const w = held;
         if (w) {
           // A weapon runs along the forearm, so an arm hanging at rest points
           // it straight at the floor — every armed creature stood there using
@@ -419,8 +536,13 @@ export function solvePose(
           // swung up and forward, and it only lines up with the arm as the
           // swing takes over.
           const along = norm(sub(hand, elbow));
-          const carried = norm(v3(0.55, 0.72, -s * 0.25));
-          const ex = norm(vlerp(carried, along, Math.min(1, 0.25 + sw2 * 1.1)));
+          const name = w.name.toLowerCase();
+          const carried = /shield|buckler/.test(name) ? norm(v3(0.75, 0.05, s * 0.65))
+            : /bow|gun|pistol|rifle/.test(name)
+            ? norm(v3(1, 0.08, s * 0.06))
+            : /staff|stave|spear|pike|lance|halberd|torch/.test(name)
+              ? norm(v3(0.12, 1, s * 0.06)) : norm(v3(0.28, 1, s * 0.08));
+          const ex = norm(vlerp(carried, along, heldStrike * 0.95));
           let ez = cross(ex, v3(0, 1, 0));
           if (len(ez) < 1e-3) ez = v3(0, 0, 1);
           // mirror the grip for the off hand, so a shield faces out and a
@@ -436,7 +558,7 @@ export function solvePose(
           for (const part of w.parts) {
             caps.push({ a: grip(part.a), b: grip(part.b), r: part.r * ws, color: hex(part.color), part: 'weapon' });
           }
-        } else if (s > 0 && genome.weapon?.length) {
+        } else if (s > 0 && genome.weapon?.length && !(extras && 'weapon' in extras)) {
           const bladeDir = norm(sub(hand, elbow));
           const tip = add(hand, scale(bladeDir, genome.weapon.length));
           caps.push({ a: add(hand, scale(bladeDir, 0.06)), b: tip, r: genome.weapon.r ?? 0.03,
@@ -447,9 +569,10 @@ export function solvePose(
   });
 
   // --- flap: claims wings ------------------------------------------------
+  const wingClock = (flying && idleT !== 0 ? idleT * g.cadence * 2 : phase * 2) + life.drift(150, 0.72) * 0.055;
   for (const chain of sk.chains.filter(c => c.role === 'wing')) {
     const beat = flying ? 1 : mv;
-    const flap = beat * g.flapAmp * Math.sin(TAU * 2 * phase)
+    const flap = beat * g.flapAmp * (1 + life.effort * 0.15) * Math.sin(TAU * wingClock)
       + (1 - beat) * 0.12 * Math.sin(TAU * 0.6 * idleT);
     for (const side of sidesOf(chain)) {
       const s = side === 0 ? 1 : side;
@@ -459,7 +582,7 @@ export function solvePose(
       const e = 0.2 + flap * 0.55 - co * 0.9;
       const d0 = norm(v3(-0.2, Math.sin(e), s * Math.cos(e)));
       const mid = add(base, scale(d0, chain.seg[0]));
-      const e2 = e - 0.5;
+      const e2 = e - 0.5 + beat * g.flapAmp * 0.18 * Math.sin(TAU * wingClock - 0.7);
       const d1 = norm(v3(-0.35, Math.sin(e2), s * Math.cos(e2)));
       const tip = add(mid, scale(d1, chain.seg[1] ?? chain.seg[0]));
       const shade = s < 0 ? 0.7 : 0.85;
@@ -479,15 +602,15 @@ export function solvePose(
         const lash = tailStrike * 2.6 *
           (su < 0.35 ? -su / 0.35 : Math.sin(Math.PI * (su - 0.35) / 0.65));
         const yaw =
-          g.tailWave * Math.sin(TAU * phase - i * 0.9) * (0.35 + 0.65 * mv) +
+          (chain.yaw ?? 0) + g.tailWave * (1 + life.drift(160, 0.4, i * 0.12) * 0.2) * Math.sin(TAU * phase - i * 0.9 + life.drift(161, 0.63, i * 0.12) * 0.4) * (0.35 + 0.65 * mv) +
           (1 - mv) * 0.15 * Math.sin(TAU * 0.3 * idleT - i * 0.9) +
           lash * (0.4 + 0.6 * (i / Math.max(1, chain.seg.length))) +
           // the tail swings wide when the body turns under it
-          turnRate * 0.09 * (1 + i);
-        const pitch = (sk.upright ? -0.35 : 0.25) - i * 0.28 - droop * 0.4;
+          turnRate * 0.09 * (1 + i) + life.drift(162 + side, 0.5, i * 0.15) * 0.11;
+        const pitch = chain.role === 'tentacle' ? -1.15 + i * 0.12 : (sk.upright ? -0.35 : 0.25) - i * 0.28 - droop * 0.4;
         const d = norm(v3(-Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.sin(yaw)));
         const q = add(p, scale(d, segLen));
-        caps.push({ a: p, b: q, r: chain.r * (1 - i * 0.22), color: mul(ink, 0.9 - i * 0.08), part: 'tail' });
+        caps.push({ a: p, b: q, r: chain.r * (1 + ((chain.taper ?? 0.34) - 1) * i / Math.max(1, chain.seg.length - 1)), color: mul(ink, 0.9 - i * 0.08), part: 'tail' });
         p = q;
       });
     }
@@ -505,8 +628,10 @@ export function solvePose(
           scale(fwd, Math.cos(ang) * (chain.role === 'fin' ? 0.15 : 0.6)),
           v3(0, Math.sin(ang), (side === 0 ? 0 : side) * 0.45 * Math.cos(ang)),
         ));
-        const q = add(p, scale(dir, segLen));
-        caps.push({ a: p, b: q, r: chain.r * (1 - i * 0.3), color: ink, part: chain.role });
+        const yaw = chain.yaw ?? 0;
+        const turned = v3(dir.x * Math.cos(yaw) - dir.z * Math.sin(yaw), dir.y, dir.x * Math.sin(yaw) + dir.z * Math.cos(yaw));
+        const q = add(p, scale(turned, segLen));
+        caps.push({ a: p, b: q, r: chain.r * (1 + ((chain.taper ?? 0.15) - 1) * i / Math.max(1, chain.seg.length - 1)), color: ink, part: chain.role });
         p = q;
       });
     }

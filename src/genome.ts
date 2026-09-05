@@ -19,6 +19,9 @@ export interface ChainSpec {
   spread: number;    // sideways offset from the centreline
   mirror?: boolean;  // paired left/right; defaults true except tail/head
   ink?: number;      // palette index; defaults by role
+  side?: number;      // -1..1: placement of an unpaired appendage
+  yaw?: number;       // rotation around the body
+  taper?: number;     // tip thickness relative to the root
   angle?: number;    // base pitch, radians — head carriage, horn rake, fin lie
 }
 

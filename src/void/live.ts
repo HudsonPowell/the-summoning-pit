@@ -312,6 +312,7 @@ export class LiveVoid {
         while (rel < -Math.PI) rel += Math.PI * 2;
       }
       stepSecondary(a.sec, dt, {
+        genome: a.genome, gait: eff, phaseDelta: adv,
         turnRate: a.turnRate,
         move: a.move,
         speed: dt > 1e-4 ? Math.hypot(ddx, ddz) / dt : 0,
