@@ -964,6 +964,10 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       bob: a.sec.bob + idle.bob,
       jiggle: a.sec.jiggle + idle.jiggle,
       breatheAmp: 1 + calm * 1.2,
+      // the rubber hose is a cost the governor can spend: a device that has
+      // had to step the resolution down gets stiffer limbs before it gets
+      // fewer pixels again (1.0 → 0.64 on the scale maps hose 1 → 0)
+      hose: Math.max(0, Math.min(1, (perfScale - 0.64) / 0.36)),
     },
   );
   // BEING HIT IS A WAVE, not a strobe. The blow lands somewhere; a pulse of

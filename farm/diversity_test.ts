@@ -1,8 +1,12 @@
 import { sanitiseGenome } from '../server/sanitise';
 import { fitBudget } from '../src/budget';
 import assert from 'node:assert/strict';
-import { anatomyStudy, variationBrief } from '../src/diversity';
-import { buildPrompt, validateGenome } from '../src/hatch';
+// Master ships the schema extensions and the weapon work; the synthetic
+// exemplars and the design brief stay on agent/diversity-hatch until judged
+// against the production model. The studies are still a good torture test
+// for the validator, the server round-trip and the pose solver.
+import { anatomyStudy } from '../src/diversity';
+import { validateGenome } from '../src/hatch';
 import { defaultBiped } from '../src/genome';
 import { validateWeapon, priceWeapon, weaponsFromWords } from '../src/smith';
 import { solvePose } from '../src/pose';
@@ -16,19 +20,24 @@ for (let seed = 1; seed <= 96; seed++) {
   const pose = solvePose(g, { tired: 0, angry: 0 }, 0.3, 1, 2);
   assert.ok(pose.length > 0 && pose.length < 250);
   assert.ok(pose.every(c => [c.a.x,c.a.y,c.a.z,c.b.x,c.b.y,c.b.z,c.r].every(Number.isFinite) && c.r > 0));
-  for (const role of ['spike', 'tentacle'] as const) {
-    const expected = raw.skeleton.chains.filter(c => c.role === role).length;
+  // the words set the budget: unnamed extras are trimmed, never invented
+  for (const [role, cap] of [['spike', 4], ['tentacle', 3]] as const) {
+    const expected = Math.min(cap, raw.skeleton.chains.filter(c => c.role === role).length);
     assert.equal(g.skeleton.chains.filter(c => c.role === role).length, expected);
   }
 }
-assert.ok(signatures.size > 65, `${signatures.size} genuinely different topologies in 96 seeds`);
-assert.equal(buildPrompt('a wizard', 42), buildPrompt('a wizard', 42));
-assert.notEqual(variationBrief(42), variationBrief(43));
+assert.ok(signatures.size > 40, `${signatures.size} genuinely different topologies in 96 seeds`);
+// two heads the words asked for sit apart, each its own chain with a side
 const many = anatomyStudy(9);
 many.skeleton.chains = Array.from({ length: 4 }, (_, i) => ({ role: 'head', at: 0.7 + i * 0.1, seg: [0.1,0.1], r: 0.1, spread: 0.1 }));
-assert.equal(validateGenome(many, 'a floating four-headed orb').skeleton.chains.filter(c => c.role === 'head').length, 4);
+const twoHeaded = validateGenome(many, 'a floating two-headed orb').skeleton.chains.filter(c => c.role === 'head');
+assert.equal(twoHeaded.length, 2);
+assert.notEqual(twoHeaded[0].side, twoHeaded[1].side);
+assert.ok(twoHeaded.every(h => h.at >= 0.78), 'heads live at the head end');
+// a person is taller than they are wide: the guard holds
 const broad = defaultBiped(); broad.skeleton.girth = [0.35];
-assert.ok(Math.max(...validateGenome(broad, 'a broad squat wizard').skeleton.girth) > 0.25);
+const wiz = validateGenome(broad, 'a broad squat wizard').skeleton;
+assert.ok(Math.max(...wiz.girth) <= wiz.body.reduce((a, b) => a + b, 0) * 0.34 + 1e-9);
 
 const bow = weaponsFromWords('a longbow').main!;
 const cleanBow = validateWeapon(bow, 'longbow');

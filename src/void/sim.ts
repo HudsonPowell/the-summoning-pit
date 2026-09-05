@@ -992,6 +992,11 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         a.vz += (wantZ - a.vz) * blend;
         a.x = wasX + wantX * dt + (oldX - wantX) * response * blend;
         a.z = wasZ + wantZ * dt + (oldZ - wantZ) * response * blend;
+        // the easing runs AFTER walk() clamped to the wall, and carried
+        // momentum was taking creatures to 8 m — out through the wall and
+        // into the rim ring. The wall is the last word.
+        const r = Math.hypot(a.x, a.z);
+        if (r > 7.6) { a.x *= 7.6 / r; a.z *= 7.6 / r; a.vx = a.vz = 0; }
       }
     }
 
@@ -1066,6 +1071,14 @@ export function stepVoid(sim: VoidSim, dt: number): void {
           jolt(a.sec, Math.min(0.22, push * 3.2), from, a.bulk);
         }
       }
+    }
+    // THE WALL IS THE LAST WORD. Props push, bodies separate, momentum
+    // carries — every one of those can end a step outside the pit, and with
+    // the eased travel they compounded to 8 m: creatures standing in the rim
+    // ring. Whatever moved it this frame, it ends the frame inside.
+    {
+      const r = Math.hypot(a.x, a.z);
+      if (r > 7.6) { a.x *= 7.6 / r; a.z *= 7.6 / r; a.vx = a.vz = 0; }
     }
   }
 

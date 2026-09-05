@@ -28,9 +28,14 @@ export interface Intent {
 }
 
 export interface PoseExtras {
-  /** Zero is useful for comparing the underlying gait with its living variation. */
+  /** Living drift (personality noise on pace, posture, gaze, limbs); 0 removes it. */
   variation?: number;
-  /** Rubber-hose silhouette; 0 keeps the articulated rig for comparison. */
+  /**
+   * Rubber-hose silhouette — bowed continuous limbs, a soft torso, squash and
+   * stretch; 0 keeps hinged limbs and a segmented torso. NOTE: neither flag is
+   * a true before/after switch. The weapon carry pose, the foot-lift curve and
+   * the head's share of breath and bob are always on.
+   */
   hose?: number;
   weapon?: WeaponSpec;
   offhand?: WeaponSpec;
@@ -80,7 +85,10 @@ function hoseLimb(caps: Capsule[], root: V3, joint: V3, tip: V3, bow: V3,
   const c1 = add(vlerp(root, joint, 0.88), bow);
   const c2 = sub(vlerp(tip, joint, 0.88), scale(bow, 0.4));
   const points = [root];
-  const segments = 6;
+  // four, not six: the gpu walks every capsule for every pixel three times,
+  // and a limb is most of a creature. Four keeps the bow; six was 2.1x the
+  // capsule count of the whole pit.
+  const segments = 4;
   let arcLength = 0;
   for (let i = 1; i <= segments; i++) {
     const t = i / segments, u = 1 - t;
@@ -304,7 +312,7 @@ export function solvePose(
   };
 
   // Smooth curvature and gentle thickness changes replace the hinged torso.
-  const bodySteps = hose ? Math.max(5, N * 3) : N;
+  const bodySteps = hose ? Math.max(4, N * 2) : N;
   for (let i = 0; i < bodySteps; i++) {
     const u = i / bodySteps, v = (i + 1) / bodySteps;
     caps.push({

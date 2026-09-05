@@ -1,4 +1,3 @@
-import { anatomyStudy, variationBrief } from './diversity';
 // Text -> genome, shared by the studio (browser) and the farm CLI (node).
 //
 // Three things carry the quality: a vocabulary rich enough to describe a
@@ -54,7 +53,7 @@ skeleton.chains: everything that hangs off the body. Each has:
   angle: pitch. Head carriage, horn rake, fin lean.
   side: -1 to 1; positions an unpaired appendage on either side, including offset heads.
   yaw: -3.14 to 3.14; fans appendages around the body. taper: 0.1 pointed to 1.6 clubbed.
-  Spike and tentacle are fully supported roles. Up to 24 chains, including several independent heads.
+  Spike and tentacle are fully supported roles.
 
 Ideas the vocabulary can express, so use it: barrel-bodied beasts, long
 serpents with no legs at all, many-legged scuttlers, two-headed things, horns
@@ -302,10 +301,15 @@ export const GENOME_SCHEMA = {
   },
 } as const;
 
-export function buildPrompt(desc: string, seed = Math.floor(Math.random() * 0x100000000)): string {
-  const ex = [pickExemplars(desc, 2)[0], anatomyStudy(seed), anatomyStudy(seed ^ 0x51ed270b)];
+// The curated exemplars stay. A pass replaced two of them with random
+// synthetic "anatomy studies" and a design brief telling the model to explore
+// a random structure on every summon; that lives on the agent/diversity-hatch
+// branch until it has been judged against the production model, because the
+// last time the prompt drifted, every creature came back an abstract mess.
+export function buildPrompt(desc: string): string {
+  const ex = pickExemplars(desc);
   const shown = ex.map(g => `${g.name}:\n${JSON.stringify(g)}`).join('\n\n');
-  return `${SCHEMA_NOTES}\n\n${variationBrief(seed)}\n\nExamples:\n\n${shown}\n\nNow write the genome for: "${desc}"\nJSON:`;
+  return `${SCHEMA_NOTES}\n\nExamples:\n\n${shown}\n\nNow write the genome for: "${desc}"\nJSON:`;
 }
 
 /**
@@ -340,7 +344,7 @@ export async function askOpenAI(
       body: JSON.stringify({
         model,
         temperature,
-        max_tokens: 4800,
+        max_tokens: 3400,
         response_format: format,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -494,10 +498,14 @@ export function validateGenome(raw: any, desc: string): Genome {
       };
     });
 
-  // Preserve designed topology. A global cap bounds work without making
-  // every unnamed creature a two-legged, one-headed template.
+  // budgets: generous enough for a spider, tight enough that a dwarf doesn't
+  // sprout extra limbs the words never asked for. The words earn the extras.
   const budget: Record<ChainRole, number> = {
-    leg: 8, arm: 4, wing: 3, tail: 4, head: 4, horn: 6, fin: 6, spike: 8, tentacle: 8,
+    leg: MANY_LEGGED.test(desc) ? 5 : 2,
+    arm: MANY_ARMED.test(desc) ? 3 : 1,
+    wing: 1, tail: 1,
+    head: MANY_HEADED.test(desc) ? 2 : 1,
+    horn: 2, fin: 2, spike: 4, tentacle: 3,
   };
   const used: Partial<Record<ChainRole, number>> = {};
   chains = chains.filter(c => {
@@ -507,7 +515,15 @@ export function validateGenome(raw: any, desc: string): Genome {
     return true;
   });
 
-  // Multiple independent heads retain their lengths and thicknesses.
+  // `at` has a meaning: 1 is the head end, 0 is the tail end. A model that
+  // puts a head at 0 has misread the axis, not invented a new creature.
+  for (const c of chains) {
+    if (c.role === 'head') c.at = Math.max(0.78, c.at);
+    if (c.role === 'tail') c.at = Math.min(0.22, c.at);
+    if (c.role === 'wing') c.at = Math.min(0.95, Math.max(0.55, c.at));
+  }
+
+  // two heads (the words asked) sit apart by side and yaw, each its own
   const heads = chains.filter(c => c.role === 'head');
   if (heads.length > 1) heads.forEach((h, i) => {
     h.spread = Math.max(h.spread, 0.12);
@@ -546,8 +562,8 @@ export function validateGenome(raw: any, desc: string): Genome {
   }
 
   // every creature needs a head to read as a creature
-  if (!chains.some(c => c.role === 'head') && (humanoid || NOT_A_PERSON.test(desc) || chains.length === 0)
-      && !/headless|no head|faceless/.test(desc.toLowerCase())) {
+  // (unless the words said headless — that is a body plan, not an omission)
+  if (!chains.some(c => c.role === 'head') && !/headless|no head|faceless/.test(desc.toLowerCase())) {
     chains.push({ role: 'head', at: 1, seg: [0.09, 0.12], r: 0.11, spread: 0, ink: 2 });
   }
 
@@ -570,7 +586,7 @@ export function validateGenome(raw: any, desc: string): Genome {
     // Leglessness has to be earned by the words. Trusting the model's own
     // `locomotion: slither` is not enough — it reaches for it whenever the
     // prompt gives it nothing, and a shrug is not a body plan.
-    const serpentine = !humanoid && (SERPENTINE.test(desc) || sk.locomotion === 'slither' && body.length >= 3);
+    const serpentine = SERPENTINE.test(desc) && !humanoid;
     if (serpentine) {
       locomotion = 'slither';
     } else {
@@ -591,7 +607,7 @@ export function validateGenome(raw: any, desc: string): Genome {
   // A head on a body with nothing else is a lollipop, not a creature. Anything
   // that stands up gets arms; anything that doesn't gets a tail to steer with.
   const limbs = chains.filter(c => c.role !== 'head').length;
-  if (limbs < 2 && humanoid) {
+  if (limbs < 2) {
     chains.push(upright
       ? { role: 'arm', at: 1, seg: [0.3, 0.28], r: 0.05, spread: 0.18 }
       : { role: 'tail', at: 0, seg: [0.22, 0.18, 0.13], r: 0.04, spread: 0 });
@@ -620,13 +636,13 @@ export function validateGenome(raw: any, desc: string): Genome {
   const fattest = Math.max(...girth);
 
   // a person is taller than they are wide, and stands on legs not stumps
-  const maxGirth = humanoid ? span * 0.9 : span * 1.8;
+  const maxGirth = humanoid ? span * 0.34 : span * 0.55;
   if (fattest > maxGirth) {
     const k = maxGirth / fattest;
     for (let i = 0; i < girth.length; i++) girth[i] = Math.max(0.02, girth[i] * k);
   }
   if (humanoid) {
-    const minLeg = span * 0.35;
+    const minLeg = span * 0.85;
     for (const c of chains) {
       if (c.role !== 'leg') continue;
       const total = c.seg.reduce((a, b) => a + b, 0);
@@ -637,8 +653,8 @@ export function validateGenome(raw: any, desc: string): Genome {
     }
   }
   // and nothing is longer than the room it stands in, unless it's a snake
-  if (locomotion !== 'slither' && span > 3.0) {
-    const k = 3.0 / span;
+  if (locomotion !== 'slither' && span > 1.8) {
+    const k = 1.8 / span;
     for (let i = 0; i < body.length; i++) body[i] *= k;
   }
 

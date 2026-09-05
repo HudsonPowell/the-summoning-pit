@@ -116,16 +116,17 @@ for (const genome of [defaultBiped(), spider()]) {
     assert.deepEqual(softFeet, rigidFeet, 'body deformation must not move the foot targets');
     const thighs = soft.filter(c => c.part === 'thigh');
     const shins = soft.filter(c => c.part === 'shin');
-    assert.equal(thighs.length, rigidFeet.length * 3);
+    // a hose limb is four capsules (two per half) — six cost the whole pit
+    assert.equal(thighs.length, rigidFeet.length * 2);
     for (let leg = 0; leg < rigidFeet.length; leg++) {
-      const segments = [...thighs.slice(leg * 3, leg * 3 + 3), ...shins.slice(leg * 3, leg * 3 + 3)];
+      const segments = [...thighs.slice(leg * 2, leg * 2 + 2), ...shins.slice(leg * 2, leg * 2 + 2)];
       segments.slice(1).forEach((segment, i) => assert.deepEqual(segment.a, segments[i].b));
-      assert.deepEqual(segments[5].b, softFeet[leg].a);
+      assert.deepEqual(segments[3].b, softFeet[leg].a);
       assert.ok(segments.every(c => c.r > 0 && Number.isFinite(c.r)));
     }
     const hands = soft.filter(c => c.part === 'hand');
     const forearms = soft.filter(c => c.part === 'forearm');
-    hands.forEach((hand, i) => assert.deepEqual(hand.a, forearms[i * 3 + 2].b));
+    hands.forEach((hand, i) => assert.deepEqual(hand.a, forearms[i * 2 + 1].b));
     assert.ok(soft.length < rigid.length * 3, 'subdivision cost stays bounded');
   }
 }
