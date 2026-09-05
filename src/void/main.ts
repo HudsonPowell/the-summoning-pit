@@ -9,6 +9,7 @@ import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { makeProp, PropKind } from '../props';
 import { Motes, muzzle, wake, impact, spatter, undoing, dust, streak, gather } from '../particles';
+import { Critters } from '../critters';
 import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, rangedOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
@@ -1255,6 +1256,13 @@ const motes = new Motes();
 const handAt = new Map<number, { x: number; y: number; z: number }>();
 
 /**
+ * The pit's own wildlife: rats, beetles and the occasional column of ants.
+ * Harmless, alive, and nobody's business but this screen's — a rat is not a
+ * fact anyone has to agree on, so it costs the wire and the sim nothing.
+ */
+const critters = new Critters();
+
+/**
  * Shots are watched rather than told about. A projectile arriving in the
  * snapshots gets a wake behind it; one that VANISHES has landed, and the
  * client knows where, what colour, how big and whether it goes off — so an
@@ -1281,6 +1289,7 @@ function shotEffects(sim: VoidSim, dt: number): void {
   for (const [id, last] of shotSeen) {
     if (alive.has(id)) continue;
     impact(motes, last.x, Math.max(0.06, last.y), last.z, last.c, last.r, last.boom);
+    if (last.boom) critters.scatter(last.x, last.z, 1.4);
     shotSeen.delete(id);
   }
 }
@@ -1318,7 +1327,10 @@ function sparks(sim: VoidSim, e: import('./sim').VoidEvent): void {
   }
   if (e.kind === 'kill') {
     const t = at(e.target?.id);
-    if (t) undoing(motes, t.x, 0.1, t.z, hexRgb3(t.ch.genome.palette.accent), t.bulk);
+    if (t) {
+      undoing(motes, t.x, 0.1, t.z, hexRgb3(t.ch.genome.palette.accent), t.bulk);
+      critters.scatter(t.x, t.z, 1);   // everything with legs wants to be elsewhere
+    }
   }
 }
 
@@ -1553,6 +1565,8 @@ async function boot() {
     }
     shotEffects(sim, dt);
     motes.step(dt, sim.t);
+    critters.budget = motes.budget;
+    critters.step(dt, sim.agents);
     driveCamera(sim, dt);
 
     // Blend is a PIXEL radius, and both the zoom and the mobile buffer cap
@@ -1618,6 +1632,7 @@ async function boot() {
     // with the fight, not with the scenery: if the budget ever bites, the
     // rocks go before the sparks do
     motes.caps(caps, hexRgb(look.voidCol), sim.t);
+    critters.caps(caps, sim.t);
     for (const r of sim.relics) add(relicCapsules(r));
     for (const f of sim.flora) add(floraCapsules(f));
     if (title && !title.done) add(title.caps(dt, cam.yaw));
@@ -1706,7 +1721,8 @@ async function boot() {
       tagAt = now;
       fpsTag.textContent =
         `${medianMs ? Math.round(1000 / medianMs) : 0}fps  ${medianMs.toFixed(1)}ms  ${view.mode}  `
-        + `${view.size.W}x${view.size.H}  x${perfScale.toFixed(2)}  ${view.drawn}/${caps.length}caps  ${motes.count}mote`;
+        + `${view.size.W}x${view.size.H}  x${perfScale.toFixed(2)}  ${view.drawn}/${caps.length}caps`
+        + `  ${motes.count}mote  ${critters.count}crit`;
     }
     requestAnimationFrame(frame);
   }
@@ -1718,7 +1734,7 @@ async function boot() {
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
-    sim, cam, look, director, live, pit, view, motes, get title() { return title; },
+    sim, cam, look, director, live, pit, view, motes, critters, get title() { return title; },
     get perf() { return { medianMs, fps: medianMs ? 1000 / medianMs : 0, scale: perfScale, mode: view.mode, buffer: view.size, caps: caps.length, drawn: view.drawn }; },
     govern,
     tick,
