@@ -7,7 +7,13 @@ WORKDIR /app
 ARG RAILWAY_GIT_COMMIT_SHA
 ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
 COPY package*.json ./
-RUN npm ci
+# --ignore-scripts: no dependency's post-install gets a vote on whether the
+# pit deploys. onnxruntime-node (under @huggingface/transformers, the farm's
+# offline judge) downloads a GPU binary from a Microsoft CDN at install time,
+# and the builder could not reach it — two builds in a row failed in npm ci
+# for a package the server never loads. esbuild, rollup and the rest ship
+# their platform binaries as packages, not scripts, so nothing here needs one.
+RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 
@@ -18,7 +24,7 @@ COPY package*.json ./
 # --include=dev is load-bearing: the server runs from TypeScript through tsx,
 # which is a devDependency, and `npm ci` under NODE_ENV=production skips those.
 # Without this the image builds cleanly and then cannot start.
-RUN npm ci --include=dev && npm cache clean --force
+RUN npm ci --include=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY src ./src
