@@ -71,6 +71,43 @@ export interface StrikeSpec {
   feinted?: boolean;
 }
 
+export type Evasion = 'duck' | 'jump' | 'dodge';
+
+/**
+ * WHICH WAY TO GET OUT OF THE WAY, read off the blow itself.
+ *
+ * Nothing needs to declare that a leg sweep is jumped and a head swipe is
+ * ducked: the posts already say so. They are the arc the limb travels, so the
+ * height of that arc at the moment of contact and how far it travels sideways
+ * are the only two facts an evasion decision needs.
+ *
+ * A wide arc at head height goes over a crouch. A wide arc at shin height goes
+ * under a jump. Anything that comes straight down or straight in cannot be
+ * ducked or jumped at all — you have to not be standing there, which is a
+ * sidestep. One rule, and every attack the model ever invents is classified by
+ * it for free.
+ */
+export function evadedBy(spec: StrikeSpec): Evasion {
+  // the model composes strikes, so a spec may arrive malformed: anything we
+  // cannot read the shape of is something you step away from
+  // the SHOWN line, never the hidden one. A feint's true posts replace these
+  // the moment the windup ends, so a defender reading this before the blow
+  // turns commits to the wrong evasion — which is exactly what a feint is for,
+  // and it beats a dodge the same way it beats a guard.
+  const p = spec.posts;
+  if (!Array.isArray(p) || p.length < 3 || p.some(q => !Array.isArray(q) || q.length < 3)) return 'dodge';
+  // the arc at contact: slashU puts the moment of connection at u = 0.55
+  const at = (axis: number) => {
+    const u = 0.55;
+    const a = p[0][axis] + (p[1][axis] - p[0][axis]) * u;
+    const b = p[1][axis] + (p[2][axis] - p[1][axis]) * u;
+    return a + (b - a) * u;
+  };
+  const across = Math.abs(p[2][2] - p[0][2]);
+  if (across < 0.8) return 'dodge';        // it comes down, or straight in
+  return at(1) > 0.06 ? 'duck' : 'jump';   // high arc, or a sweep at the shins
+}
+
 /**
  * PHASE 2 of 'model composes, engine budgets': the designer of a weapon may
  * also say HOW it fights — tempo, reach, the shape of the arc, and for

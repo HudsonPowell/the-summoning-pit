@@ -4,7 +4,7 @@ import { motionOf, livingMotion } from '../motion';
 // fights. Continuous space, no grid, no walls; the only rules are wanting
 // things and bumping into each other.
 
-import { STRIKE_SWIPE, Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT } from '../character';
+import { STRIKE_SWIPE, Character, StrikeSpec, RangedSpec, DEFAULT_STRIKE_LIGHT, Evasion, evadedBy } from '../character';
 import { Genome, effectiveGait, heightOf } from '../genome';
 import { Temper, temperOf } from '../temper';
 import { Secondary, newSecondary, stepSecondary, jolt } from '../secondary';
@@ -49,6 +49,10 @@ export interface Agent {
   guardT: number;            // seconds left holding a block up
   staggerT: number;          // seconds of recovery after being parried
   riposteT: number;          // a window to answer a blocked blow
+  /** Getting out of the way: -1 idle, else seconds into it. */
+  evadeT: number;
+  evade: Evasion | null;
+  evadeSide: number;         // which way it threw itself, for a dodge
   flinch: { h: number; side: number; t: number } | null; // where the last blow landed
   lookAt: number;            // world angle the head is resting on
   scanT: number;             // seconds until it looks somewhere else
@@ -60,7 +64,7 @@ export interface Agent {
 
 export type EventKind =
   | 'spawn' | 'notice' | 'flee' | 'strike' | 'loose' | 'hit' | 'kill' | 'despawn'
-  | 'spoil';
+  | 'spoil' | 'evade';
 
 /** Who did the thing. Enough to name it in a feed without the sim attached. */
 export interface EventWho { id: number; name: string; by?: string }
@@ -170,6 +174,9 @@ export function makeAgent(ch: Character, x: number, z: number, by?: string): Age
     guardT: 0,
     staggerT: 0,
     riposteT: 0,
+    evadeT: -1,
+    evade: null,
+    evadeSide: 1,
     flinch: null,
     lookAt: rnd(-Math.PI, Math.PI),
     scanT: rnd(0, 0.8),
@@ -472,6 +479,62 @@ export function offerGuard(attacker: Agent, spec: StrikeSpec): void {
   }
 }
 
+/** How long an evasion lasts, and the window inside it that actually beats a blow. */
+export const EVADE_TIME = 0.5;
+const EVADE_FROM = 0.07, EVADE_TO = 0.36;
+
+/**
+ * GET OUT OF THE WAY. A guard is the armed answer to a blow; this is the
+ * other one, and until now the pit had no other one — an unarmed creature
+ * simply stood there and took everything, because offerGuard requires a
+ * weapon to raise. Now it can move instead.
+ *
+ * Which way is not a choice: the blow's own arc says whether it goes over a
+ * crouch, under a jump, or past a sidestep. What IS a choice is whether to
+ * try, and that is temperament — a quick thing evades, a brave one would
+ * rather meet it, and something with nothing in its hands has no other option.
+ */
+export function offerEvade(sim: VoidSim, attacker: Agent, spec: StrikeSpec): void {
+  const t = attacker.target;
+  if (!t || t.deadT >= 0 || spec.ranged) return;
+  if (t.strikeT >= 0 || t.evadeT >= 0 || t.guardT > 0 || t.staggerT > 0) return;
+  // it has to see it coming
+  const toThreat = Math.atan2(attacker.z - t.z, attacker.x - t.x);
+  if (Math.cos(toThreat - t.heading) < -0.1) return;
+
+  const armed = !!(t.ch.weapon || t.ch.offhand);
+  // quick things move, brave things stand, and empty hands decide it outright
+  const nerve = armed ? 0.16 + t.temper.speed * 0.5 - t.temper.bravery * 0.25
+    : 0.5 + t.temper.speed * 0.4;
+  if (Math.random() > nerve) return;
+
+  // read the swing that is ACTUALLY being thrown, not the style it came from:
+  // every strike is varied as it begins, and a defender answering the average
+  // of a style rather than the blow in front of it will answer wrong
+  t.evade = evadedBy(attacker.swing ?? spec);
+  // YOU MOVE AT THE BLOW, NOT AT THE WINDUP. The window was a fixed half
+  // second from the moment the swing started, so a slow heavy attack simply
+  // outlasted it — and slow heavy attacks are precisely the ones you sidestep,
+  // which is why not one dodge in four hundred seconds ever worked. The
+  // movement is now delayed to meet the blow, waiting out the telegraph first.
+  const meets = spec.duration * (spec.windup + spec.strike * 0.5);
+  // and it is not timed perfectly: a quick creature reads it within a
+  // twentieth of a second, a slow one is out by twice that and pays for it
+  const slop = (Math.random() - 0.5) * (0.26 - t.temper.speed * 0.16);
+  t.evadeT = Math.min(0, 0.21 - meets) + slop;
+  t.evadeSide = Math.random() < 0.5 ? -1 : 1;
+  // announced, so every watching screen plays the same movement — the client
+  // advances the clock itself from here, exactly as it does for a swing
+  sim.events.push({
+    kind: 'evade', t: sim.t, x: t.x, z: t.z,
+    actor: whoOf(t), target: whoOf(attacker),
+    // spotS is already 'which side'; range means METRES to the narrator, so
+    // borrowing it for a direction would have the feed announcing distances
+    // that do not exist
+    how: t.evade, spotS: t.evadeSide, spotH: t.evadeT,
+  });
+}
+
 export function beginStrike(a: Agent, heavy: boolean, seed = Math.random()): void {
   a.strikeT = 0;
   a.struck = false;
@@ -496,6 +559,22 @@ function hurt(sim: VoidSim, a: Agent, fromX: number, fromZ: number, by?: Agent, 
   // triangle: light blows lose to guards, guards lose to feints and heavies,
   // heavies lose to the quick interrupt below. The exchange has stakes in
   // every direction now.
+  // GOT OUT OF THE WAY. Resolved before the guard, because a blow that misses
+  // was never parried. The window is short and sits in the middle of the
+  // movement: commit too early and it has already landed back on its feet,
+  // too late and it is still standing where the blow is going.
+  if (a.evadeT >= EVADE_FROM && a.evadeT <= EVADE_TO && a.evade
+    && how !== 'bolt' && how !== 'spell' && by?.swing
+    && a.evade === evadedBy(by.swing)) {
+    a.riposteT = 0.42;                    // and it is now the one with time
+    sim.events.push({
+      kind: 'hit', t: sim.t, x: a.x, z: a.z,
+      actor: by ? whoOf(by) : undefined, target: whoOf(a),
+      how: a.evade === 'duck' ? 'ducked' : a.evade === 'jump' ? 'jumped' : 'dodged',
+    });
+    return;
+  }
+
   let guardBeaten = false;
   if (a.guardT > 0 && how !== 'bolt' && how !== 'spell') {
     const toThreat = Math.atan2(fromZ - a.z, fromX - a.x);
@@ -717,6 +796,10 @@ export function stepVoid(sim: VoidSim, dt: number): void {
     a.idleT += dt;
     if (a.guardT > 0) a.guardT -= dt;
     if (a.staggerT > 0) a.staggerT -= dt;
+    if (a.evade) {
+      a.evadeT += dt;                       // may start negative: it is waiting
+      if (a.evadeT > EVADE_TIME) { a.evadeT = -1; a.evade = null; }
+    }
     if (a.riposteT > 0) a.riposteT -= dt;
     if (a.flinch && (a.flinch.t -= dt) <= 0) a.flinch = null;
 
@@ -860,6 +943,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
             && Math.random() < dt / (STRIKE_PERIOD * (1.1 - a.temper.aggression * 0.5))) {
             beginStrike(a, Math.random() < 0.3, strikeSeed(sim.t, a.id));
             offerGuard(a, strikeSpecOf(a));
+            offerEvade(sim, a, strikeSpecOf(a));
             sim.events.push({
               kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
               target: whoOf(t), how: styleName(a), range: d,
@@ -936,6 +1020,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
           const seed = strikeSeed(sim.t, a.id);
           beginStrike(a, false, seed);
           offerGuard(a, strikeSpecOf(a));
+            offerEvade(sim, a, strikeSpecOf(a));
           sim.events.push({
             kind: 'strike', t: sim.t, x: a.x, z: a.z, actor: whoOf(a),
             target: whoOf(t), how: styleName(a), range: d,
@@ -961,6 +1046,7 @@ export function stepVoid(sim: VoidSim, dt: number): void {
             range: Math.hypot(t.x - a.x, t.z - a.z),
           });
           offerGuard(a, strikeSpecOf(a));
+            offerEvade(sim, a, strikeSpecOf(a));
         }
         break;
       }

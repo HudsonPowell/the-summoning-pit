@@ -11,7 +11,7 @@ import { newPacts } from './pacts';
 import { pitScenery } from '../props';
 import { Character, migrateCharacter } from '../character';
 import { effectiveGait, heightOf } from '../genome';
-import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor } from './sim';
+import { Agent, VoidSim, VoidEvent, Shot, makeAgent, varyFor, EVADE_TIME } from './sim';
 import { stepSecondary, jolt } from '../secondary';
 
 /**
@@ -189,6 +189,14 @@ export class LiveVoid {
       const t2 = this.byId.get(ev.target.id);
       if (t2) { t2.strikeT = -1; t2.swing = null; }
     }
+    // GETTING OUT OF THE WAY IS A MOVEMENT, NOT A POSITION. The wire never
+    // carries it: the pit says a creature ducked and this screen plays the
+    // duck, running the clock itself exactly as it does for a swing.
+    if (ev.kind === 'evade' && a && a.deadT < 0) {
+      a.evade = (ev.how as any) ?? 'dodge';
+      a.evadeT = ev.spotH ?? 0;             // the pit says when it starts moving
+      a.evadeSide = (ev.spotS ?? 1) < 0 ? -1 : 1;
+    }
     if (ev.kind === 'hit' && ev.target) {
       const t = this.byId.get(ev.target.id);
       if (t) {
@@ -361,6 +369,10 @@ export class LiveVoid {
         phase: a.phase,
         dead: a.deadT >= 0,
       });
+      if (a.evade) {
+        a.evadeT += dt;                     // may start negative: it is waiting
+        if (a.evadeT > EVADE_TIME) { a.evadeT = -1; a.evade = null; }
+      }
       a.idleT += dt;
       // settling and standing back up, at the sim's own rates — without this
       // a lone lord SAID it was resting while every watcher saw it bolt

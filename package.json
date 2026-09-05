@@ -10,7 +10,7 @@
     "farm:judge": "tsx farm/judge.ts",
     "farm:evolve": "tsx farm/evolve.ts",
     "hatch": "tsx farm/hatch.ts",
-    "test": "tsx farm/conditions_test.ts && tsx farm/gear_test.ts && tsx farm/particles_test.ts && tsx farm/critters_test.ts && tsx farm/diversity_test.ts && tsx farm/motion_test.ts && tsx farm/sim_test.ts && tsx farm/render_test.ts && tsx farm/migrate_check.ts && tsx farm/ranged_test.ts && tsx farm/depth_test.ts",
+    "test": "tsx farm/evade_test.ts && tsx farm/conditions_test.ts && tsx farm/gear_test.ts && tsx farm/particles_test.ts && tsx farm/critters_test.ts && tsx farm/diversity_test.ts && tsx farm/motion_test.ts && tsx farm/sim_test.ts && tsx farm/render_test.ts && tsx farm/migrate_check.ts && tsx farm/ranged_test.ts && tsx farm/depth_test.ts",
     "pit": "tsx server/index.ts",
     "pit:test": "tsx farm/pit_test.ts",
     "stress": "tsx farm/stress.ts",

@@ -945,6 +945,20 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     intent = { slash: { t: 0.5, weight: Math.min(1, a.guardT * 6), spec: GUARD_STANCE } };
   }
 
+  // THE SHAPE OF GETTING OUT OF THE WAY. One arc, 0 to 1 to 0 across the
+  // movement, spent differently by each: a duck sinks the whole body, a jump
+  // takes it off the floor, a sidestep throws it bodily to one side and leans
+  // it over. All three come from the sim's clock, so the same movement plays
+  // on every screen, and all three are gone in half a second.
+  let duck = 0, hop = 0, slip = 0;
+  if (a.evadeT >= 0 && a.evade) {
+    const u = Math.min(1, a.evadeT / 0.5);
+    const arc = Math.sin(Math.PI * Math.pow(u, 0.7));
+    if (a.evade === 'duck') duck = arc * 0.5;
+    else if (a.evade === 'jump') hop = arc * 0.42;
+    else slip = arc * a.evadeSide;
+  }
+
   const caps = solvePose(
     a.genome, mood, a.phase, a.move, a.idleT, intent,
     // Dead is a full collapse; resting is most of one. A RECALL is neither —
@@ -953,7 +967,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
     // a blow to the LEGS buckles them for a beat — a fraction of the
     // collapse blend, decaying with the flinch
     a.deadT >= 0 ? (a.recalled ? 0 : Math.min(1, a.deadT / 0.5))
-      : Math.min(0.9, a.rest * 0.72
+      : Math.min(0.9, a.rest * 0.72 + duck
         + (a.flinch && a.flinch.h < 0.35 ? 0.22 * (a.flinch.t / 0.5) : 0)),
     {
       // a thrown spear is in the FLOOR, not the hand — the relic renders it
@@ -970,7 +984,7 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
       scars: a.scars,
       windFwd: cond.windX * Math.cos(a.heading) + cond.windZ * Math.sin(a.heading),
       windSide: -cond.windX * Math.sin(a.heading) + cond.windZ * Math.cos(a.heading),
-      lean: a.sec.lean + idle.lean,
+      lean: a.sec.lean + idle.lean + slip * 0.5,
       twist: a.sec.twist + idle.twist,
       bob: a.sec.bob + idle.bob,
       jiggle: a.sec.jiggle + idle.jiggle,
@@ -1009,10 +1023,14 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
         col = [Math.min(255, col[0] * k + 40 * g), Math.min(255, col[1] * k + 40 * g), Math.min(255, col[2] * k + 40 * g)];
       }
     }
+    // the leap leaves the floor; the sidestep goes bodily sideways, across
+    // whichever way the creature happens to be facing
+    const sx = slip ? -Math.sin(a.heading) * slip * 0.55 : 0;
+    const sz = slip ? Math.cos(a.heading) * slip * 0.55 : 0;
     return {
       ...c,
-      a: v3(p.x + a.x, p.y, p.z + a.z),
-      b: v3(q.x + a.x, q.y, q.z + a.z),
+      a: v3(p.x + a.x + sx, p.y + hop, p.z + a.z + sz),
+      b: v3(q.x + a.x + sx, q.y + hop, q.z + a.z + sz),
       color: col,
     };
   });
@@ -1386,6 +1404,15 @@ function sparks(sim: VoidSim, e: import('./sim').VoidEvent): void {
       hexRgb3(t.ch.genome.palette.torso), force);
     return;
   }
+  if (e.kind === 'evade') {
+    const who = at(e.actor?.id);
+    if (!who) return;
+    // it threw its weight somewhere: the floor says so
+    dust(motes, who.x, who.z, who.bulk, 1.1, hexRgb(look.floorColA));
+    const { pan, dist } = placeOf(who.x, who.z);
+    if (dist < 0.95) pit.step(who.bulk, pan, dist, 0.55);
+    return;
+  }
   if (e.kind === 'kill') {
     const t = at(e.target?.id);
     if (t) {
@@ -1493,10 +1520,18 @@ function narrate(e: import('./sim').VoidEvent): string | null {
     case 'kill': return `${who} felled ${whom} — ${e.how ?? 'a blow'}${at}`;
     case 'spawn': return `${who} enters the pit`;
     case 'flee': return `${who} breaks and runs`;
-    case 'hit': return e.how === 'blocked' ? `${whom} takes it on the shield` : null;
+    case 'hit':
+      if (e.how === 'blocked') return `${whom} takes it on the shield`;
+      // a blow that touched nothing is the best line in the feed
+      if (e.how === 'ducked') return `${whom} ducks under ${who}`;
+      if (e.how === 'jumped') return `${whom} leaps the sweep`;
+      if (e.how === 'dodged') return `${whom} is not there any more`;
+      return null;
     // a creature vanishing with nothing said about it reads as a bug
     case 'despawn': return `${who} is recalled`;
     case 'notice': return `${who} sets upon ${whom}`;
+    case 'evade': return null;   // the movement says it; the feed would only repeat it
+    
     default: return null;
   }
 }
