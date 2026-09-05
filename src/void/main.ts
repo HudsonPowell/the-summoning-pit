@@ -901,6 +901,15 @@ function findLord(sim: VoidSim): void {
   lordId = best ? best.id : -1;
 }
 
+/** The order a body comes into being: trunk, head, legs, arms, the rest. */
+const BUILD_ORDER: Record<string, number> = {
+  body: 0, neck: 0.16, skull: 0.2, head: 0.22,
+  thigh: 0.34, shin: 0.38, foot: 0.44,
+  upperArm: 0.5, forearm: 0.54, hand: 0.6,
+  tail: 0.62, wing: 0.62, horn: 0.66, fin: 0.66, spike: 0.66, tentacle: 0.66,
+  gear: 0.76, weapon: 0.86, blade: 0.86, scar: 0.94,
+};
+
 function agentCapsules(a: Agent, t: number): Capsule[] {
   // THE IDLE IS ALIVE. A creature with nothing to do rocks its weight
   // between its feet, sweeps its head with a second thought inside the
@@ -1014,6 +1023,27 @@ function agentCapsules(a: Agent, t: number): Capsule[] {
   // thing has only the one.
   for (let i = world.length - 1; i >= 0; i--) {
     if (world[i].part === 'hand') { handAt.set(a.id, world[i].a); break; }
+  }
+
+  // ARRIVING. Nothing about this crosses the wire: how long a creature has
+  // been visible on THIS screen is enough, and each part swells out of
+  // nothing in the order a body is built, so the thing assembles rather than
+  // appears. The field does the rest — a capsule below a pixel is not there,
+  // and one growing past it fuses into what is already standing.
+  const born = bornAt.get(a.id);
+  if (born !== undefined) {
+    const u = (pitT - born) / ARRIVING;
+    if (u < 1) {
+      const built: Capsule[] = [];
+      for (let i = 0; i < world.length; i++) {
+        const c = world[i];
+        const at = (BUILD_ORDER[c.part] ?? 0.7) + ((i * 37) % 11) * 0.006;
+        const k = Math.max(0, Math.min(1, (u - at) / 0.2));
+        if (k <= 0.01) continue;
+        built.push(k >= 1 ? c : { ...c, r: c.r * k * k });
+      }
+      return built;
+    }
   }
   return world;
 }
@@ -1265,6 +1295,21 @@ const handAt = new Map<number, { x: number; y: number; z: number }>();
  * fact anyone has to agree on, so it costs the wire and the sim nothing.
  */
 const critters = new Critters();
+
+/**
+ * WHEN EACH CREATURE WAS FIRST SEEN HERE. A summon takes seven to nineteen
+ * seconds and then something simply exists, fully formed, mid-stride. It
+ * arrives now: drawn out of nothing in the order a body is built, with motes
+ * falling inward to make it. Derived from first sight, like the floor's
+ * rise-in, so it costs the wire nothing and needs no message of its own.
+ *
+ * The literal version — streaming the model's JSON and drawing the half-built
+ * genome — is worse than it sounds: the pit hatches TWO candidates and a judge
+ * keeps one, so a watcher would spend the wait admiring a creature that gets
+ * thrown away.
+ */
+const bornAt = new Map<number, number>();
+const ARRIVING = 1.35;   // seconds to assemble
 
 /**
  * The weather, the hour and the wind — all three a pure function of the pit's
@@ -1625,6 +1670,23 @@ async function boot() {
       const hand = handAt.get(a.id);
       if (!hand || charge >= 1) continue;      // let go: the wake has it now
       gather(motes, hand.x, hand.y, hand.z, hexRgb3(r.color), 0.1 + r.size * 1.4, charge, dt);
+    }
+    // first sight of a creature starts its assembly, and motes fall inward to
+    // make it — the same gather that fills a caster's hand, run in reverse of
+    // the motes that rise off a body when it dies
+    for (const a of sim.agents) {
+      if (a.deadT >= 0) continue;
+      let born = bornAt.get(a.id);
+      if (born === undefined) { born = sim.t; bornAt.set(a.id, born); }
+      const u = (sim.t - born) / ARRIVING;
+      if (u < 1.05) {
+        gather(motes, a.x, a.bulk * 0.5, a.z,
+          hexRgb3(a.ch.genome.palette.accent), a.bulk * 0.85, Math.min(1, u), dt);
+      }
+    }
+    if (bornAt.size > 64) {
+      const here = new Set(sim.agents.map(a => a.id));
+      for (const id of bornAt.keys()) if (!here.has(id)) bornAt.delete(id);
     }
     shotEffects(sim, dt);
     motes.step(dt, sim.t, cond.windX, cond.windZ);
