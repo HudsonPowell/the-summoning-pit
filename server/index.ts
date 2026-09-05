@@ -255,6 +255,16 @@ function dayRow(): DayRow {
 }
 
 
+// what happened to an owner's creature while they were away, told once on
+// their next arrival. Names only — never keys, never prompts.
+//
+// Declared HERE, above restore(), and not down beside the socket code that
+// reads it: restore() runs at module load, so a `const` further down the file
+// is still in its dead zone and the server dies on boot — but only once a
+// save actually contains a fate, which is to say only in production, days
+// after the change looked fine.
+const fates = new Map<string, { line: string; at: number }>();
+
 function restore(): void {
   const saved = loadPit(STATE_FILE);
   if (!saved) { console.log('[pit] a fresh pit'); return; }
@@ -483,9 +493,6 @@ function broadcast(msg: unknown): void {
  */
 const liveKeys = new Map<string, WebSocket>();
 
-// what happened to an owner's creature while they were away, told once on
-// their next arrival. Names only — never keys, never prompts.
-const fates = new Map<string, { line: string; at: number }>();
 function ownerOnline(owner: string): boolean {
   for (const [k, sock] of liveKeys) {
     if (ownerOf(k) === owner && sock.readyState === WebSocket.OPEN) return true;
