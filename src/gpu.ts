@@ -115,6 +115,17 @@ fn softHit(p: vec2f, k: f32, gate: f32, mixAmt: f32, shapeAmt: f32) -> vec4f {
     }
   }
   if (minS > margin) { return vec4f(1.0, 0.0, 0.0, -1e9); }
+  // THE DEPTH GATE MUST NOT BE A CLIFF. It answered yes or no on whether a
+  // part was close enough in depth to blend — and surfaceZ gives every capsule
+  // a spherical bulge, so the depth difference varies smoothly across an
+  // overlap and the contour where it crossed that threshold was a CIRCLE. Two
+  // creatures passing at similar depths swept that circle across each other:
+  // one swallowed whole at the centre, reappearing at the edges, a hard curved
+  // seam in between. A falloff makes the same decision with no edge to see.
+  // The running minimum is taken over the same parts being summed, so every
+  // exponent stays near zero and a very near part cannot underflow the sum to
+  // nothing and drop the pixel outright.
+  var m = 1e9;
   var sumW = 0.0;
   var acc = vec3f(0.0);
   for (var i = 0u; i < n; i++) {
@@ -128,14 +139,27 @@ fn softHit(p: vec2f, k: f32, gate: f32, mixAmt: f32, shapeAmt: f32) -> vec4f {
     let s = dist2 - c.a.w;
     if (s > margin) { continue; }
     let z = surfaceZ(c, p, t, min(dist2, c.a.w));
-    if (abs(z - bestZ) > gate) { continue; }
-    let w = exp(-(s - minS) / k);
-    sumW += w;
-    acc += c.color.rgb * w;
+    let dz = abs(z - bestZ);
+    if (dz > gate * 2.0) { continue; }
+    let gu = clamp((dz - gate * 0.5) / max(1e-4, gate * 1.5), 0.0, 1.0);
+    let gw = 1.0 - gu * gu * (3.0 - 2.0 * gu);
+    if (gw <= 0.0) { continue; }
+    if (s < m) {
+      let corr = exp(-(m - s) / k);
+      sumW = sumW * corr + gw;
+      acc = acc * corr + c.color.rgb * gw;
+      m = s;
+    } else {
+      let w = exp(-(s - m) / k) * gw;
+      sumW += w;
+      acc += c.color.rgb * w;
+    }
   }
   if (sumW <= 0.0) { return vec4f(1.0, 0.0, 0.0, -1e9); }
-  let sminFull = minS - k * log(sumW);
-  let smin = minS + (sminFull - minS) * shapeAmt;
+  // fusing may only ever push the surface OUT: a partly weighted neighbour
+  // must not be able to carve the silhouette back
+  let sminFull = m - k * log(max(1.0, sumW));
+  let smin = m + (sminFull - m) * shapeAmt;
   let q = clamp(1.0 + smin / max(0.5, bestR), 0.0, 1.0);
   softCol = mix(winCol, acc / sumW, mixAmt);
   return vec4f(smin, q, 1.0, bestZ);

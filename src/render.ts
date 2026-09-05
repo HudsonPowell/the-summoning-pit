@@ -89,6 +89,8 @@ export class PixelRenderer {
   private hit: Uint8Array;
   // soft-field scratch (only touched when cam.blend > 0)
   private minS: Float32Array;
+  /** The nearest surface AMONG THE PARTS ACTUALLY BEING BLENDED. See below. */
+  private gateMin: Float32Array;
   private bestR: Float32Array;
   private winR: Float32Array;
   private winG: Float32Array;
@@ -107,6 +109,7 @@ export class PixelRenderer {
     this.colB = new Float32Array(n);
     this.hit = new Uint8Array(n);
     this.minS = new Float32Array(n);
+    this.gateMin = new Float32Array(n);
     this.bestR = new Float32Array(n);
     this.winR = new Float32Array(n);
     this.winG = new Float32Array(n);
@@ -135,6 +138,7 @@ export class PixelRenderer {
     void minZ;
 
     this.minS.fill(1e9);
+    this.gateMin.fill(1e9);
     this.sumW.fill(0);
     this.insideHit.fill(0);
     this.colR.fill(0);
@@ -178,12 +182,40 @@ export class PixelRenderer {
                 if (inside) this.insideHit[i] = 1;
               }
             } else {
-              if (Math.abs(z - this.depth[i]) > depthGate) continue;
-              const w = Math.exp(-(s - this.minS[i]) / k);
-              this.sumW[i] += w;
-              this.colR[i] += p.color[0] * w;
-              this.colG[i] += p.color[1] * w;
-              this.colB[i] += p.color[2] * w;
+              // THE DEPTH GATE MUST NOT BE A CLIFF. It decided yes or no on
+              // whether a part was close enough in depth to blend — and since
+              // surfaceZ gives every capsule a spherical bulge, the depth
+              // difference varies smoothly across an overlap, so the contour
+              // where it crossed that threshold was a CIRCLE. Two creatures
+              // passing at similar depths swept that circle across each other:
+              // one shape swallowed whole at the centre, reappearing at the
+              // edges, with a hard curved seam in between. That is the halo.
+              // A falloff instead of a threshold makes the same decision
+              // without an edge to see.
+              const dz = Math.abs(z - this.depth[i]);
+              if (dz > depthGate * 2) continue;
+              const gu = clamp((dz - depthGate * 0.5) / Math.max(1e-4, depthGate * 1.5), 0, 1);
+              const gw = 1 - gu * gu * (3 - 2 * gu);
+              if (gw <= 0) continue;
+              const col = p.color;
+              // the running minimum is taken over the same parts being summed,
+              // renormalising when it drops. That keeps every exponent near
+              // zero, so a very near part can no longer underflow the whole
+              // sum to nothing and drop the pixel outright.
+              if (s < this.gateMin[i]) {
+                const corr = Math.exp(-(this.gateMin[i] - s) / k);
+                this.sumW[i] = this.sumW[i] * corr + gw;
+                this.colR[i] = this.colR[i] * corr + col[0] * gw;
+                this.colG[i] = this.colG[i] * corr + col[1] * gw;
+                this.colB[i] = this.colB[i] * corr + col[2] * gw;
+                this.gateMin[i] = s;
+              } else {
+                const w = Math.exp(-(s - this.gateMin[i]) / k) * gw;
+                this.sumW[i] += w;
+                this.colR[i] += col[0] * w;
+                this.colG[i] += col[1] * w;
+                this.colB[i] += col[2] * w;
+              }
             }
           }
         }
@@ -195,10 +227,13 @@ export class PixelRenderer {
     for (let i = 0; i < W * H; i++) {
       const w = this.sumW[i];
       if (w <= 0) { this.hit[i] = 0; continue; }
-      const sminFull = this.minS[i] - k * Math.log(w);
+      const base = this.gateMin[i];
+      // fusing may only ever push the surface OUT. A partly weighted
+      // neighbour must not be able to carve the silhouette back.
+      const sminFull = base - k * Math.log(Math.max(1, w));
       // fusing inflates the surface; shapeAmt dials that back toward the
       // original hard silhouette while leaving the colour blend alone
-      const smin = this.minS[i] + (sminFull - this.minS[i]) * shapeAmt;
+      const smin = base + (sminFull - base) * shapeAmt;
       if (smin >= 0) { this.hit[i] = 0; continue; }
       this.hit[i] = 1;
       this.q[i] = clamp(1 + smin / Math.max(0.5, this.bestR[i]), 0, 1);
