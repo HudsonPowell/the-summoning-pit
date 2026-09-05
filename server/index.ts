@@ -11,7 +11,7 @@ import { readdirSync, readFileSync, rmSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Character, migrateCharacter, makeCharacter } from '../src/character';
 import { defaultBiped } from '../src/genome';
-import { createVoid, stepVoid, spawnChar, makeAgent, whoOf, VoidSim, VoidEvent, Agent } from '../src/void/sim';
+import { createVoid, stepVoid, spawnChar, spawnOne, makeAgent, whoOf, VoidSim, VoidEvent, Agent } from '../src/void/sim';
 import { declare } from '../src/void/pacts';
 import { titleFor } from '../src/naming';
 import { hatchGenome, OLLAMA_URL, HATCH_MODEL, HATCH_API_KEY } from '../src/hatch';
@@ -103,6 +103,33 @@ const MAX_PER_OWNER = 1;              // one hero each — the pit is not a kenn
  * one person spamming re-rolls. Short enough that people keep playing.
  */
 const SUMMON_GAP = 2;                 // seconds, only to swallow a double-press
+/**
+ * THE PIT IS NEVER EMPTY.
+ *
+ * It was, almost always. POPULATION defaults to nothing, so the only
+ * creatures in the pit were the ones people summoned, and it is one each — so
+ * a visitor arriving between summons found a single creature pacing alone,
+ * or nothing at all. Every fight the pit knows how to stage, every evasion,
+ * every trophy taken, needs two creatures to meet, and two creatures almost
+ * never met. The most instrumented arena in the world reads as an empty room.
+ *
+ * The mechanic for this was designed and never wired: challengeT and
+ * CHALLENGE_AFTER have sat in the sim since it was written, declared,
+ * commented, incremented by nobody and read by nobody.
+ *
+ * The house keeps a floor now. Its creatures own nothing, yield to real
+ * summons, and never crowd them out — they are there so that whenever anyone
+ * looks, something is happening.
+ */
+// Three, not two. At two the pit drops to a single creature the moment one
+// dies and stands there alone for the whole cooldown — which is half the time,
+// and is exactly the empty room this is meant to fix. At three there is still
+// a pair fighting while the next one walks in.
+const FLOOR = 3;
+const HOUSE_CAP = 3;         // and never enough to bury the people playing
+const CHALLENGE_WAIT = 12;   // a lone champion gets a breather, then a comer
+const EMPTY_WAIT = 5;        // but nobody should arrive at nothing at all
+
 const SHORT_LIFE = 10;                // a hero gone this fast was barely a hero
 const SHORT_PENALTY = 6;              // a beat, not a punishment
 
@@ -249,6 +276,9 @@ function restore(): void {
   for (const p of saved.pacts) declare(sim.pacts, p.from, p.to, p.stance);
   if (Array.isArray(saved.relics)) sim.relics = saved.relics as typeof sim.relics;
   if (Array.isArray(saved.flora)) sim.flora = saved.flora as typeof sim.flora;
+  for (const f of (saved as any).fates ?? []) {
+    if (f?.owner && typeof f.line === 'string') fates.set(f.owner, { line: f.line, at: f.at ?? Date.now() });
+  }
   const led = (saved as any).ledger;
   if (led) {
     ledger.summons = led.summons ?? 0;
@@ -283,6 +313,7 @@ function snapshotState(): SavedPit {
       owners: [...ledger.owners], byDay: [...ledger.byDay.entries()],
       records: ledger.records,
     },
+    fates: [...fates.entries()].map(([owner, f]) => ({ owner, line: f.line, at: f.at })),
   };
 }
 
@@ -514,6 +545,23 @@ wss.on('connection', ws => {
         if (Date.now() - fate.at < 7 * 86400_000) {
           ws.send(JSON.stringify({ t: 'fate', line: fate.line }));
         }
+      } else if (!holder) {
+        // GOOD NEWS WENT UNSAID. The pit only ever spoke to someone returning
+        // if their creature had died. Coming back to find yours still standing
+        // — the thing you actually hoped for — was met with silence, and you
+        // had to pick it out of the pit yourself. Only on a genuine return,
+        // never on a second tab.
+        const mine = livingOf(ownerOf(key))[0];
+        if (mine) {
+          const held = sim.t - mine.deeds.born;
+          const age = held >= 90 ? `${Math.round(held / 60)} minutes` : `${held | 0} seconds`;
+          const kills = mine.deeds.kills
+            ? `, ${mine.deeds.kills} ${mine.deeds.kills === 1 ? 'kill' : 'kills'}` : '';
+          ws.send(JSON.stringify({
+            t: 'fate',
+            line: `${mine.ch.name.split(' ')[0]} still stands — ${age}${kills}`,
+          }));
+        }
       }
       return;
     }
@@ -707,6 +755,33 @@ setInterval(() => {
 
   stepVoid(sim, dt);
 
+  // the house keeps the pit occupied, and gets out of the way when it fills
+  {
+    const standing = sim.agents.filter(a => a.deadT < 0);
+    const house = standing.filter(a => !a.by);
+    if (standing.length < FLOOR && house.length < HOUSE_CAP) {
+      sim.challengeT += dt;
+      if (sim.challengeT >= (standing.length ? CHALLENGE_WAIT : EMPTY_WAIT)) {
+        sim.challengeT = 0;
+        const sent = spawnOne(sim);
+        if (sent) console.log(`[pit] the house sends ${sent.ch.name} — ${standing.length + 1} standing`);
+      }
+    } else {
+      sim.challengeT = 0;
+      // real summons have filled it: the house takes one of its own home,
+      // and never one that is in the middle of a fight
+      if (standing.length > FLOOR + 1 && house.length) {
+        const spare = house.find(a => a.state !== 'fight' && a.strikeT < 0 && a.evadeT < 0);
+        if (spare) {
+          spare.recalled = true;
+          spare.deadT = 0;
+          sim.events.push({ kind: 'despawn', t: sim.t, x: spare.x, z: spare.z, actor: whoOf(spare) });
+          console.log(`[pit] the house recalls ${spare.ch.name}`);
+        }
+      }
+    }
+  }
+
   sinceSave += dt;
   if (sinceSave >= SAVE_EVERY) {
     sinceSave = 0;
@@ -738,10 +813,16 @@ setInterval(() => {
         }
         // an absent owner hears about it when they come back
         if (dead.by && !ownerOnline(dead.by)) {
-          const age = stood >= 90 ? `${Math.round(stood / 60)}m` : `${stood | 0}s`;
+          // WHAT IT DID, NOT ONLY THAT IT DIED. This one sentence is the only
+          // thing the pit ever says to somebody who was not here, so it should
+          // be worth having waited for: how long it stood, what it took with
+          // it, and who finally managed it.
+          const age = stood >= 90 ? `${Math.round(stood / 60)} minutes` : `${stood | 0} seconds`;
+          const took = dead.deeds.kills
+            ? `, took ${dead.deeds.kills} with it,` : ',';
           const killer = e.actor?.name ? ` to ${e.actor.name.split(' ')[0]}` : '';
           fates.set(dead.by, {
-            line: `while you were gone: ${dead.ch.name.split(' ')[0]} fell${killer} after ${age}`,
+            line: `while you were away: ${dead.ch.name.split(' ')[0]} stood ${age}${took} then fell${killer}`,
             at: Date.now(),
           });
         }

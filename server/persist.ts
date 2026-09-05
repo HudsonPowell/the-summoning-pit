@@ -29,6 +29,13 @@ export interface SavedPit {
   relics?: unknown[];   // the floor's memory; older saves simply have none
   flora?: unknown[];
   ledger?: unknown;     // /stats counters; older saves simply have none
+  /**
+   * What became of people's creatures while they were away, undelivered.
+   * This is the only thing the pit ever says to somebody who was not here,
+   * so losing it on a restart loses the one reason anyone comes back — and
+   * it was in memory alone, wiped by every single deploy.
+   */
+  fates?: { owner: string; line: string; at: number }[];
 }
 
 export function load(path: string): SavedPit | null {
