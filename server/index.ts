@@ -330,6 +330,9 @@ function snapshot() {
       i: s.id,
       x: r2(s.x), z: r2(s.z), y: r2(s.y),
       c: s.spec.color, r: s.spec.size,
+      // one number, and only on the things that carry it: a watching screen
+      // cannot tell a fireball from an arrow without it
+      ...(s.spec.boom ? { b: s.spec.boom } : {}),
       tr: s.trail.map(p => [r2(p.x), r2(p.y), r2(p.z)]),
     })),
     relics: sim.relics.map(r => ({

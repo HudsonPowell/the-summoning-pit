@@ -1111,18 +1111,12 @@ export function stepVoid(sim: VoidSim, dt: number): void {
         if (o === s.from || o.deadT >= 0) continue;
         if (Math.hypot(o.x - s.x, o.z - s.z) < s.spec.boom) hurt(sim, o, s.x, s.z, s.from, 'spell');
       }
-      // the flash: brief harmless debris on the same wire as every shot
-      for (let k = 0; k < 6; k++) {
-        const a2 = (k / 6) * Math.PI * 2 + Math.random() * 0.5;
-        sim.shots.push({
-          id: shotSeq++,
-          x: s.x, z: s.z, y: Math.max(0.1, s.y),
-          vx: Math.cos(a2) * 3.2, vz: Math.sin(a2) * 3.2,
-          life: 0.22 + Math.random() * 0.1,
-          spec: { speed: 3, range: 1, size: 0.05 + Math.random() * 0.04, color: s.spec.color, arcing: false, trail: 3, spark: true },
-          from: s.from, trail: [],
-        });
-      }
+      // THE FLASH IS NOT THE SIM'S BUSINESS. Six harmless debris projectiles
+      // used to be pushed in here — simulated authoritatively, snapshotted,
+      // interpolated and streamed to every watcher, all so that something
+      // pretty happened for a fifth of a second. Every screen now draws its
+      // own explosion from the fact that one occurred, which is cheaper on
+      // the wire, cheaper in the sim, and looks enormously better.
     }
     if (s.spec.sticks && s.from) {
       // the spear stands where it landed, a relic like any other — except its

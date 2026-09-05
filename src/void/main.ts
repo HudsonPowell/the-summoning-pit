@@ -8,6 +8,7 @@ import { solvePose, slashWeight, Capsule, Intent } from '../pose';
 import { rotY, v3, TAU } from '../vec';
 import { Camera } from '../render';
 import { makeProp, PropKind } from '../props';
+import { Motes, muzzle, wake, impact, spatter, undoing, dust, streak } from '../particles';
 import { PixelView } from '../view';
 import { createVoid, stepVoid, spawnOne, spawnChar, strikeSpecOf, Agent, VoidSim, Shot } from './sim';
 import { Director, smoothDamp, smoothDampAngle } from './director';
@@ -867,21 +868,17 @@ function hexRgb3(h: string): [number, number, number] {
 }
 
 /** A shot is its head plus the trail that makes it read as fast. */
+/**
+ * A PROJECTILE IS A STREAK, NOT A STRING OF BEADS. The trail was one sphere
+ * per remembered position, sampled at the sim's rate — so at bolt speed the
+ * beads sat a third of a metre apart and read as a dotted line chasing a ball.
+ * Drawn as a CHAIN instead, each segment starting where the last ended, the
+ * distance field fuses it into a single tapering ribbon and the gaps close.
+ * Same capsule count, and now it reads as something moving fast.
+ */
 function shotCapsules(s: Shot): Capsule[] {
-  const col = hexRgb3(s.spec.color);
-  const out: Capsule[] = [{
-    a: v3(s.x, s.y, s.z), b: v3(s.x, s.y, s.z),
-    r: s.spec.size, color: col, part: 'shot',
-  }];
-  s.trail.forEach((t, i) => {
-    const f = 1 - (i + 1) / (s.trail.length + 1);
-    out.push({
-      a: v3(t.x, t.y, t.z), b: v3(t.x, t.y, t.z),
-      r: s.spec.size * (0.85 * f + 0.15),
-      color: [col[0] * f, col[1] * f, col[2] * f],
-      part: 'trail',
-    });
-  });
+  const out: Capsule[] = [];
+  streak(out, s.x, s.y, s.z, s.trail, hexRgb3(s.spec.color), s.spec.size, hexRgb(look.voidCol));
   return out;
 }
 
@@ -1213,6 +1210,12 @@ function footfalls(sim: VoidSim): void {
     const crossed = (p: number) =>
       prev < p ? a.phase >= p && a.phase - prev < 0.5 : a.phase < prev - 0.5 && a.phase >= 0;
     if (!crossed(0.5) && !(prev > a.phase && a.phase >= 0)) continue;
+    // THE SAME CROSSING THAT MAKES THE SOUND MAKES THE DUST. One event, two
+    // senses — and heavy things kick up more of it, which is the cheapest
+    // way there is to say a thing is heavy.
+    if (a.bulk > 0.75 || a.move > 0.5) {
+      dust(motes, a.x, a.z, a.bulk, Math.min(1.2, a.move * a.bulk), hexRgb(look.floorColA));
+    }
     const { pan, dist } = placeOf(a.x, a.z);
     if (dist > 0.95) continue;
     pit.step(a.bulk, pan, dist, 0.35 + a.move * 0.5);
@@ -1229,6 +1232,75 @@ function placeOf(x: number, z: number): { pan: number; dist: number } {
   // throws on a NaN there, and that throw was the whole page
   const pan = Math.max(-1, Math.min(1, sx / 4)), dist = Math.min(1, d / 9);
   return { pan: Number.isFinite(pan) ? pan : 0, dist: Number.isFinite(dist) ? dist : 1 };
+}
+
+/**
+ * The pit's motes. Never on the wire, never in the sim: the server says what
+ * happened and every screen draws its own version of it. Budgeted, because
+ * the gpu walks every capsule for every pixel and a fireball must not be the
+ * thing that costs a phone its frame rate.
+ */
+const motes = new Motes();
+
+/**
+ * Shots are watched rather than told about. A projectile arriving in the
+ * snapshots gets a wake behind it; one that VANISHES has landed, and the
+ * client knows where, what colour, how big and whether it goes off — so an
+ * explosion needs no message of its own.
+ */
+const shotSeen = new Map<number, { x: number; y: number; z: number; c: [number, number, number]; r: number; boom: number }>();
+function shotEffects(sim: VoidSim, dt: number): void {
+  const alive = new Set<number>();
+  for (const s of sim.shots) {
+    alive.add(s.id);
+    const col = hexRgb3(s.spec.color);
+    const was = shotSeen.get(s.id);
+    if (was && dt > 1e-4) {
+      // speed comes from the shot's own travel, so a client needs no more of
+      // the spec than it already has to tell a bolt from a spell
+      wake(motes, s.x, s.y, s.z,
+        (s.x - was.x) / dt, (s.y - was.y) / dt, (s.z - was.z) / dt,
+        col, s.spec.size, dt);
+    }
+    shotSeen.set(s.id, {
+      x: s.x, y: s.y, z: s.z, c: col, r: s.spec.size, boom: s.spec.boom ?? 0,
+    });
+  }
+  for (const [id, last] of shotSeen) {
+    if (alive.has(id)) continue;
+    impact(motes, last.x, Math.max(0.06, last.y), last.z, last.c, last.r, last.boom);
+    shotSeen.delete(id);
+  }
+}
+
+/** What an event throws off. The sim decides what happened; this decides how it looked. */
+function sparks(sim: VoidSim, e: import('./sim').VoidEvent): void {
+  const at = (id?: number) => sim.agents.find(a => a.id === id);
+  if (e.kind === 'loose') {
+    const a = at(e.actor?.id);
+    if (!a) return;
+    const dx = Math.cos(a.heading), dz = Math.sin(a.heading);
+    muzzle(motes, a.x + dx * a.bulk * 0.34, a.bulk * 0.62, a.z + dz * a.bulk * 0.34,
+      dx, dz, hexRgb3(a.ch.genome.palette.accent), 0.05);
+    return;
+  }
+  if (e.kind === 'hit') {
+    const t = at(e.target?.id);
+    if (!t) return;
+    const src = at(e.actor?.id);
+    // away from whoever swung, and in the struck creature's OWN colours —
+    // the same rule the hit-wave follows, so a stone thing sheds grit
+    const dx = src ? t.x - src.x : 0, dz = src ? t.z - src.z : 0;
+    const force = e.how === 'blocked' || e.how === 'parried' ? 0.5
+      : e.how === 'guard-broken' ? 0.85 : 1;
+    spatter(motes, t.x, t.bulk * (e.spotH ?? 0.55), t.z, dx, dz,
+      hexRgb3(t.ch.genome.palette.torso), force);
+    return;
+  }
+  if (e.kind === 'kill') {
+    const t = at(e.target?.id);
+    if (t) undoing(motes, t.x, 0.1, t.z, hexRgb3(t.ch.genome.palette.accent), t.bulk);
+  }
 }
 
 function speak(sim: VoidSim, e: import('./sim').VoidEvent): void {
@@ -1430,6 +1502,7 @@ async function boot() {
           myKiller = e.actor.name.split(' ')[0];
         }
       } else if (e.kind === 'hit') director.punch(0.45);
+      sparks(sim, e);
       speak(sim, e);
     }
     // DRAIN LAST. Clearing before this loop meant every event was thrown away
@@ -1439,6 +1512,13 @@ async function boot() {
     if (live) sim.events.length = 0;
     footfalls(sim);
     idleVoices(sim, dt);
+    // MOTES GO BEFORE PIXELS. They are the most decorative thing the pit
+    // draws and the cheapest to do without, so the governor spends them
+    // first — a phone that has begun to struggle loses sparks long before
+    // it loses sharpness, and loses them gradually rather than all at once.
+    motes.budget = Math.max(0, Math.min(1, (perfScale - 0.5) / 0.5));
+    shotEffects(sim, dt);
+    motes.step(dt, sim.t);
     driveCamera(sim, dt);
 
     // Blend is a PIXEL radius, and both the zoom and the mobile buffer cap
@@ -1501,6 +1581,9 @@ async function boot() {
       add(healthCapsules(a, a.by === ME));
     }
     for (const s of sim.shots) add(shotCapsules(s));
+    // with the fight, not with the scenery: if the budget ever bites, the
+    // rocks go before the sparks do
+    motes.caps(caps, hexRgb(look.voidCol), sim.t);
     for (const r of sim.relics) add(relicCapsules(r));
     for (const f of sim.flora) add(floraCapsules(f));
     if (title && !title.done) add(title.caps(dt, cam.yaw));
@@ -1589,7 +1672,7 @@ async function boot() {
       tagAt = now;
       fpsTag.textContent =
         `${medianMs ? Math.round(1000 / medianMs) : 0}fps  ${medianMs.toFixed(1)}ms  ${view.mode}  `
-        + `${view.size.W}x${view.size.H}  x${perfScale.toFixed(2)}  ${view.drawn}/${caps.length}caps`;
+        + `${view.size.W}x${view.size.H}  x${perfScale.toFixed(2)}  ${view.drawn}/${caps.length}caps  ${motes.count}mote`;
     }
     requestAnimationFrame(frame);
   }
@@ -1601,7 +1684,7 @@ async function boot() {
 
   // the browser pane suspends rAF while hidden, so tooling drives it by hand
   (window as any).voidScene = {
-    sim, cam, look, director, live, pit, view, get title() { return title; },
+    sim, cam, look, director, live, pit, view, motes, get title() { return title; },
     get perf() { return { medianMs, fps: medianMs ? 1000 / medianMs : 0, scale: perfScale, mode: view.mode, buffer: view.size, caps: caps.length, drawn: view.drawn }; },
     govern,
     tick,

@@ -185,7 +185,15 @@ export class LiveVoid {
         // and so does the WEIGHT of it: the event carries where the blow
         // came from, which is all the springs need to be knocked about the
         // same way the sim knocks its own
-        const fy = Math.atan2(t.z - ev.z, t.x - ev.x) - t.heading;
+        // WHICH WAY THE BLOW CAME FROM. A hit event carries the position of
+        // the creature that was HIT — so this used to read atan2(0, 0) and
+        // shake the body in a direction that had nothing to do with the blow.
+        // The attacker is in the event too, by id, and the client already
+        // knows where it is standing.
+        const src = ev.actor ? this.byId.get(ev.actor.id) : undefined;
+        const fy = src
+          ? Math.atan2(t.z - src.z, t.x - src.x) - t.heading
+          : -t.heading;
         // a block, a parry, a broken guard, a clean blow — each shakes the
         // body its own amount, the sim's own numbers for the same moments
         const force = ev.how === 'guard-broken' ? 0.34
@@ -362,7 +370,14 @@ export class LiveVoid {
       return {
         id: s.i, x, z, y,
         vx: 0, vz: 0, life: 1,
-        spec: { speed: 0, range: 0, size: s.r, color: s.c, arcing: false, trail: s.tr.length },
+        // the blast radius is a FACT about the projectile, not a look: it is
+        // what tells a watching screen whether that was an arrow ticking off
+        // the floor or a fireball going off. Everything else about the
+        // effect — how fast, how big, what colour — the client already has.
+        spec: {
+          speed: 0, range: 0, size: s.r, color: s.c, arcing: false, trail: s.tr.length,
+          ...(typeof s.b === 'number' ? { boom: s.b } : {}),
+        },
         from: this.sim.agents[0],
         trail: s.tr.map((t: number[]) => ({ x: t[0] + ox, y: t[1] + oy, z: t[2] + oz })),
       };
